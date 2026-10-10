@@ -14,8 +14,10 @@ from __future__ import annotations
 import re
 
 FILLER = re.compile(r"(?i)(,\s*)?(?<![\w'-])(?:u+m+|u+h+|u+h+m+|e+r+m+)(?![\w'-])(\s*,)?")
-BREAK = re.compile(r"(?i)(^|[.!?,;:])\s*new (line|paragraph)(?=\s*(?:[.!?,;:]|$))\s*[.!?,;:]?\s*")
-SCRATCH = re.compile(r"(?i)^\W*scratch that\W*$")
+# Engines may punctuate between the two words ("New. Line.", "Scratch. That.");
+# the command still counts only when said as its own phrase.
+BREAK = re.compile(r"(?i)(^|[.!?,;:])\s*new[^\w\n]+(line|paragraph)(?=\s*(?:[.!?,;:]|$))\s*[.!?,;:]?\s*")
+SCRATCH = re.compile(r"(?i)^\W*scratch\W+that\W*$")
 SCRATCH_WINDOW_S = 60.0  # "scratch that" only undoes a dictation this recent
 
 
