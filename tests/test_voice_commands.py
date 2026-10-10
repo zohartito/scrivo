@@ -32,6 +32,17 @@ class CleanTests(unittest.TestCase):
         self.assertEqual(clean("Scratch that."), ("", "scratch"))
         self.assertEqual(clean("Please scratch that line.")[1], None)
 
+    def test_commands_survive_punctuation_the_engine_puts_between_the_words(self):
+        # Nemotron heard a held "scratch that" as "Scratch. That." (2026-10-10)
+        # and the command was pasted as text instead of undoing.
+        for heard in ("Scratch. That.", "Scratch, that!", "scratch... that", "Scratch - that"):
+            with self.subTest(heard=heard):
+                self.assertEqual(clean(heard), ("", "scratch"))
+        self.assertEqual(clean("Hello. New. Line. How are you?")[0], "Hello.\nHow are you?")
+        self.assertEqual(clean("Dear Sam. New, paragraph. Thanks.")[0], "Dear Sam.\n\nThanks.")
+        self.assertEqual(clean("Scratch. That was close.")[1], None)          # still only on its own
+        self.assertEqual(clean("We launched a new, line of products.")[0], "We launched a new, line of products.")
+
     def test_each_part_can_be_switched_off(self):
         self.assertEqual(clean("Um, new line.", fillers=False, commands=True)[0], "Um,\n")
         self.assertEqual(clean("Scratch that.", commands=False), ("Scratch that.", None))
