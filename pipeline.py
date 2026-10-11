@@ -1,7 +1,6 @@
 """What happens to a finished transcript before anything is delivered.
 
-One path for live dictation and Retry on macOS (Windows calls the same pieces
-through sotto's re-exports):
+One path for live dictation and Retry, on macOS and Windows alike:
 
     raw transcript -> no-speech verdict -> hallucination guard (with
     repetition-loop salvage) -> personal dictionary -> English voice cleanup
@@ -19,6 +18,9 @@ import re
 import zlib
 
 NO_SPEECH_TEXT = "[no speech detected]"
+# A live capture whose speech model raised (F4) is kept in History under this
+# text, with its audio, so Retry can transcribe it again.
+TRANSCRIPTION_FAILED_TEXT = "[transcription failed]"
 
 LOOP_MIN_REPEATS = 6        # far past what real speech repeats verbatim
 LOOP_MAX_UNIT_WORDS = 6     # loops cycle a word or a short phrase, not a clause
@@ -138,6 +140,16 @@ def apply_voice_cleanup(text: str, preprocessing: dict, language: str | None) ->
     if action or cleaned != text:
         preprocessing["voice"] = {"asr_text": text, **({"action": action} if action else {})}
     return cleaned, action
+
+
+def move_detected_language(attempt_metadata: dict, preprocessing: dict) -> None:
+    """Automatic's pick lives in the row's preprocessing, not its attempt metadata.
+
+    Side effects: pops "detected_language" from `attempt_metadata`; sets it in
+    `preprocessing` when there was one."""
+    detected = attempt_metadata.pop("detected_language", None)
+    if detected:
+        preprocessing["detected_language"] = detected
 
 
 @dataclass(frozen=True)

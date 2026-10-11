@@ -73,7 +73,6 @@ RESTART_DRAIN_CAP_S = sotto.HANDS_FREE_MAX_S + RESTART_TRANSCRIBE_S
 QUIT_DRAIN_S = 10.0
 DRAIN_POLL_S = 0.1  # how often a drain checks whether the work in flight is done
 UNREAD_PASTE = "a paste the app has not read yet"  # in_flight()'s words for it
-TRANSCRIPTION_FAILED_TEXT = "[transcription failed]"  # History text when the model raised
 MIC_FAILED_TEXT = ("Could not start the microphone. Check that no other app holds it and that "
                    "desktop apps may use it (Settings → Privacy & security → Microphone), "
                    "then press the key again.")
@@ -223,37 +222,6 @@ VK_Z = 0x5A
 def delivery_prefs(saved: dict) -> DeliveryPrefs:
     return DeliveryPrefs(saved.get("insert_mode", "paste"), saved.get("spacing", "smart"),
                          automatic_languages(saved.get("languages")))
-
-
-def screen_transcript(text: str, seconds: float, speech_fraction: float,
-                      preprocessing: dict) -> tuple[str, str | None]:
-    """Output guards before anything is inserted: (text, reason it is kept back or None).
-
-    Empty output becomes the no-speech marker, a clean prefix before a
-    repetition loop is salvaged, anything else implausible is suspect.
-    """
-    no_speech = sotto.reads_as_no_speech(text, speech_fraction)
-    if no_speech == "empty transcript":
-        text = "[no speech detected]"
-    hallucinated = sotto.looks_hallucinated(text, seconds)
-    if hallucinated and not no_speech:
-        # A loop that starts partway through must not cost the user the real
-        # dictation in front of it.
-        salvaged = sotto.salvage_repetition_loop(text, seconds)
-        if salvaged is not None:
-            text, trim_receipt = salvaged
-            preprocessing["repetition_trimmed"] = trim_receipt
-            log(f"  cut a {trim_receipt['repeats']}x repetition loop "
-                f"({trim_receipt['dropped_chars']} chars) — keeping the clean prefix")
-            hallucinated = None
-    return text, hallucinated or no_speech
-
-
-def move_detected_language(attempt_metadata: dict, preprocessing: dict) -> None:
-    """Automatic's pick lives in preprocessing, exactly like the Mac's rows."""
-    detected = attempt_metadata.pop("detected_language", None)
-    if detected:
-        preprocessing["detected_language"] = detected
 
 
 # -- process -------------------------------------------------------------------
@@ -1026,19 +994,19 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             return
         elapsed = time.monotonic() - started
         model_activity["last_finished"] = time.monotonic()
-        move_detected_language(attempt_metadata, preprocessing)
+        pipeline.move_detected_language(attempt_metadata, preprocessing)
         attempt_metadata.update({
             "vad": vad_metadata, "preprocessing": preprocessing,
             "latency": {"queue_wait_seconds": round(started - queued_at, 4),
                         "asr_seconds": round(elapsed, 4)}})
         prepared_seconds = len(prepared.asr_samples) / sotto.SAMPLE_RATE
-        text, reason = screen_transcript(text, prepared_seconds, speech_fraction, preprocessing)
-        voice_action = None
-        if not reason:
-            # After every guard, never on text kept back (the Mac's rule).
-            text = sotto.apply_personal_dictionary(text, preprocessing)
-            text, voice_action = sotto.apply_voice_cleanup(
-                text, preprocessing, preprocessing.get("detected_language") or job_config.language)
+        # The guards, then the user's dictionary and English cleanup on text
+        # that passed them: pipeline.screen, the Mac's live and Retry path.
+        screened = pipeline.screen(
+            text, seconds=prepared_seconds, speech_fraction=speech_fraction,
+            language=preprocessing.get("detected_language") or job_config.language, log=log)
+        text, reason, voice_action = screened.text, screened.held, screened.voice_action
+        preprocessing.update(screened.receipts)
         # Key release until the text is ready to insert (the Mac's measure,
         # read by the shared progress summary).
         attempt_metadata["latency"]["release_to_text_seconds"] = round(
@@ -1102,7 +1070,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         try:
             row = pipeline.finalize_primary_live_delivery(
                 append=lambda: append_live(
-                    capture_id, TRANSCRIPTION_FAILED_TEXT, prepared, prepared_seconds, model_repo,
+                    capture_id, pipeline.TRANSCRIPTION_FAILED_TEXT, prepared, prepared_seconds, model_repo,
                     ts=captured_ts, raw_samples=raw, raw_sample_rate=native_rate,
                     provenance="live_suspect", adaptive=False, **attempt_metadata),
                 adaptive_runtime=None, appended_publication=None, shutdown=shutdown,
@@ -1172,7 +1140,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         if shutdown.requested():
             return
         preprocessing: dict = {"retry_canonical": True}
-        move_detected_language(attempt_metadata, preprocessing)
+        pipeline.move_detected_language(attempt_metadata, preprocessing)
         # The same guards and cleanup as live dictation (pipeline.screen, like
         # the Mac's Retry).  No VAD verdict for a retry (speech_fraction 1.0),
         # and Retry never undoes anything: a "scratch that" result keeps its words.

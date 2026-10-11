@@ -94,23 +94,12 @@ class DeliveryLogicTest(unittest.TestCase):
             self.assertEqual(win_asr.choose_language(probabilities, allowed),
                              sotto.choose_language(probabilities, allowed), (probabilities, allowed))
 
-    def test_detected_language_moves_into_preprocessing_like_the_mac(self):
-        metadata, preprocessing = {"detected_language": "pt", "profile": "auto"}, {}
-        sotto_win.move_detected_language(metadata, preprocessing)
-        self.assertEqual((metadata, preprocessing), ({"profile": "auto"}, {"detected_language": "pt"}))
-
-    def test_screen_keeps_back_empty_and_looping_output_and_salvages_a_prefix(self):
-        self.assertEqual(sotto_win.screen_transcript("", 1.0, 1.0, {}),
-                         ("[no speech detected]", "empty transcript"))
-        text, reason = sotto_win.screen_transcript("loop " * 60, 1.0, 1.0, {})
-        self.assertIsNotNone(reason)
-        prefix = "This part of the dictation is real and should be kept intact."
-        preprocessing: dict = {}
-        with mock.patch.object(sotto_win, "log"):
-            text, reason = sotto_win.screen_transcript(prefix + " difference" * 40, 12.0, 1.0,
-                                                       preprocessing)
-        self.assertEqual((text, reason), (prefix, None))
-        self.assertIn("repetition_trimmed", preprocessing)
+    def test_screening_is_the_shared_pipeline_not_a_windows_copy(self):
+        # Restructure step 7: live dictation and Retry both call
+        # pipeline.screen (SharedPolicyRunTest pins what they produce);
+        # Windows keeps no screening of its own.
+        for name in ("screen_transcript", "move_detected_language", "TRANSCRIPTION_FAILED_TEXT"):
+            self.assertFalse(hasattr(sotto_win, name), name)
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")

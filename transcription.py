@@ -21,7 +21,7 @@ import threading
 import time
 
 
-from pipeline import finalize_primary_live_delivery, screen
+from pipeline import TRANSCRIPTION_FAILED_TEXT, finalize_primary_live_delivery, move_detected_language, screen
 from speech_config import transcription_kwargs
 from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
                    adaptive_live_transcribe_prepared, append_untranscribed_capture,
@@ -29,9 +29,9 @@ from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
                    prepare_for_whisper, transcribe_canonical_samples,
                    transcribe_prepared, warm_speech_runtime)
 
-# A live capture whose speech model failed (F4): the audio is kept under this
-# text so Retry can transcribe it again.
-TRANSCRIPTION_FAILED_TEXT = "[transcription failed]"
+# A live capture whose speech model failed (F4) is kept under
+# pipeline.TRANSCRIPTION_FAILED_TEXT (shared with Windows), so Retry can
+# transcribe it again.
 # A live capture Sotto stopped before transcribing (N9) is kept the same way,
 # under sotto.NOT_TRANSCRIBED_TEXT (shared with the N9b spool recovery).
 # How long the teardown's keep waits for a History append of the same capture
@@ -393,9 +393,7 @@ class TranscriptionWorker:
             return
         elapsed = time.monotonic() - started
         self.model_activity["last_finished"] = time.monotonic()
-        detected_language = attempt_metadata.pop("detected_language", None)
-        if detected_language:
-            preprocessing["detected_language"] = detected_language
+        move_detected_language(attempt_metadata, preprocessing)
         attempt_metadata.update({"vad": vad_metadata,
                                  "preprocessing": preprocessing,
                                  "latency": {"queue_wait_seconds": round(started - queued_at, 4),
@@ -708,9 +706,7 @@ class TranscriptionWorker:
         if self.shutdown.requested():
             return
         retry_preprocessing = {"retry_canonical": True}
-        detected_language = attempt_metadata.pop("detected_language", None)
-        if detected_language:
-            retry_preprocessing["detected_language"] = detected_language
+        move_detected_language(attempt_metadata, retry_preprocessing)
         held = None
         if self.adaptive_runtime is None:
             # The same guards and cleanup as live dictation. Retry has
