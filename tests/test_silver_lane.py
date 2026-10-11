@@ -2057,12 +2057,16 @@ class SilverLaneTests(unittest.TestCase):
     def test_serve_stop_returns_at_daemon_drain_boundary_without_new_cycle(self):
         worker=AdaptiveWorker(self.root,history=self.history,silver=SilverStore(self.root),teachers=_Teachers())
         entered=threading.Event(); release=threading.Event(); cycles=[]
+        self.addCleanup(release.set)
+        # The cycle stays blocked for 30 s; serve() must return at its 0.05 s
+        # drain boundary instead. Wide margins: a slow CI runner once missed a
+        # 0.4 s wall-clock bound measured from thread start (run 37983803754).
         def blocked_cycle():
-            cycles.append('comparator'); entered.set(); release.wait(2)
+            cycles.append('comparator'); entered.set(); release.wait(30)
         worker.run_once=blocked_cycle
-        served=threading.Thread(target=lambda: worker.serve(interval=0,drain_timeout=.05)); started=time.monotonic(); served.start()
-        self.assertTrue(entered.wait(1)); worker.stop.set(); served.join(.3)
-        self.assertFalse(served.is_alive()); self.assertLess(time.monotonic()-started,.4); self.assertEqual(cycles,['comparator'])
+        served=threading.Thread(target=lambda: worker.serve(interval=0,drain_timeout=.05)); served.start()
+        self.assertTrue(entered.wait(5)); stopped=time.monotonic(); worker.stop.set(); served.join(5)
+        self.assertFalse(served.is_alive()); self.assertLess(time.monotonic()-stopped,5); self.assertEqual(cycles,['comparator'])
         with worker.silver._connect() as db: self.assertEqual(db.execute('SELECT COUNT(*) FROM runtime_pairs').fetchone()[0],0)
         release.set()
 
