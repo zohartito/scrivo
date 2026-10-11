@@ -220,9 +220,25 @@ class StaleRunDialogTests(unittest.TestCase):
         self.assertEqual(updates.offer(result), "update")
         plain = updates.describe(updates.UpdateCheck("available", behind=1, changes=("Add A",)), "MANUAL")
         self.assertEqual(updates.describe(result, "MANUAL"), (plain[0], f"{STALE_NOTE}\n\n{plain[1]}"))
-        hand = stale_result("diverged", detail="This copy has its own commits.")
+        hand = stale_result("diverged", packages_changed=True, detail="This copy has its own commits.")
+        self.assertEqual(updates.offer(hand), "info")
         self.assertEqual(updates.describe(hand, "MANUAL"), (
             "Update by hand", f"{STALE_NOTE}\n\nThis copy has its own commits.\n\nTo update anyway: MANUAL"))
+
+    def test_a_moved_checkout_with_its_own_commits_or_edits_still_offers_the_restart(self):
+        # The updater refuses such a copy, but the restart only runs the files
+        # already on disk: with the same packages it is all that is needed.
+        for state, detail in (("diverged", "This copy has its own commits."),
+                              ("local-changes", "This copy has local changes.")):
+            result = stale_result(state, detail=detail)
+            self.assertEqual(updates.offer(result), "restart", state)
+            self.assertEqual(updates.describe(result, "MANUAL"), (
+                "Finish updating Sotto",
+                f"{STALE_NOTE}\n\n{detail}\n\nRestart now? A dictation in progress finishes first."), state)
+            self.assertEqual(updates.offer(result, self_update=False), "info", state)
+            self.assertEqual(updates.describe(result, "MANUAL", self_update=False)[1],
+                             f"{STALE_NOTE}\n\n{detail}\n\nSotto was started from a terminal, so it does not "
+                             "restart itself. Quit it, then start it again.", state)
 
     def test_without_a_stale_run_the_offers_are_unchanged(self):
         for state, app, terminal in (("current", "info", "info"), ("available", "update", "info"),

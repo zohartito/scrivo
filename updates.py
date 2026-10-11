@@ -207,11 +207,13 @@ def offer(result: UpdateCheck, *, self_update: bool = True) -> str:
     installer's update path), "restart" (the drained restart), "releases",
     "error" or "info" (nothing to do but read). A stale run is never offered
     the plain restart when its packages changed, nor Update Now without a
-    fresh look at GitHub; a terminal run neither restarts nor updates (N28)."""
+    fresh look at GitHub; a terminal run neither restarts nor updates (N28).
+    The restart only runs the files already on disk, so a copy with its own
+    commits or edits (which the updater refuses) is offered it too."""
     stale = result.stale
     if result.state == "available":
         return "update" if self_update else "info"
-    if stale and result.state not in ("local-changes", "diverged"):
+    if stale:
         if not self_update:
             return "info"
         if not stale.packages_changed:
@@ -234,10 +236,11 @@ def describe(result: UpdateCheck, manual_update: str, *, self_update: bool = Tru
     if stale is None:
         return _describe(result, manual_update, self_update=self_update)
     note = f"Sotto's files were updated to {stale.on_disk}, but the running Sotto is still {stale.running}."
-    if result.state in ("available", "local-changes", "diverged"):
+    by_hand = result.state in ("local-changes", "diverged")
+    if result.state == "available" or (by_hand and stale.packages_changed):
         title, text = _describe(result, manual_update, self_update=self_update)
         return title, f"{note}\n\n{text}"
-    detail = f"\n\n{result.detail}" if result.state in ("offline", "failed") and result.detail else ""
+    detail = f"\n\n{result.detail}" if (by_hand or result.state in ("offline", "failed")) and result.detail else ""
     if not stale.packages_changed:
         if self_update:
             action = "Restart now? A dictation in progress finishes first."
