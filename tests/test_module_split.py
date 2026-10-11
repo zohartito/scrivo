@@ -38,6 +38,9 @@ MOVED = {
         "doctor_input_probe", "join_capture_blocks"),
     # Shared with Windows (restructure step 7), which no longer reaches into sotto for it.
     "pipeline": ("finalize_primary_live_delivery",),
+    "hotkey": (
+        "ALL_MODIFIERS", "KEYCODES", "MODIFIER_FLAGS", "TRIGGER_LABELS", "TRIGGERS", "HotkeyListener",
+        "hands_free_hint", "hotkey_release_held_seconds", "parse_hotkey", "trigger_down_in"),
 }
 NOT_REEXPORTED = {
     "sotto_log": ("_app_log", "_app_log_lock", "_point_output_at", "_rotate_if_large"),
@@ -48,6 +51,7 @@ NOT_REEXPORTED = {
     # sotto copy, a patch aimed at sotto fails loudly instead of missing.
     "capture": ("_audio_devices", "_builtin_input_device", "_pin_input_to_builtin", "_select_input_device"),
     "pipeline": (),
+    "hotkey": (),
 }
 
 
