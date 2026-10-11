@@ -18,7 +18,9 @@ import re
 FILLER = re.compile(r"(?i)(,\s*)?(?<![\w'-])(?:u+m+|u+h+|u+h+m+|e+r+m+)(?![\w'-])(\s*,)?")
 # Engines may punctuate between the two words ("New. Line.", "Scratch. That.")
 # or not at all around the command ("first sentence new line second").
-BREAK = re.compile(r"(?i)[ \t]*\bnew[^\w\n]+(line|paragraph)\b[^\w\n]*")
+# The tail takes only spaces and sentence punctuation: an opening quote or
+# bracket after the command belongs to the next text.
+BREAK = re.compile(r"(?i)[ \t]*\bnew[^\w\n]+(line|paragraph)\b[ \t.,!?;:]*")
 # Right after one of these, "new line" is content: "a new line of products".
 CONTENT_AFTER = frozenset({"a", "an", "the", "this", "that", "these", "those", "my", "our",
                            "your", "his", "her", "its", "their", "one", "each", "every",
@@ -53,9 +55,11 @@ def _drop_fillers(text: str) -> str:
 
 def _line_breaks(text: str) -> str:
     def replace(match: re.Match) -> str:  # punctuation said before it stays
-        before = re.findall(r"[A-Za-z']+", text[:match.start()])
-        after = text[match.end():]
-        if (before and before[-1].lower() in CONTENT_AFTER) or re.match(r"(?i)of\b", after):
+        # Content only within one unbroken phrase: "a new line", "new line of".
+        # A sentence break on either side makes it a command again.
+        before = re.search(r"([A-Za-z']+)[ \t]*$", text[:match.start()])
+        after = text[match.end(1):]
+        if (before and before.group(1).lower() in CONTENT_AFTER) or re.match(r"(?i)[ \t]+of\b", after):
             return match.group(0)
         return "\n\n" if match.group(1).lower() == "paragraph" else "\n"
     broken = BREAK.sub(replace, text)
