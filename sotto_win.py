@@ -440,6 +440,9 @@ class Controller:
     # The drains' time source; tests drive them on a virtual clock.
     clock = staticmethod(time.monotonic)
     sleep = staticmethod(time.sleep)
+    # Whether the one model rewarm a press queues is queued or running; it is
+    # not a dictation (the Windows half of N40). run() passes the real flag.
+    warming = staticmethod(lambda: False)
 
     def __init__(self, **parts) -> None:
         self.__dict__.update(parts)
@@ -493,8 +496,9 @@ class Controller:
         work = []
         if self.capture.is_active() or self.finishing():
             work.append("a recording")
-        if self.jobs.unfinished_tasks:
-            work.append(f"{self.jobs.unfinished_tasks} transcription job(s)")
+        transcribing = self.jobs.unfinished_tasks - int(self.warming())
+        if transcribing > 0:
+            work.append(f"{transcribing} transcription job(s)")
         if self.deliveries.unfinished_tasks:
             work.append(f"{self.deliveries.unfinished_tasks} insertion(s)")
         if win_inject.paste_settling():
@@ -1398,7 +1402,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         on_finish=on_finish, current_speech_config=current_speech_config,
         language_lock=language_lock, language_state=language_state, speed=speed,
         trigger_locked=trigger_locked, model_repo=model_repo, whisper=whisper,
-        lifecycle=lifecycle, finishing=finishing, capture_gate=capture_gate)
+        lifecycle=lifecycle, finishing=finishing, capture_gate=capture_gate,
+        warming=lambda: bool(model_activity["rewarming"]))
 
     transcription_thread.start()
     delivery_thread = threading.Thread(target=delivery_worker, daemon=True)

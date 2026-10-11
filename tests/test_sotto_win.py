@@ -190,6 +190,18 @@ class RestartTest(unittest.TestCase):
                                     capture_gate=sotto.CaptureGate(),
                                     lifecycle={"closed": None}), jobs
 
+    def test_a_model_rewarm_alone_is_not_dictation_in_flight(self):
+        # Windows half of N40: the CUDA rewarm a press queues is not a dictation,
+        # so it must not hold Quit or Restart or refuse an Update.
+        controller, jobs = self.controller(busy=True)  # the one queued job is the rewarm
+        controller.warming = lambda: True
+        self.assertEqual(controller.in_flight(), [])
+        self.assertFalse(controller.busy())
+        jobs.put("live")                                # a real dictation behind it
+        self.assertEqual(controller.in_flight(), ["1 transcription job(s)"])
+        controller.warming = lambda: False              # no rewarm: every job counts
+        self.assertEqual(controller.in_flight(), ["2 transcription job(s)"])
+
     def test_restart_waits_for_in_flight_work_and_quit_cancels_it(self):
         controller, jobs = self.controller(busy=True)
         with mock.patch.object(sotto_win, "log"):
