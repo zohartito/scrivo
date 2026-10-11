@@ -85,6 +85,8 @@ class World:
         self.capture = types.SimpleNamespace(is_active=lambda: self.capture_active)
         # The update drain: what wait_until_idle answers.
         self.drained = True
+        # The commit this run started from (run() reads it once at launch).
+        self.started_from = "c2e7f0f" + "0" * 33
         self.parakeet_ready = True
         self.persist_failure = None   # the restart's on_failure message
         self.installer_result = (True, "done")
@@ -305,7 +307,8 @@ def build(world: World) -> AppController:
         parakeet_cached=world.parakeet_cached, persist_engine_and_restart=world.persist_engine_and_restart,
         run_installer=world.run_installer, triggers=sotto.TRIGGERS, trigger_labels=sotto.TRIGGER_LABELS,
         sotto_script=Path(sotto.__file__).resolve(), engine=world.engine, capture=world.capture,
-        on_finish=world.on_finish, start_thread=world.start_thread, wait_until_idle=world.wait_until_idle)
+        on_finish=world.on_finish, started_from=world.started_from, start_thread=world.start_thread,
+        wait_until_idle=world.wait_until_idle)
 
 
 # -- History ------------------------------------------------------------------
@@ -1183,8 +1186,8 @@ class CheckUpdatesTests(unittest.TestCase):
         world.status_ui.answer = answer
         checked = []
 
-        def check(root, *, offline):
-            checked.append((root, offline))
+        def check(root, *, offline, started_from):
+            checked.append((root, offline, started_from))
             return result
         with patch.object(updates, "check", check), \
              patch.object(offline_runtime, "offline_requested", return_value=offline), \
@@ -1192,7 +1195,7 @@ class CheckUpdatesTests(unittest.TestCase):
              patch.dict(os.environ, {"SOTTO_LAUNCHER": "app" if app else "terminal"}), \
              patch("AppKit.NSWorkspace") as workspace:
             build(world).check_updates()
-        self.assertEqual(checked, [(SOURCE, offline)])
+        self.assertEqual(checked, [(SOURCE, offline, world.started_from)])
         return workspace
 
     def test_an_available_update_is_offered_to_the_app(self):
@@ -1235,6 +1238,58 @@ class CheckUpdatesTests(unittest.TestCase):
         self.check(world, updates.UpdateCheck("offline", "Offline mode is on."), offline=True)
         self.assertEqual(world.events[1], ("log", "update check: offline"))
         self.assertEqual(world.events[-1][:2], ("direct", "show_info"))
+
+    # 2026-10-10: a backup job's git merge moved the running checkout from
+    # c2e7f0f to 3bcf356, and Check for Updates said "up to date" while this
+    # process still ran c2e7f0f.
+    APP_MANUAL = "run scripts/install-mac.sh --update in Terminal from the Sotto folder."
+
+    def stale(self, state="current", *, packages_changed=False, detail=""):
+        return updates.UpdateCheck(state, detail, version="3bcf356",
+                                   stale=updates.StaleRun("c2e7f0f", "3bcf356", packages_changed))
+
+    def test_a_stale_run_with_the_same_packages_offers_the_drained_restart(self):
+        result = self.stale()
+        title, text = updates.describe(result, self.APP_MANUAL, self_update=True)
+        world = World()
+        self.check(world, result, answer=True)
+        self.assertEqual(world.events[:4], [
+            ("thread",), ("log", "update check: current; running c2e7f0f, files 3bcf356"),
+            ("ui", "present"), ("direct", "ask", title, text, "Restart Now", "Later")])
+        # The menu's Restart: the gate closes and the dictation in flight finishes first.
+        self.assertTrue(wait_for(lambda: ("log", "● restarting Sotto") in world.events), world.events)
+        self.assertIn(("log", "● restart requested from the menu — after the current dictation"), world.events)
+        self.assertEqual(world.lifecycle.closed, "restarting")
+        world = World()
+        self.check(world, result, answer=False)
+        self.assertEqual(len(world.events), 4)
+        self.assertIsNone(world.lifecycle.closed)
+
+    def test_a_stale_run_with_new_packages_is_offered_the_installer_not_a_restart(self):
+        result = self.stale(packages_changed=True)
+        title, text = updates.describe(result, self.APP_MANUAL, self_update=True)
+        world = World()
+        self.check(world, result, answer=True)
+        self.assertEqual(world.events[:5], [
+            ("thread",), ("log", "update check: current; running c2e7f0f, files 3bcf356, packages changed"),
+            ("ui", "present"), ("direct", "ask", title, text, "Update Now", "Later"),
+            ("log", "● updating Sotto")])  # apply_update: install-mac.sh --update, then the drained restart
+        self.assertNotIn(("restart.request",), world.events[:5])
+        world = World()
+        self.check(world, self.stale("offline", packages_changed=True, detail="Offline mode is on."), offline=True)
+        title, text = updates.describe(self.stale("offline", packages_changed=True, detail="Offline mode is on."),
+                                       self.APP_MANUAL, self_update=True)
+        self.assertEqual(world.events[-1], ("direct", "show_info", title, text))
+
+    def test_a_stale_terminal_run_is_told_what_to_do(self):
+        for packages_changed in (False, True):
+            result = self.stale(packages_changed=packages_changed)
+            title, text = updates.describe(result, updates.mac_manual_update(SOURCE), self_update=False)
+            world = World()
+            self.check(world, result, app=False, answer=True)
+            self.assertEqual(world.events[-1], ("direct", "show_info", title, text))
+            self.assertNotIn(("restart.request",), world.events)
+            self.assertIsNone(world.lifecycle.closed)
 
 
 # -- the menu bar ------------------------------------------------------------------

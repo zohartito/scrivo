@@ -443,6 +443,8 @@ class Controller:
     # Whether the one model rewarm a press queues is queued or running; it is
     # not a dictation (the Windows half of N40). run() passes the real flag.
     warming = staticmethod(lambda: False)
+    # The commit run() started from; Check for updates compares the folder's HEAD with it.
+    started_from = ""
 
     def __init__(self, **parts) -> None:
         self.__dict__.update(parts)
@@ -661,7 +663,8 @@ class Controller:
         """Compare this checkout with GitHub; only when the user asks."""
         import updates
         from offline_runtime import offline_requested
-        return updates.check(Path(__file__).resolve().parent, offline=offline_requested())
+        return updates.check(Path(__file__).resolve().parent, offline=offline_requested(),
+                             started_from=self.started_from)
 
     def update_and_restart(self) -> str:
         """Hand the update to scripts/update-windows.ps1: Windows keeps a
@@ -775,6 +778,10 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         glossary: str | None, idle_release: float, device: str = "auto", *,
         speed: str = "accurate", tray: bool = False, trigger_locked: bool = False) -> bool:
     """Dictate until shutdown; returns True when a restart was requested."""
+    import updates
+    # The commit this process runs, read once at launch (local git only):
+    # Check for updates compares the folder's HEAD with it (the Mac's rule).
+    started_from = updates.started_from(Path(__file__).resolve().parent)
     speech_config = resolve_config(profile, model, language, speed)
     model_repo = speech_config.model_repo
     glossary_terms = load_glossary(glossary) if glossary else ()
@@ -1403,7 +1410,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         language_lock=language_lock, language_state=language_state, speed=speed,
         trigger_locked=trigger_locked, model_repo=model_repo, whisper=whisper,
         lifecycle=lifecycle, finishing=finishing, capture_gate=capture_gate,
-        warming=lambda: bool(model_activity["rewarming"]))
+        warming=lambda: bool(model_activity["rewarming"]), started_from=started_from)
 
     transcription_thread.start()
     delivery_thread = threading.Thread(target=delivery_worker, daemon=True)

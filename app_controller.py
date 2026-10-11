@@ -39,7 +39,7 @@ class AppController:
                  use_parakeet: bool, engine_switching: bool, active_engine: str, settings_locked,
                  binding: dict, rebind, restart, language_lock, language_state: dict, save_language_mode,
                  parakeet_cached, persist_engine_and_restart, run_installer, triggers: dict,
-                 trigger_labels: dict, sotto_script: Path, engine, capture, on_finish,
+                 trigger_labels: dict, sotto_script: Path, engine, capture, on_finish, started_from: str = "",
                  start_thread=start_daemon_thread, wait_until_idle=wait_until_idle) -> None:
         self.shutdown = shutdown
         self.lifecycle = lifecycle
@@ -101,6 +101,9 @@ class AppController:
         self.engine = engine
         self.capture = capture
         self.on_finish = on_finish
+        # The commit run() started from: Check for Updates compares the
+        # folder's HEAD with it (a git pull under the running app).
+        self.started_from = started_from
         # Runs an action's slow part off the main thread; tests run it inline.
         self.start_thread = start_thread
         # The update restart's drain (lifecycle.wait_until_idle).
@@ -705,28 +708,37 @@ class AppController:
 
         Side effects: on a background thread, runs git against GitHub and
         logs the result; on the main thread, shows it (offering Update Now
-        to Sotto.app, or the Releases page to a copy without git)."""
+        to Sotto.app, the drained restart when the folder moved past the
+        running code, or the Releases page to a copy without git)."""
         def work() -> None:
             import updates
             from offline_runtime import offline_requested
-            result = updates.check(self.sotto_script.parent, offline=offline_requested())
-            self.log(f"update check: {result.state}" + (f", {result.behind} behind" if result.behind else ""))
+            result = updates.check(self.sotto_script.parent, offline=offline_requested(),
+                                   started_from=self.started_from)
+            stale = result.stale
+            self.log(f"update check: {result.state}" + (f", {result.behind} behind" if result.behind else "")
+                     + (f"; running {stale.running}, files {stale.on_disk}" if stale else "")
+                     + (", packages changed" if stale and stale.packages_changed else ""))
 
             def present() -> None:
-                # [N28] Only Sotto.app updates itself; a terminal run is given the command.
+                # [N28] Only Sotto.app updates or restarts itself; a terminal run is told what to do.
                 manual = ("run scripts/install-mac.sh --update in Terminal from the Sotto folder."
                           if app_mode() else updates.mac_manual_update(self.sotto_script.parent))
                 title, text = updates.describe(result, manual, self_update=app_mode())
-                if result.state == "available" and app_mode():
+                offer = updates.offer(result, self_update=app_mode())
+                if offer == "update":
                     if self.status_ui.ask(title, text, "Update Now", "Later"):
                         self.apply_update()
-                elif result.state == "not-git":
+                elif offer == "restart":
+                    if self.status_ui.ask(title, text, "Restart Now", "Later"):
+                        self.restart_when_idle()
+                elif offer == "releases":
                     if self.status_ui.ask("Download the latest release", result.detail,
                                           "Open Releases Page", "Close"):
                         import AppKit
                         AppKit.NSWorkspace.sharedWorkspace().openURL_(
                             AppKit.NSURL.URLWithString_(updates.RELEASES_URL))
-                elif result.state == "failed":
+                elif offer == "error":
                     self.status_ui.show_error(title, text)
                 else:
                     self.status_ui.show_info(title, text)

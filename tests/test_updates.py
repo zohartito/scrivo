@@ -135,6 +135,180 @@ class RealGitTests(unittest.TestCase):
             self.assertEqual(updates.check(user, offline=False).state, "current")
 
 
+RUNNING, ON_DISK = "c2e7f0f", "3bcf356"
+STALE_NOTE = f"Sotto's files were updated to {ON_DISK}, but the running Sotto is still {RUNNING}."
+NEW_PACKAGES = "The new version needs different packages, so a restart alone is not enough."
+
+
+def stale_result(state="current", *, packages_changed=False, detail="", behind=0):
+    return updates.UpdateCheck(state, detail, behind=behind, version=ON_DISK,
+                               stale=updates.StaleRun(RUNNING, ON_DISK, packages_changed))
+
+
+class StaleRunDialogTests(unittest.TestCase):
+    """2026-10-10: a backup job's `git merge --ff-only` moved the running
+    checkout from c2e7f0f to 3bcf356; Check for Updates compared the disk with
+    GitHub and said "up to date" while the process still ran c2e7f0f."""
+
+    def test_a_moved_checkout_is_never_called_up_to_date(self):
+        for state in ("current", "available", "local-changes", "diverged", "offline", "failed"):
+            for packages_changed in (False, True):
+                for self_update in (True, False):
+                    result = stale_result(state, packages_changed=packages_changed, detail="Why.",
+                                          behind=2 if state == "available" else 0)
+                    title, text = updates.describe(result, "MANUAL", self_update=self_update)
+                    offer = updates.offer(result, self_update=self_update)
+                    case = (state, packages_changed, self_update)
+                    self.assertNotEqual(title, "Sotto is up to date", case)
+                    self.assertTrue(text.startswith(STALE_NOTE), case)
+                    if packages_changed:  # new code on old packages: never the plain restart
+                        self.assertNotEqual(offer, "restart", case)
+                    if not self_update:  # [N28] a terminal run neither restarts nor updates itself
+                        self.assertEqual(offer, "info", case)
+
+    def test_the_same_packages_offer_the_restart(self):
+        result = stale_result()
+        self.assertEqual(updates.offer(result), "restart")
+        self.assertEqual(updates.describe(result, "MANUAL"), (
+            "Finish updating Sotto",
+            f"{STALE_NOTE}\n\nRestart now? A dictation in progress finishes first."))
+
+    def test_new_packages_offer_the_installer_instead_of_a_restart(self):
+        # install-mac.sh --update / update-windows.ps1 install the packages of
+        # @{u}, which is HEAD when the check found nothing newer.
+        result = stale_result(packages_changed=True)
+        self.assertEqual(updates.offer(result), "update")
+        self.assertEqual(updates.describe(result, "MANUAL"), (
+            "Finish updating Sotto",
+            f"{STALE_NOTE} {NEW_PACKAGES}\n\nUpdate now? Sotto installs them, then restarts, "
+            "usually within a minute."))
+
+    def test_new_packages_without_github_name_the_command(self):
+        # Update Now would contact GitHub: not while offline, and not when it
+        # just could not be reached.
+        manual = "run scripts/install-mac.sh --update in Terminal from the Sotto folder."
+        for state, detail in (("offline", "Offline mode is on, so Sotto does not contact GitHub."),
+                              ("failed", "Could not reach GitHub (no network?).")):
+            result = stale_result(state, packages_changed=True, detail=detail)
+            self.assertEqual(updates.offer(result), "info")
+            self.assertEqual(updates.describe(result, manual), (
+                "Finish updating Sotto",
+                f"{STALE_NOTE} {NEW_PACKAGES}\n\n{detail}\n\nQuit Sotto, then run scripts/install-mac.sh "
+                "--update in Terminal from the Sotto folder. Then start Sotto again."))
+        offline_restart = stale_result("offline", detail="Offline mode is on, so Sotto does not contact GitHub.")
+        self.assertEqual(updates.offer(offline_restart), "restart")
+        self.assertEqual(updates.describe(offline_restart, manual)[1],
+                         f"{STALE_NOTE}\n\nOffline mode is on, so Sotto does not contact GitHub.\n\n"
+                         "Restart now? A dictation in progress finishes first.")
+
+    def test_a_terminal_run_is_told_what_to_do(self):
+        command = updates.mac_manual_update(PurePosixPath("/Users/someone/sotto"))
+        self.assertEqual(updates.describe(stale_result(), command, self_update=False), (
+            "Finish updating Sotto",
+            f"{STALE_NOTE}\n\nSotto was started from a terminal, so it does not restart itself. "
+            "Quit it, then start it again."))
+        self.assertEqual(updates.describe(stale_result(packages_changed=True), command, self_update=False), (
+            "Finish updating Sotto",
+            f"{STALE_NOTE} {NEW_PACKAGES}\n\nSotto was started from a terminal, so it does not update "
+            f"itself. Quit it, then run in Terminal:\n{command}\nThen start it again."))
+
+    def test_github_ahead_too_offers_the_update_with_the_note(self):
+        # The update installs @{u}'s packages before it switches the source,
+        # so it covers new packages on the disk commit as well.
+        result = updates.UpdateCheck("available", behind=1, changes=("Add A",), version=ON_DISK,
+                                     stale=updates.StaleRun(RUNNING, ON_DISK, True))
+        self.assertEqual(updates.offer(result), "update")
+        plain = updates.describe(updates.UpdateCheck("available", behind=1, changes=("Add A",)), "MANUAL")
+        self.assertEqual(updates.describe(result, "MANUAL"), (plain[0], f"{STALE_NOTE}\n\n{plain[1]}"))
+        hand = stale_result("diverged", packages_changed=True, detail="This copy has its own commits.")
+        self.assertEqual(updates.offer(hand), "info")
+        self.assertEqual(updates.describe(hand, "MANUAL"), (
+            "Update by hand", f"{STALE_NOTE}\n\nThis copy has its own commits.\n\nTo update anyway: MANUAL"))
+
+    def test_a_moved_checkout_with_its_own_commits_or_edits_still_offers_the_restart(self):
+        # The updater refuses such a copy, but the restart only runs the files
+        # already on disk: with the same packages it is all that is needed.
+        for state, detail in (("diverged", "This copy has its own commits."),
+                              ("local-changes", "This copy has local changes.")):
+            result = stale_result(state, detail=detail)
+            self.assertEqual(updates.offer(result), "restart", state)
+            self.assertEqual(updates.describe(result, "MANUAL"), (
+                "Finish updating Sotto",
+                f"{STALE_NOTE}\n\n{detail}\n\nRestart now? A dictation in progress finishes first."), state)
+            self.assertEqual(updates.offer(result, self_update=False), "info", state)
+            self.assertEqual(updates.describe(result, "MANUAL", self_update=False)[1],
+                             f"{STALE_NOTE}\n\n{detail}\n\nSotto was started from a terminal, so it does not "
+                             "restart itself. Quit it, then start it again.", state)
+
+    def test_without_a_stale_run_the_offers_are_unchanged(self):
+        for state, app, terminal in (("current", "info", "info"), ("available", "update", "info"),
+                                     ("not-git", "releases", "releases"), ("failed", "error", "error"),
+                                     ("offline", "info", "info"), ("local-changes", "info", "info"),
+                                     ("diverged", "info", "info")):
+            result = updates.UpdateCheck(state)
+            self.assertEqual((updates.offer(result), updates.offer(result, self_update=False)),
+                             (app, terminal), state)
+
+
+@unittest.skipUnless(shutil.which("git"), "needs git")
+class StartedFromRealGitTests(unittest.TestCase):
+    """A bare 'GitHub' remote, a publisher clone and the folder Sotto runs from."""
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                               "-c", "init.defaultBranch=main", *args],
+                              cwd=cwd, check=True, capture_output=True, text=True)
+
+    def publish(self, publisher, name, text, message):
+        (publisher / name).write_text(text)
+        self.git(publisher, "add", name)
+        self.git(publisher, "commit", "-m", message)
+        self.git(publisher, "push", "origin", "HEAD:main")
+
+    def test_a_merge_under_a_running_sotto_is_reported(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            remote, publisher, user = base / "remote.git", base / "publisher", base / "user"
+            self.git(base, "init", "--bare", str(remote))
+            self.git(base, "clone", str(remote), str(publisher))
+            for name in updates.PACKAGE_LISTS:
+                (publisher / name).write_text("pin==1\n")
+            self.publish(publisher, "sotto.py", "one\n", "First")
+            self.git(base, "clone", "--branch", "main", str(remote), str(user))
+
+            started = updates.started_from(user)  # once, at launch
+            self.assertEqual(len(started), 40)
+            current = updates.check(user, offline=False, started_from=started)
+            self.assertEqual((current.state, current.stale), ("current", None))
+
+            # The backup job: a code-only change merged under the running app.
+            self.publish(publisher, "sotto.py", "two\n", "Faster startup")
+            self.git(user, "fetch", "--quiet")
+            self.git(user, "merge", "--ff-only", "--quiet", "origin/main")
+            moved = self.git(user, "rev-parse", "HEAD").stdout.strip()
+            result = updates.check(user, offline=False, started_from=started)
+            self.assertEqual(result.state, "current")
+            self.assertEqual(result.stale, updates.StaleRun(started[:7], moved[:7], False))
+            self.assertNotEqual(updates.describe(result, "x")[0], "Sotto is up to date")
+            self.assertEqual(updates.offer(result), "restart")
+
+            # A pin moved too: the plain restart would start new code on old packages.
+            self.publish(publisher, updates.PACKAGE_LISTS[-1], "pin==2\n", "Bump a pin")
+            self.git(user, "pull", "--ff-only", "--quiet")
+            result = updates.check(user, offline=False, started_from=started)
+            self.assertTrue(result.stale.packages_changed)
+            self.assertEqual(updates.offer(result), "update")
+            # Local git only: still reported with offline mode on.
+            offline = updates.check(user, offline=True, started_from=started)
+            self.assertEqual((offline.state, offline.stale), ("offline", result.stale))
+
+    def test_no_commit_is_recorded_outside_a_git_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertEqual(updates.started_from(Path(temporary)), "")
+            result = updates.check(Path(temporary), offline=False, started_from="")
+            self.assertEqual((result.state, result.stale), ("not-git", None))
+
+
 class ApplyMacTests(unittest.TestCase):
     """The installer's update path, and whether it switched the source."""
 
@@ -224,6 +398,22 @@ class WindowsUpdateTests(unittest.TestCase):
         self.assertEqual(len(kwargs_seen), 6)
         for kwargs in kwargs_seen:
             self.assertTrue(kwargs.get("creationflags", 0) & subprocess.CREATE_NO_WINDOW, kwargs)
+
+    def test_the_check_is_given_the_commit_sotto_started_from(self):
+        import offline_runtime
+        import sotto_win
+        seen = []
+
+        def check(root, *, offline, started_from):
+            seen.append((root, offline, started_from))
+            return updates.UpdateCheck("current")
+        started = "c2e7f0f" + "0" * 33
+        with mock.patch.object(updates, "check", check), \
+                mock.patch.object(offline_runtime, "offline_requested", return_value=False):
+            sotto_win.Controller(started_from=started).check_updates()
+            sotto_win.Controller().check_updates()
+        root = Path(sotto_win.__file__).resolve().parent
+        self.assertEqual(seen, [(root, False, started), (root, False, "")])
 
     def test_hand_off_waits_for_quiet_and_reports_once(self):
         import queue

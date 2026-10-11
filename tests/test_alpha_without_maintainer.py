@@ -196,7 +196,7 @@ class AlphaMacTests(unittest.TestCase):
             controller.clear()
             assert world.store.entries(10) == []
             result = updates.UpdateCheck("current", "")
-            with patch.object(updates, "check", lambda root, *, offline: result), \\
+            with patch.object(updates, "check", lambda root, *, offline, started_from: result), \\
                  patch.object(offline_runtime, "offline_requested", return_value=False), \\
                  patch.dict(os.environ, {"SOTTO_LAUNCHER": "terminal"}), patch("AppKit.NSWorkspace"):
                 controller.check_updates()
