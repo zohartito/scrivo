@@ -585,6 +585,7 @@ class FinishAtShutdownTests(unittest.TestCase):
             "uuid": sotto.uuid, "current_speech_config": lambda: "config",
             "pending_deliveries": sotto.PendingDeliveries(), "finishing": sotto.PendingDeliveries(),
             "worker": types.SimpleNamespace(keep_untranscribed=kept.append),
+            "spool": types.SimpleNamespace(submit=lambda *a: None),  # N9b; tests/test_capture_spool.py
         }
         closures(["on_finish", "finish_capture"], namespace)["on_finish"]()
         self.assertEqual(len(kept), 1, "the recording in hand was dropped")

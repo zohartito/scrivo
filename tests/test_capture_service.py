@@ -445,6 +445,7 @@ class FailedMicStartTest(unittest.TestCase):
             "adaptive": False, "status_ui": ui, "ui_call": lambda method, *a: method(*a),
             "log": self.logs.append, "time": self.fast_time, "threading": threading,
             "uuid": uuid, "current_speech_config": lambda: None, "np": np,
+            "spool": types.SimpleNamespace(submit=lambda *a: None),  # N9b; tests/test_capture_spool.py
         }
         names = ["on_start", "on_finish", "finish_capture", "on_discard"]
         if with_handler:

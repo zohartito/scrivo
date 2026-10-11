@@ -59,7 +59,7 @@ import win_capture
 import win_hotkey
 import win_inject
 
-from history import HistoryStore
+from history import CaptureSpool, HistoryStore
 from learning import LearningCoordinator, LearningStore
 
 INSERT_WAIT_S = 120.0  # insert once modifiers are released; after this, History only
@@ -875,9 +875,18 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
     store = HistoryStore(tolerate_unreadable=True)
     learning_store = LearningStore(tolerate_unreadable=True)
     coordinator = sotto.history_coordinator(store, learning_store)
+    # N9b: each finished capture waits on disk until its History row exists;
+    # what a crash, a killed process or a sign-out left there becomes rows now.
+    spool = CaptureSpool(store.base_dir, log=log)
+    spool_waiting = 0
+    if spool.claim():
+        spool_waiting = sotto.recover_capture_spool(spool, store, coordinator, model=model_repo,
+                                                    speech_config=current_speech_config(),
+                                                    glossary_terms=glossary_terms, log=log)
     unreadable_alert = sotto.unreadable_store_alert(store, learning_store)
     if unreadable_alert is not None:
         title, message = unreadable_alert
+        message += sotto.spool_waiting_note(spool_waiting)
         what = "History" if store.unreadable is not None else "Learning set"
         log(f"! {what} unreadable ({store.unreadable or learning_store.unreadable}): {message}")
         if ui is not None:  # a toast truncates this long a message; the box blocks only its thread
@@ -924,7 +933,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         ui.set_state(phase)
 
     def live_job(job) -> None:
-        (_, raw, native_rate, captured_ts, queued_at, _capture_id, job_config, released_at,
+        (_, raw, native_rate, captured_ts, queued_at, capture_id, job_config, released_at,
          copy_only) = job
         # Settings apply per dictation, read here on the worker (never on the
         # keyboard-hook thread).
@@ -955,8 +964,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             log(f"! not pasted ({skip})")
             try:
                 sotto.finalize_primary_live_delivery(
-                    append=lambda: coordinator.append_live(
-                        text, prepared, seconds, model_repo, ts=captured_ts, raw_samples=raw,
+                    append=lambda: append_live(
+                        capture_id, text, prepared, seconds, model_repo, ts=captured_ts, raw_samples=raw,
                         raw_sample_rate=native_rate, provenance="live_suspect",
                         adaptive=False, **attempt_metadata),
                     adaptive_runtime=None, appended_publication=None, shutdown=shutdown,
@@ -1008,7 +1017,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             text, attempt_metadata = sotto.transcribe_prepared(
                 restricted, prepared, job_config, glossary_terms)
         except Exception as exc:
-            keep_failed_capture(exc, prepared, raw, native_rate, captured_ts, job_config,
+            keep_failed_capture(exc, capture_id, prepared, raw, native_rate, captured_ts, job_config,
                                 vad_metadata, preprocessing, queued_at, started)
             return
         # A backend may ignore cancellation: its result is never pasted or
@@ -1043,8 +1052,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             (SCRATCH if voice_action == "scratch" else text, prefs, copy_only, time.monotonic()))
         try:
             appended = sotto.finalize_primary_live_delivery(
-                append=lambda: coordinator.append_live(
-                    text, prepared, prepared_seconds, model_repo, ts=captured_ts,
+                append=lambda: append_live(
+                    capture_id, text, prepared, prepared_seconds, model_repo, ts=captured_ts,
                     raw_samples=raw, raw_sample_rate=native_rate,
                     provenance="live_suspect" if reason else "live", adaptive=False,
                     **attempt_metadata),
@@ -1058,7 +1067,17 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         log(f"→ {attempt_metadata['latency']['release_to_text_seconds']:.2f}s after release "
             f"(speech model {elapsed:.2f}s) · {len(text)} chars")
 
-    def keep_failed_capture(exc, prepared, raw, native_rate, captured_ts, job_config,
+    def append_live(capture_id, *args, **kwargs) -> dict:
+        """coordinator.append_live for a live capture; once History really
+        holds the row, the capture's spooled audio goes (N9b).
+
+        Side effects: one History append; may delete the spool file."""
+        row = coordinator.append_live(*args, **kwargs)
+        if row.get("saved") is not False:  # UnsavedHistory hands back a row it never wrote
+            spool.release(capture_id)
+        return row
+
+    def keep_failed_capture(exc, capture_id, prepared, raw, native_rate, captured_ts, job_config,
                             vad_metadata, preprocessing, queued_at, started) -> None:
         """The speech model raised (CUDA out of memory, a driver error): the
         recording must not be lost.  It is kept as a suspect History row that
@@ -1082,8 +1101,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
                         "asr_seconds": round(time.monotonic() - started, 4)}})
         try:
             row = sotto.finalize_primary_live_delivery(
-                append=lambda: coordinator.append_live(
-                    TRANSCRIPTION_FAILED_TEXT, prepared, prepared_seconds, model_repo,
+                append=lambda: append_live(
+                    capture_id, TRANSCRIPTION_FAILED_TEXT, prepared, prepared_seconds, model_repo,
                     ts=captured_ts, raw_samples=raw, raw_sample_rate=native_rate,
                     provenance="live_suspect", adaptive=False, **attempt_metadata),
                 adaptive_runtime=None, appended_publication=None, shutdown=shutdown,
@@ -1218,6 +1237,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
                 if ui is not None and job[0] in ("live", "retry"):
                     ui.notify("A dictation could not be transcribed; see sotto.log in the data folder.")
             finally:
+                if job[0] == "live" and not shutdown.requested():
+                    spool.release(job[5])  # handled: saved, delivered, or the user told (N9b)
                 jobs.task_done()
                 ui_state()
 
@@ -1280,8 +1301,12 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             seconds = len(raw) / max(capture.native_rate, 1.0)
             log(f"○ {seconds:.2f}s captured")
             if seconds >= 0.25:
+                capture_id = uuid.uuid4().hex
+                # On disk until its History row exists (N9b); the spool's own
+                # thread writes it, never the keyboard hook.
+                spool.submit(capture_id, raw, capture.native_rate, captured_ts)
                 shutdown.enqueue(jobs, ("live", raw, capture.native_rate, captured_ts,
-                                        time.monotonic(), uuid.uuid4().hex,
+                                        time.monotonic(), capture_id,
                                         current_speech_config(), released_at, copy_only))
         finally:
             with finishing_lock:
@@ -1466,6 +1491,9 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             transcription_thread.join(sotto.APP_DRAIN_TIMEOUT)
             if transcription_thread.is_alive():
                 log("  an in-flight transcription was abandoned (never pasted or saved)")
+            # Its audio stays spooled for the next launch (N9b), which may
+            # start before this process exits: let it claim the spool.
+            spool.close()
             # An insertion in progress finishes (under the paste lock) before
             # the clipboard is put back.
             delivery_thread.join(3.0)
