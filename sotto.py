@@ -70,6 +70,12 @@ from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, Ge
 from capture import (HEADPHONE_OUTPUT_TERMINALS, HEADSET_INPUT_TERMINALS, HEADSET_NAME_HINTS,  # noqa: F401
                      IDLE_STOP_S, PREROLL_S, RING_S, SAMPLE_RATE, SILENCE_RESTART_AFTER_S, CaptureService,
                      doctor_input_probe, join_capture_blocks)
+# The trigger/hotkey tables and the event-tap listener live in hotkey.py (it
+# imports nothing from sotto; run() hands it Quartz as an adapter); these
+# names stay importable from sotto for existing callers.
+from hotkey import (ALL_MODIFIERS, KEYCODES, MODIFIER_FLAGS, TRIGGER_LABELS, TRIGGERS,  # noqa: F401
+                    HotkeyListener, hands_free_hint, hotkey_release_held_seconds, parse_hotkey,
+                    trigger_down_in)
 # The menu-bar actions live in app_controller.py (it imports nothing from sotto).
 from app_controller import AppController
 try:  # Keep content-free CLI/admin helpers importable on non-macOS test hosts.
@@ -101,29 +107,6 @@ os.environ["HF_HUB_CACHE"] = str(SOTTO_HF_HOME / "hub")
 # the calling agent to the user agent of every model download.
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
-# trigger name -> (modifier flag mask, virtual keycode, per-side device bit).
-# The NX_DEVICE*KEYMASK bits identify WHICH side of a paired modifier is down —
-# the aggregate mask alone lies when the other side's twin is held. (Verified
-# live on this machine: right-option down -> flags contain 0x40, not 0x20.)
-# CGEventSourceKeyState does NOT track modifier keycodes; never use it here.
-TRIGGERS = {
-    "fn": (Quartz.kCGEventFlagMaskSecondaryFn, 63, 0),
-    "right-cmd": (Quartz.kCGEventFlagMaskCommand, 54, 0x0010),
-    "right-option": (Quartz.kCGEventFlagMaskAlternate, 61, 0x0040),
-    "right-shift": (Quartz.kCGEventFlagMaskShift, 60, 0x0004),
-    "right-ctrl": (Quartz.kCGEventFlagMaskControl, 62, 0x2000),
-    "left-cmd": (Quartz.kCGEventFlagMaskCommand, 55, 0x0008),
-    "left-option": (Quartz.kCGEventFlagMaskAlternate, 58, 0x0020),
-    "left-shift": (Quartz.kCGEventFlagMaskShift, 56, 0x0002),
-    "left-ctrl": (Quartz.kCGEventFlagMaskControl, 59, 0x0001),
-}
-TRIGGER_LABELS = {
-    "right-option": "Right Option ⌥", "left-option": "Left Option ⌥",
-    "right-cmd": "Right Command ⌘", "left-cmd": "Left Command ⌘",
-    "right-ctrl": "Right Control ⌃", "left-ctrl": "Left Control ⌃",
-    "right-shift": "Right Shift ⇧", "left-shift": "Left Shift ⇧", "fn": "Fn / Globe",
-}
-
 
 def glossary_source(explicit: str | None) -> Path | None:
     """--glossary wins; otherwise glossary.txt in the data folder, so Sotto.app
@@ -133,51 +116,6 @@ def glossary_source(explicit: str | None) -> Path | None:
     from sotto_paths import DATA_DIR
     candidate = DATA_DIR / "glossary.txt"
     return candidate if candidate.is_file() else None
-
-
-def hands_free_hint(trigger: str) -> str:
-    """How to end hands-free, short enough for the overlay: "tap right ⌘ to stop"."""
-    if trigger == "fn":
-        return "tap fn to stop"
-    words = TRIGGER_LABELS.get(trigger, trigger).split()
-    return f"tap {words[0].lower()} {words[-1]} to stop"
-
-
-# Toggle hotkey: a NORMAL key plus modifiers. Unlike the bare-modifier
-# trigger, real keycodes survive remote-desktop sessions (AnyDesk from an
-# iPad), and toggle semantics don't depend on release timing over a network.
-KEYCODES = {
-    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8,
-    "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
-    "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45,
-    "m": 46, "space": 49, "f13": 105, "f14": 107, "f15": 113, "f16": 106,
-}
-MODIFIER_FLAGS = {
-    "cmd": Quartz.kCGEventFlagMaskCommand,
-    "ctrl": Quartz.kCGEventFlagMaskControl,
-    "opt": Quartz.kCGEventFlagMaskAlternate,
-    "alt": Quartz.kCGEventFlagMaskAlternate,
-    "shift": Quartz.kCGEventFlagMaskShift,
-}
-ALL_MODIFIERS = (Quartz.kCGEventFlagMaskCommand | Quartz.kCGEventFlagMaskControl
-                 | Quartz.kCGEventFlagMaskAlternate
-                 | Quartz.kCGEventFlagMaskShift)
-
-
-def parse_hotkey(spec: str) -> tuple[int, int] | None:
-    """'ctrl-opt-d' -> (required modifier flags, keycode). None if unparsable."""
-    parts = [p.strip().lower() for p in spec.split("-") if p.strip()]
-    if not parts:
-        return None
-    key = parts[-1]
-    if key not in KEYCODES:
-        return None
-    flags = 0
-    for part in parts[:-1]:
-        if part not in MODIFIER_FLAGS:
-            return None
-        flags |= MODIFIER_FLAGS[part]
-    return flags, KEYCODES[key]
 
 
 def sotto_icon_path() -> Path | None:
@@ -557,34 +495,6 @@ class LocalWhisper:
         elif allowed:
             kwargs["language"] = self.last_language = self.detect_language(samples, allowed)
         return self.backend.transcribe(samples, **kwargs)
-
-
-def trigger_down_in(flags: int, mask: int, device_bit: int) -> bool:
-    """Is the trigger key down according to these event/source flags?"""
-    if not flags & mask:
-        return False
-    return bool(flags & device_bit) if device_bit else True
-
-
-def hotkey_release_held_seconds(state: dict, now: float) -> float | None:
-    """Consume a hotkey key-up only after an accepted matching key-down.
-
-    Key-up events no longer carry reliable modifier flags, so the event tap
-    matches them by keycode alone.  That makes the stored key-down the only
-    authority: without it, a plain/stray D key-up must not finish some other
-    trigger's active recording.  ``None`` also covers a release intentionally
-    consumed after a toggle press already finished the recording.
-    """
-    pressed_at = state.get("pressed_at")
-    if pressed_at is None:
-        state["skip_up"] = False
-        return None
-    state["pressed_at"] = None
-    if state.get("skip_up"):
-        state["skip_up"] = False
-        return None
-    state["skip_up"] = False
-    return max(0.0, now - float(pressed_at))
 
 
 def model_rewarm_due(last_finished: float, now: float, *, rewarming: bool,
@@ -1420,42 +1330,17 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown, capture_gate, end_recording=lambda: end_capture_now(engine, capture, on_finish),
         busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,
                                          warming=bool(model_activity["rewarming"])))
-    hotkey = parse_hotkey(hotkey_spec) if hotkey_spec else None
-    hotkey_state: dict = {"pressed_at": None, "skip_up": False}
-    if hotkey_spec and hotkey is None:
-        log(f"! unrecognized --hotkey '{hotkey_spec}' — hotkey disabled")
-    # One mutable binding so Settings can move the trigger at the next press.
-    binding = {"trigger": trigger, "hotkey_spec": hotkey_spec if hotkey else ""}
-    binding["mask"], binding["keycode"], binding["device_bit"] = TRIGGERS[trigger]
-    trigger_state = {"down": False}
-
-    def trigger_physically_down() -> bool:
-        return trigger_down_in(
-            Quartz.CGEventSourceFlagsState(
-                Quartz.kCGEventSourceStateCombinedSessionState),
-            binding["mask"], binding["device_bit"])
-
-    def rebind(new_trigger: str | None = None, new_hotkey_spec: str | None = None) -> None:
-        """Apply a Settings change to the live listener; drops any held capture."""
-        nonlocal hotkey
-        if new_trigger is not None:
-            binding["mask"], binding["keycode"], binding["device_bit"] = TRIGGERS[new_trigger]
-            binding["trigger"] = new_trigger
-            trigger_state["down"] = False
-            engine.force_reset()
-            log(f"● trigger is now {new_trigger}")
-        if new_hotkey_spec is not None:
-            parsed = parse_hotkey(new_hotkey_spec) if new_hotkey_spec else None
-            hotkey = parsed
-            binding["hotkey_spec"] = new_hotkey_spec if parsed else ""
-            hotkey_state.update(pressed_at=None, skip_up=False)
-            log(f"● alternate hotkey {'is now ' + new_hotkey_spec if parsed else 'off'}")
-
-    def keys_held() -> bool:
-        """Is the trigger or any modifier physically down right now?"""
-        flags = Quartz.CGEventSourceFlagsState(Quartz.kCGEventSourceStateCombinedSessionState)
-        return bool(flags & ALL_MODIFIERS) or trigger_down_in(
-            flags, binding["mask"], binding["device_bit"])
+    # Real key-downs seen by the tap (Sotto's tagged events excluded): typing
+    # after a paste means "scratch that" must not undo it.
+    user_keydowns = {"count": 0}
+    # The event tap (trigger edges, the hotkey, the resync poller); it starts
+    # below, once the worker runs. Quartz is its adapter.
+    hotkeys = HotkeyListener(
+        trigger, hotkey_spec, quartz=Quartz, engine=engine, capture=capture, shutdown=shutdown,
+        is_own_event=is_own_event, user_keydowns=user_keydowns, log=log, status_ui=status_ui,
+        ui_call=ui_call, clock=time.monotonic, sleep=time.sleep)
+    # The listener's mutable binding: Settings moves the trigger at the next press.
+    binding = hotkeys.binding
 
     def insert_text(text: str) -> bool:
         import settings
@@ -1466,14 +1351,10 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         if status_ui is not None:
             ui_call(status_ui.show_info, title, message)
 
-    # Real key-downs seen by the tap (Sotto's tagged events excluded): typing
-    # after a paste means "scratch that" must not undo it.
-    user_keydowns = {"count": 0}
-
     # Finished text and "scratch that" share one FIFO (see DeliveryQueue):
     # capture order is kept, and nothing is posted while a key is held.
     delivery = DeliveryQueue(
-        insert=insert_text, undo_keys=lambda: post_command_key(6), keys_held=keys_held,
+        insert=insert_text, undo_keys=lambda: post_command_key(6), keys_held=hotkeys.keys_held,
         recording=lambda: engine.snapshot()[0], frontmost_pid=frontmost_pid,
         keydowns=lambda: user_keydowns["count"], secure_input=secure_input_active,
         call_after=AppHelper.callAfter, note=delivery_note, shutdown_requested=shutdown.requested,
@@ -1503,7 +1384,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         nonadaptive_revoke_learning=nonadaptive_revoke_learning, save_audio_copy=save_audio_copy,
         adaptive=adaptive, use_nemotron=use_nemotron, use_parakeet=use_parakeet,
         engine_switching=engine_switching, active_engine=active_engine, settings_locked=settings_locked,
-        binding=binding, rebind=rebind, restart=restart, language_lock=language_lock,
+        binding=binding, rebind=hotkeys.rebind, restart=restart, language_lock=language_lock,
         language_state=language_state, save_language_mode=save_language_mode, parakeet_cached=parakeet_cached,
         persist_engine_and_restart=persist_engine_and_restart, run_installer=run_installer, triggers=TRIGGERS,
         trigger_labels=TRIGGER_LABELS, sotto_script=Path(__file__).resolve(), engine=engine, capture=capture,
@@ -1526,143 +1407,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     transcription_thread = threading.Thread(target=worker.run, daemon=True)
     transcription_thread.start()
 
-    tap_watch = {"warned_at": 0.0}
-
-    def revive_tap(reason: str) -> None:
-        """Re-arm the listener and resync the trigger edge it may have missed.
-
-        macOS disables a session tap on callback timeout (with a notification)
-        but also silently — Accessibility churn, display/session changes — and
-        a deaf tap looks exactly like a working one from the outside (2026-09-15:
-        3 hours of dead hotkey, process healthy, tap enabled=False)."""
-        Quartz.CGEventTapEnable(tap, True)
-        current = trigger_physically_down()
-        if trigger_state["down"] and not current:
-            trigger_state["down"] = False
-            engine.released()  # the release edge happened while deaf
-        else:
-            trigger_state["down"] = current
-        if Quartz.CGEventTapIsEnabled(tap):
-            log(f"! event tap re-enabled after {reason}")
-            tap_watch["warned_at"] = 0.0
-            if status_ui is not None:
-                ui_call(status_ui.set_tap_health, True)
-        elif time.monotonic() - tap_watch["warned_at"] > 60:
-            tap_watch["warned_at"] = time.monotonic()
-            log("✗ event tap stays disabled — re-grant Accessibility to Sotto")
-            if status_ui is not None:
-                ui_call(status_ui.set_tap_health, False)
-
-    def callback(_proxy, event_type, event, _refcon):
-        if shutdown.requested():
-            return event
-        if event_type in (Quartz.kCGEventKeyDown, Quartz.kCGEventKeyUp,
-                          Quartz.kCGEventFlagsChanged) and is_own_event(event):
-            return event  # Sotto's own ⌘V / ⌘Z / typing: never a chord, never the user typing
-        if event_type == Quartz.kCGEventKeyDown:
-            code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
-            hotkey_key = hotkey is not None and code == hotkey[1]
-            if not (hotkey_key and (Quartz.CGEventGetFlags(event) & ALL_MODIFIERS) == hotkey[0]):
-                user_keydowns["count"] += 1  # the user typed: "scratch that" is off the table
-            if trigger_state["down"] and not hotkey_key:
-                engine.chorded()  # any other key during a trigger hold makes it a shortcut
-        # Hotkey: hold it and release to stop, or tap it and tap again later.
-        # Normal keys carry real keycodes AND key-up events through remote
-        # desktops, so both gestures survive an AnyDesk session.
-        if hotkey is not None and event_type in (Quartz.kCGEventKeyDown,
-                                                 Quartz.kCGEventKeyUp):
-            want_flags, want_code = hotkey
-            code = Quartz.CGEventGetIntegerValueField(
-                event, Quartz.kCGKeyboardEventKeycode)
-            if code != want_code:
-                return event
-            if event_type == Quartz.kCGEventKeyDown:
-                if Quartz.CGEventGetIntegerValueField(
-                        event, Quartz.kCGKeyboardEventAutorepeat):
-                    return event  # holding the key, not a new press
-                if (Quartz.CGEventGetFlags(event) & ALL_MODIFIERS) != want_flags:
-                    return event
-                if trigger_state["down"]:
-                    engine.chorded()  # the trigger was part of the hotkey chord
-                if engine.snapshot()[0]:
-                    # a tap-started session is running — this press ends it
-                    hotkey_state["pressed_at"] = time.monotonic()
-                    hotkey_state["skip_up"] = True
-                    if engine.force_finish():
-                        log("● finished via hotkey")
-                elif engine.force_start():
-                    hotkey_state["skip_up"] = False
-                    hotkey_state["pressed_at"] = time.monotonic()
-                    log("● dictation started via hotkey")
-            else:  # key up — flags may already be gone, match on keycode alone
-                held = hotkey_release_held_seconds(
-                    hotkey_state, time.monotonic())
-                if (held is not None and held >= HOLD_THRESHOLD_S
-                        and engine.snapshot()[0]):
-                    if engine.force_finish():
-                        log(f"● finished (held {held:.1f}s)")
-                # a short tap leaves the session running until the next press
-            return event
-        if event_type in (Quartz.kCGEventTapDisabledByTimeout,
-                          Quartz.kCGEventTapDisabledByUserInput):
-            revive_tap("system disable")  # never die silently
-            return event
-        if event_type == Quartz.kCGEventFlagsChanged:
-            if Quartz.CGEventGetIntegerValueField(
-                    event, Quartz.kCGKeyboardEventKeycode) == binding["keycode"]:
-                down = trigger_down_in(Quartz.CGEventGetFlags(event),
-                                       binding["mask"], binding["device_bit"])
-                if down != trigger_state["down"]:
-                    trigger_state["down"] = down
-                    (engine.pressed if down else engine.released)()
-            elif trigger_state["down"]:
-                engine.chorded()  # another modifier joined the hold
-        return event
-
-    def resync_poller() -> None:
-        """Escape hatch: if a release edge is ever lost (tap deafness, phantom
-        edges, sleep), a push-to-talk recording whose key is physically up for
-        two consecutive polls gets its release synthesized. Hands-free is
-        exempt — its key is legitimately up while recording."""
-        misses = 0
-        while not shutdown.requested():
-            time.sleep(1.0)
-            if shutdown.requested():
-                break
-            capture.tick()
-            if not Quartz.CGEventTapIsEnabled(tap):
-                # Directly on this thread — NEVER via callAfter. Bouncing to
-                # the main loop was why the 2026-09-15 watchdog never fired
-                # (2026-09-16: tap dead again, zero revive log lines) and
-                # CGEventTapEnable is safe from a background thread.
-                revive_tap("silent disable")
-            recording, hands_free = engine.snapshot()
-            if recording and not hands_free and not trigger_physically_down():
-                misses += 1
-                if misses >= 2:
-                    log("! lost release recovered — finishing recording")
-                    trigger_state["down"] = False
-                    engine.released()
-                    misses = 0
-            else:
-                misses = 0
-
-    tap = Quartz.CGEventTapCreate(
-        Quartz.kCGSessionEventTap, Quartz.kCGHeadInsertEventTap,
-        Quartz.kCGEventTapOptionListenOnly,
-        Quartz.CGEventMaskBit(Quartz.kCGEventFlagsChanged)
-        | Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
-        | Quartz.CGEventMaskBit(Quartz.kCGEventKeyUp), callback, None,
-    )
-    if tap is None:
-        log("failed to create event tap — grant Accessibility to this terminal "
-            "(System Settings → Privacy & Security → Accessibility)")
-        sys.exit(1)
-    source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
-    Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetCurrent(), source,
-                              Quartz.kCFRunLoopCommonModes)
-    Quartz.CGEventTapEnable(tap, True)
-    threading.Thread(target=resync_poller, daemon=True).start()
+    hotkeys.start()
 
     restart_drain = {"deadline": None, "kept": False}
 
@@ -1735,7 +1480,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             # Free native streams/model before Metal's global destructors run.
             nemotron.close()
         try:
-            Quartz.CGEventTapEnable(tap, False)
+            Quartz.CGEventTapEnable(hotkeys.tap, False)
         except Exception:
             pass
         if restart.foreground_pending:
@@ -1786,11 +1531,11 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         # menu actions + system lifecycle hooks
         status_ui.set_history_callbacks(controller.menu_callbacks())
         status_ui.on_wake = lambda: (not shutdown.requested() and
-                                     (engine.force_reset(), Quartz.CGEventTapEnable(tap, True)))
+                                     (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
         controller.refresh_history()
 
     log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
-        + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkey else "")
+        + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
         + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
     try:
         with shutdown_signal_handlers(shutdown):
