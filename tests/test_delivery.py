@@ -6,6 +6,7 @@ Everything runs against fakes: no key event is posted, the real pasteboard is
 never touched, and a virtual clock drives threading.Timer, so nothing sleeps.
 """
 import ast
+import inspect
 import sys
 import threading
 import types
@@ -823,15 +824,12 @@ class RetryCopyCountedTests(unittest.TestCase):
         """The AppController the menu's Copy and the worker's Retry copy go
         through, writing the clipboard with the real set_clipboard_text."""
         self.shutdown = sotto.ShutdownBoundary()
-        return AppController(
-            shutdown=self.shutdown, lifecycle=None, jobs=None,
-            store=types.SimpleNamespace(get=(rows or {}).get), coordinator=None, dependency_guard=None,
-            adaptive_runtime=None, status_ui=None, ui_call=None, deliver_call=deliver_call,
-            pending_deliveries=deliveries, set_clipboard=sotto.set_clipboard_text,
-            current_speech_config=None, log=None, history_keep=0, overlay_learning_state=None,
-            active_learning_history_ids=None, nonadaptive_correct=None, nonadaptive_delete=None,
-            nonadaptive_clear=None, nonadaptive_revoke_learning=None, save_audio_copy=None,
-            start_thread=lambda work: work())
+        parts = dict(shutdown=self.shutdown, store=types.SimpleNamespace(get=(rows or {}).get),
+                     deliver_call=deliver_call, pending_deliveries=deliveries,
+                     set_clipboard=sotto.set_clipboard_text)
+        required = [name for name, parameter in inspect.signature(AppController).parameters.items()
+                    if parameter.kind is parameter.KEYWORD_ONLY and parameter.default is parameter.empty]
+        return AppController(**{name: parts.get(name) for name in required}, start_thread=lambda work: work())
 
     def test_n19_the_retry_copy_finishes_its_pending_delivery(self):
         world = patch_insertion(self)

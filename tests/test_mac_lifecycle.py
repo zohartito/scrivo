@@ -344,18 +344,12 @@ class EngineSwitchTests(unittest.TestCase):
 
         def in_flight(*args, **kwargs):
             return busy_after_close and not gate_open(world.gate)
-        namespace = {
-            "adaptive": False, "engine_switching": True, "active_engine": "whisper",
-            "dictation_in_flight": in_flight, "capture": None, "jobs": None, "pending_deliveries": None,
-            "model_activity": {"rewarming": False}, "parakeet_cached": lambda: True,
-            "persist_engine_and_restart": persist_engine_and_restart,
-            "restart": types.SimpleNamespace(request=None), "status_ui": status_ui,
-            "ui_call": lambda method, *a: method(*a), "lifecycle": world.lifecycle,
-            "capture_gate": world.gate,
-        }
-        if world.lifecycle is not None:
-            world.lifecycle.busy = lambda: in_flight()
-        return closures(["action_set_engine"], namespace)["action_set_engine"]
+        world.lifecycle.busy = lambda: in_flight()
+        return controller(
+            adaptive=False, engine_switching=True, active_engine="whisper", parakeet_cached=lambda: True,
+            persist_engine_and_restart=persist_engine_and_restart,
+            restart=types.SimpleNamespace(request=None), status_ui=status_ui,
+            ui_call=lambda method, *a: method(*a), lifecycle=world.lifecycle).set_engine
 
     def test_the_gate_is_closed_when_the_engine_restart_is_requested(self):
         world = World()
