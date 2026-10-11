@@ -61,11 +61,20 @@ def writer_idle(spool) -> bool:
     return spool._queue.unfinished_tasks == 0
 
 
+_OPEN_SPOOLS: list = []  # closed after each test: Windows cannot delete a folder whose lock file is open
+
+
 def new_spool(base: Path, logs=None):
     from history import CaptureSpool
     spool = CaptureSpool(base, log=(logs.append if logs is not None else lambda line: None))
+    _OPEN_SPOOLS.append(spool)
     assert spool.claim(), "a fresh data folder's spool could not be claimed"
     return spool
+
+
+def close_open_spools():
+    while _OPEN_SPOOLS:
+        _OPEN_SPOOLS.pop().close()
 
 
 def open_history(base: Path, *, tolerate_unreadable=False):
@@ -87,6 +96,7 @@ class TemporaryData(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.base = Path(folder.name) / "data"
         self.base.mkdir()
+        self.addCleanup(close_open_spools)  # runs before the folder cleanup
 
 
 class CaptureSpoolTests(TemporaryData):
@@ -135,6 +145,7 @@ class CaptureSpoolTests(TemporaryData):
         first.submit(uuid.uuid4().hex, speech(1.0), 48000.0, time.time())
         self.assertTrue(wait_for(lambda: writer_idle(first)))
         second = CaptureSpool(self.base, log=lambda line: None)
+        _OPEN_SPOOLS.append(second)
         self.assertFalse(second.claim())
         second.submit(uuid.uuid4().hex, speech(1.0), 48000.0, time.time())
         self.assertEqual(second.leftovers(), [])
@@ -148,6 +159,7 @@ class CaptureSpoolTests(TemporaryData):
         first.close()
         self.assertEqual(len(spooled(self.base)), 1, "close did not wait for the queued write")
         second = CaptureSpool(self.base, log=lambda line: None)
+        _OPEN_SPOOLS.append(second)
         self.assertTrue(second.claim())
         self.assertEqual(len(second.leftovers()), 1)
 
