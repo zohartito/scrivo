@@ -1029,7 +1029,8 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         if not explain_permission(
                 "Sotto needs Accessibility",
                 "Click Open System Settings and turn on Sotto under Privacy & Security → "
-                "Accessibility, so it can hear your dictation key and put text at the cursor. "
+                "Accessibility (called Device Control and Data Access on newer macOS), so it can hear "
+                "your dictation key and put text at the cursor. "
                 "This message closes by itself once it is on.\n\nAlready on? Sotto was rebuilt: "
                 "select it, remove it with −, then add it again with +.",
                 "Privacy_Accessibility",
@@ -1597,7 +1598,8 @@ def doctor() -> None:
             log("✗ input device: no usable audio input in this session "
                 "(microphone permission missing, or headless/SSH context)")
     if not trusted:
-        log("→ System Settings → Privacy & Security → Accessibility → add your terminal")
+        log("→ System Settings → Privacy & Security → Accessibility (Device Control and Data Access on newer "
+            "macOS) → add your terminal")
     if not (trusted and microphone and usable_input):
         sys.exit(1)
 

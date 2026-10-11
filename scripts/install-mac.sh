@@ -188,7 +188,8 @@ cat <<EOF
 
 Done. Open Sotto like any app (Spotlight, Launchpad, or: open -a Sotto).
 The first time, allow "Sotto" to use the Microphone and turn it on under
-System Settings → Privacy & Security → Accessibility. Then hold right Option,
-speak, and release. Choose another key, languages and "Start Sotto when I log
-in" under Settings… in Sotto's menu. Update later with: scripts/install-mac.sh --update
+System Settings → Privacy & Security → Accessibility (newer macOS calls it
+Device Control and Data Access). Then hold right Option, speak, and release.
+Choose another key, languages and "Start Sotto when I log in" under Settings…
+in Sotto's menu. Update later with: scripts/install-mac.sh --update
 EOF
