@@ -50,6 +50,9 @@ import progress
 import settings as user_settings
 import sotto
 import voice_commands
+# The drains and their constants are the Mac's (lifecycle.py); Windows keeps
+# its own gate policy (Restart waits RESTART_DRAIN_CAP_S, Update refuses while busy).
+from lifecycle import DRAIN_POLL_S, QUIT_DRAIN_S, end_capture_now, wait_until_idle
 from offline_runtime import offline_requested
 from sotto_paths import DATA_DIR, MODEL_CACHE_DIR
 from speech_config import (SpeechConfig, automatic_languages, get_profile, load_glossary,
@@ -69,10 +72,8 @@ INSERT_WAIT_S = 120.0  # insert once modifiers are released; after this, History
 # anyway, so a wedged CUDA/CT2 call cannot block recovery for good.
 RESTART_TRANSCRIBE_S = 300.0  # a long CPU dictation transcribes well inside this
 RESTART_DRAIN_CAP_S = sotto.HANDS_FREE_MAX_S + RESTART_TRANSCRIBE_S
-# Quit finishes the dictation in flight, up to this long: the Mac's
-# sotto.QUIT_DRAIN_S, the owner's choice for both.
-QUIT_DRAIN_S = 10.0
-DRAIN_POLL_S = 0.1  # how often a drain checks whether the work in flight is done
+# Quit finishes the dictation in flight up to lifecycle.QUIT_DRAIN_S, the
+# Mac's, the owner's choice for both; a drain re-checks every DRAIN_POLL_S.
 UNREAD_PASTE = "a paste the app has not read yet"  # in_flight()'s words for it
 MIC_FAILED_TEXT = ("Could not start the microphone. Check that no other app holds it and that "
                    "desktop apps may use it (Settings → Privacy & security → Microphone), "
@@ -263,20 +264,6 @@ def restart_command() -> list[str]:
     if script and not Path(script).is_absolute():
         script = str(Path(script).absolute())
     return [str(win_startup.gui_python()), script, *sys.argv[1:]]
-
-
-def drain_until_idle(busy, *, deadline_s: float, clock=time.monotonic,
-                     sleep=time.sleep) -> bool:
-    """Poll until busy() is False (True) or deadline_s has passed (False).
-
-    Side effects: sleeps on the calling thread.
-    """
-    give_up = clock() + deadline_s
-    while busy():
-        if clock() >= give_up:
-            return False
-        sleep(DRAIN_POLL_S)
-    return True
 
 
 def spawn_restart() -> None:
@@ -496,12 +483,7 @@ class Controller:
         Returns "gesture", "orphan" (the capture outlived the gesture engine's
         state and was ended directly) or None when nothing was recording.
         """
-        if self.engine.force_finish(finish=lambda: self.on_finish(copy_only=True)):
-            return "gesture"
-        if self.capture.is_active():
-            self.on_finish(copy_only=True)  # gesture engine desynced; end the capture anyway
-            return "orphan"
-        return None
+        return end_capture_now(self.engine, self.capture, lambda: self.on_finish(copy_only=True))
 
     def recording(self) -> bool:
         return self.engine.snapshot()[0]
@@ -656,9 +638,9 @@ class Controller:
             return "Restarting…"
 
         def when_idle() -> None:
-            idle = drain_until_idle(lambda: self.busy() and not self.shutdown.requested(),
-                                    deadline_s=RESTART_DRAIN_CAP_S,
-                                    clock=self.clock, sleep=self.sleep)
+            idle = wait_until_idle(lambda: self.busy() and not self.shutdown.requested(),
+                                   poll_s=DRAIN_POLL_S, deadline_s=RESTART_DRAIN_CAP_S,
+                                   clock=self.clock, sleep=self.sleep)
             if not self.restart_requested:
                 return  # Quit won
             if idle:
@@ -741,9 +723,9 @@ class Controller:
                 if ended:
                     log(f"● finishing the {'orphan capture' if ended == 'orphan' else 'recording'} "
                         "before quitting (the text is copied)")
-                if not drain_until_idle(lambda: self.busy() and not self.shutdown.requested(),
-                                        deadline_s=QUIT_DRAIN_S, clock=self.clock,
-                                        sleep=self.sleep):
+                if not wait_until_idle(lambda: self.busy() and not self.shutdown.requested(),
+                                       poll_s=DRAIN_POLL_S, deadline_s=QUIT_DRAIN_S,
+                                       clock=self.clock, sleep=self.sleep):
                     log(f"! quitting anyway after {QUIT_DRAIN_S:.0f}s; "
                         f"abandoned: {', '.join(self.in_flight())}")
             except Exception as exc:

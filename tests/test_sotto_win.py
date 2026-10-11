@@ -94,12 +94,16 @@ class DeliveryLogicTest(unittest.TestCase):
             self.assertEqual(win_asr.choose_language(probabilities, allowed),
                              sotto.choose_language(probabilities, allowed), (probabilities, allowed))
 
-    def test_screening_is_the_shared_pipeline_not_a_windows_copy(self):
+    def test_shared_policy_is_imported_not_copied(self):
         # Restructure step 7: live dictation and Retry both call
-        # pipeline.screen (SharedPolicyRunTest pins what they produce);
-        # Windows keeps no screening of its own.
-        for name in ("screen_transcript", "move_detected_language", "TRANSCRIPTION_FAILED_TEXT"):
+        # pipeline.screen (SharedPolicyRunTest pins what they produce), and
+        # the drains are lifecycle's; Windows keeps no copy of its own.
+        import lifecycle
+        for name in ("screen_transcript", "move_detected_language", "TRANSCRIPTION_FAILED_TEXT",
+                     "drain_until_idle"):
             self.assertFalse(hasattr(sotto_win, name), name)
+        for name in ("wait_until_idle", "end_capture_now", "QUIT_DRAIN_S", "DRAIN_POLL_S"):
+            self.assertIs(getattr(sotto_win, name), getattr(lifecycle, name), name)
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
