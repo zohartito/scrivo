@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build a deterministic source-only archive from an explicit public allowlist.
+"""Build a deterministic source-only archive from an explicit public allowlist
+(ALPHA_FILES: the public files without the maintainer lane).
 
 No Git database, environments, state, models, recordings or local audit evidence.
 Run from an inspected candidate: python scripts/build_alpha_source.py OUTPUT.tar.gz
@@ -152,11 +153,33 @@ PUBLIC_FILES = sorted(set(RUNTIME_SOURCE_FILES) | set(PUBLIC_TEST_FILES) | set(W
     '.github/workflows-disabled/README.md', '.github/workflows-disabled/ci.yml.disabled',
 })
 
+# The maintainer lane's own tests, and the calibration fixtures only they read:
+# they import maintainer/, which the archive leaves out. They stay in the repo
+# and in the full suite.
+MAINTAINER_TEST_FILES = (
+    'tests/test_adaptive_learning.py',
+    'tests/test_adaptive_runtime.py',
+    'tests/test_history_learning.py',
+    'tests/test_inference_scheduler.py',
+    'tests/test_offline_backup.py',
+    'tests/test_sealed_release.py',
+    'tests/test_silver_lane.py',
+    'tests/test_speech_backends.py',
+    'tests/test_speech_runtime.py',
+    'tests/test_teacher_backends.py',
+)
+MAINTAINER_PREFIXES = ('maintainer/', 'tests/fixtures/calibration_v2_expected/')
+
+# What the archive ships: the public allowlist without the maintainer lane.
+# The sealed boundary is still all of RUNTIME_SOURCE_FILES, maintainer/ included.
+ALPHA_FILES = [name for name in PUBLIC_FILES
+               if not name.startswith(MAINTAINER_PREFIXES) and name not in MAINTAINER_TEST_FILES]
+
 
 def build(output: Path) -> dict:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode='w', format=tarfile.PAX_FORMAT) as archive:
-        for name in PUBLIC_FILES:
+        for name in ALPHA_FILES:
             source = root / name
             if source.is_symlink() or not source.is_file():
                 raise RuntimeError('Public source file missing or unsafe: ' + name)
@@ -170,7 +193,7 @@ def build(output: Path) -> dict:
     with output.open('wb') as handle:
         with gzip.GzipFile(filename='', mode='wb', fileobj=handle, mtime=0) as zipped:
             zipped.write(buffer.getvalue())
-    return {'files': len(PUBLIC_FILES), 'bytes': output.stat().st_size,
+    return {'files': len(ALPHA_FILES), 'bytes': output.stat().st_size,
             'sha256': hashlib.sha256(output.read_bytes()).hexdigest()}
 
 

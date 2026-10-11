@@ -37,6 +37,8 @@ class RuntimeSourceManifestTests(unittest.TestCase):
                 reordered = source.runtime_source_manifest(root)
             self.assertNotEqual(first["digest"], reordered["digest"])
 
+    @unittest.skipUnless((Path(source.__file__).resolve().parent / "maintainer").is_dir(),
+                         "the maintainer lane is not in this copy (alpha archive)")
     def test_the_sealed_boundary_covers_the_maintainer_package_and_every_local_import(self):
         """No file the sealed lane can run leaves the boundary: every module in
         maintainer/ is listed, and every repo module a listed file imports (at

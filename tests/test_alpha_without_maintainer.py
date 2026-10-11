@@ -9,10 +9,12 @@ those must fail closed when the lane's code is missing.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import unittest
@@ -277,6 +279,7 @@ class AlphaCliTests(unittest.TestCase):
         self.assertEqual(done.returncode, 2, done.stderr[-2000:])
         self.assertIn("maintainer lane", done.stderr)
 
+    @unittest.skipUnless((ROOT / "maintainer").is_dir(), "the maintainer lane is not in this copy (alpha archive)")
     def test_with_the_lane_present_adaptive_run_still_reaches_run(self):
         done = run_alpha("""
             from unittest.mock import patch
@@ -291,6 +294,61 @@ class AlphaCliTests(unittest.TestCase):
         assert_ok(self, done)
         self.assertIn("adaptive run reached", done.stdout)
 
+
+
+def _local_modules(names: set[str]) -> dict[str, str]:
+    """Shipped module name -> archive path, for the archive's .py files."""
+    modules = {}
+    for name in names:
+        if name.endswith(".py"):
+            relative = Path(name)
+            modules[".".join(relative.with_suffix("").parts)] = name
+    return modules
+
+
+class AlphaArchiveTests(unittest.TestCase):
+    def test_the_source_archive_ships_no_maintainer_code_and_imports_none(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            import build_alpha_source
+        finally:
+            sys.path.remove(str(ROOT / "scripts"))
+        with tempfile.TemporaryDirectory(dir=ROOT) as scratch:
+            output = Path(scratch) / "alpha.tar.gz"
+            first = build_alpha_source.build(output)
+            with tarfile.open(output) as archive:
+                names = {member.name.removeprefix("sotto-alpha/") for member in archive.getmembers()}
+                sources = {name: archive.extractfile("sotto-alpha/" + name).read().decode("utf-8")
+                           for name in names if name.endswith(".py")}
+            self.assertEqual(build_alpha_source.build(output)["sha256"], first["sha256"])  # deterministic
+        self.assertEqual(names, set(getattr(build_alpha_source, "ALPHA_FILES", build_alpha_source.PUBLIC_FILES)))
+        shipped_lane = sorted(name for name in names
+                              if name.startswith("maintainer/") or Path(name).stem in MAINTAINER_MODULES)
+        self.assertEqual(shipped_lane, [])
+        modules = _local_modules(names)
+        for name, source in sorted(sources.items()):
+            tree = ast.parse(source)
+            module_level = {id(node) for node in tree.body}
+            for node in ast.walk(tree):
+                for target in _import_targets(node):
+                    head = target.split(".")[0]
+                    # Shipped tests never touch the lane. Shared code reaches it
+                    # only from inside functions (gated); a module-level import
+                    # of a repo module must be shipped too.
+                    if name.startswith("tests/"):
+                        with self.subTest(file=name, imports=target):
+                            self.assertNotIn(head, MAINTAINER_MODULES)
+                    if id(node) in module_level and (head in MAINTAINER_MODULES or (ROOT / f"{head}.py").exists()):
+                        with self.subTest(file=name, module_level_import=target):
+                            self.assertIn(head, modules)
+
+
+def _import_targets(node) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+        return [node.module]
+    return []
 
 
 if __name__ == "__main__":
