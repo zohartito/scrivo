@@ -1,14 +1,15 @@
 """What happens to a finished transcript before anything is delivered.
 
-One path for live dictation and Retry on macOS (Windows calls the same pieces
-through sotto's re-exports):
+One path for live dictation and Retry, on macOS and Windows alike:
 
     raw transcript -> no-speech verdict -> hallucination guard (with
     repetition-loop salvage) -> personal dictionary -> English voice cleanup
 
 `screen()` composes the steps; the pieces stay importable on their own. Pure
 apart from reading the user's dictionary and cleanup settings and an optional
-log callback. Platform modules import from here; nothing here imports them.
+log callback. `finalize_primary_live_delivery()` then orders what follows: the
+History row first, delivery only after it. Platform modules import from here;
+nothing here imports them.
 """
 from __future__ import annotations
 
@@ -17,6 +18,9 @@ import re
 import zlib
 
 NO_SPEECH_TEXT = "[no speech detected]"
+# A live capture whose speech model raised (F4) is kept in History under this
+# text, with its audio, so Retry can transcribe it again.
+TRANSCRIPTION_FAILED_TEXT = "[transcription failed]"
 
 LOOP_MIN_REPEATS = 6        # far past what real speech repeats verbatim
 LOOP_MAX_UNIT_WORDS = 6     # loops cycle a word or a short phrase, not a clause
@@ -138,6 +142,16 @@ def apply_voice_cleanup(text: str, preprocessing: dict, language: str | None) ->
     return cleaned, action
 
 
+def move_detected_language(attempt_metadata: dict, preprocessing: dict) -> None:
+    """Automatic's pick lives in the row's preprocessing, not its attempt metadata.
+
+    Side effects: pops "detected_language" from `attempt_metadata`; sets it in
+    `preprocessing` when there was one."""
+    detected = attempt_metadata.pop("detected_language", None)
+    if detected:
+        preprocessing["detected_language"] = detected
+
+
 @dataclass(frozen=True)
 class Screened:
     """A transcript after the guards. `held` is why it is kept back from
@@ -175,3 +189,30 @@ def screen(text: str, *, seconds: float, speech_fraction: float, language: str |
         text = apply_personal_dictionary(text, receipts, log)
         text, voice_action = apply_voice_cleanup(text, receipts, language)
     return Screened(text, held, voice_action, receipts)
+
+
+def finalize_primary_live_delivery(*, append, adaptive_runtime, appended_publication: dict | None,
+                                  shutdown, inject) -> object | None:
+    """Persist and authorize a primary result before any cursor side effect.
+
+    The caller supplies the already-prepared History append closure.  This
+    narrow seam makes the order testable without a macOS event loop: append,
+    adaptive registration, exact comparator publication acknowledgement, then
+    (only while still live) cursor scheduling. Windows passes no adaptive
+    runtime, so for it this is: append, then deliver unless stopping.
+    """
+    row=append()
+    if adaptive_runtime is not None and row is not None and not shutdown.requested():
+        try:
+            adaptive_runtime.register_live(row)
+            if (appended_publication is not None
+                    and not adaptive_runtime.acknowledge_comparator_publication(appended_publication)):
+                raise RuntimeError("comparator publication unavailable")
+        except Exception:
+            if appended_publication is not None:
+                adaptive_runtime.cancel_comparator_publication(appended_publication)
+                adaptive_runtime.fail_comparator_publication(appended_publication)
+            raise
+    if row is not None and inject is not None and not shutdown.requested():
+        inject()
+    return row

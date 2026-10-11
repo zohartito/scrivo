@@ -119,5 +119,60 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(voice_commands.SCRATCH_WINDOW_S, 60.0)
 
 
+class LastInsertTests(unittest.TestCase):
+    """The "scratch that" rule the Mac's DeliveryQueue and Windows share."""
+
+    def reads(self, target, keydowns, read):
+        def read_target():
+            read.append("target")
+            return target
+
+        def read_keydowns():
+            read.append("keydowns")
+            return keydowns
+        return read_target, read_keydowns
+
+    def refusal(self, last, *, now, target, keydowns, read=None):
+        read = [] if read is None else read
+        read_target, read_keydowns = self.reads(target, keydowns, read)
+        return last.refusal(now=now, target=read_target, keydowns=read_keydowns)
+
+    def test_only_a_recent_insert_into_the_same_target_with_no_typing_may_be_undone(self):
+        last = voice_commands.LastInsert("window")
+        self.assertEqual(self.refusal(last, now=5.0, target=(1, 2), keydowns=0), "nothing recent to undo")
+        last.record(at=10.0, target=(1, 2), keydowns=3)
+        window = voice_commands.SCRATCH_WINDOW_S
+        cases = [
+            (10.0 + window, (1, 2), 3, None),  # the last moment of the window still counts
+            (10.0 + window + 0.01, (1, 2), 3, "nothing recent to undo"),
+            (11.0, None, 3, "the window in front is unknown — nothing undone"),
+            (11.0, (9, 9), 3, "the dictation went to another window — nothing undone"),
+            (11.0, (1, 2), 4, "you typed since the dictation — nothing undone"),
+        ]
+        for now, target, keydowns, expected in cases:
+            self.assertEqual(self.refusal(last, now=now, target=target, keydowns=keydowns), expected,
+                             (now, target, keydowns))
+        last.forget()
+        self.assertEqual(self.refusal(last, now=11.0, target=(1, 2), keydowns=3), "nothing recent to undo")
+
+    def test_an_insert_into_an_unknown_target_can_never_be_undone(self):
+        last = voice_commands.LastInsert()  # the Mac names its target an app
+        last.record(at=0.0, target=None, keydowns=0)
+        self.assertEqual(self.refusal(last, now=1.0, target=None, keydowns=0),
+                         "the app in front is unknown — nothing undone")
+
+    def test_the_platform_is_asked_only_as_far_as_the_rules_get(self):
+        last = voice_commands.LastInsert()
+        read: list = []
+        self.refusal(last, now=1.0, target=7, keydowns=0, read=read)
+        self.assertEqual(read, [], "nothing recorded: no platform read")
+        last.record(at=0.0, target=7, keydowns=0)
+        self.refusal(last, now=1.0, target=8, keydowns=0, read=read)
+        self.assertEqual(read, ["target"], "another app: the key count is not read")
+        read.clear()
+        self.assertIsNone(self.refusal(last, now=1.0, target=7, keydowns=0, read=read))
+        self.assertEqual(read, ["target", "keydowns"])
+
+
 if __name__ == "__main__":
     unittest.main()

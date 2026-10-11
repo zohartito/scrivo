@@ -328,9 +328,13 @@ def end_capture_now(engine, capture, on_finish) -> str | None:
     Returns "gesture" when the gesture engine ended it, "orphan" when the
     capture outlived the engine's state (a gesture callback raised after the
     mic started) and was ended directly, or None when nothing was recording.
+    ``on_finish`` ends it either way (for a gesture the engine runs it, maybe
+    later on its drain thread): the Mac passes the engine's own on_finish,
+    Windows a finish that copies instead of inserting (a tray action took the
+    focus).
     Side effects: may stop the capture and queue it for transcription.
     """
-    if engine.force_finish():
+    if engine.force_finish(finish=on_finish):
         return "gesture"
     if capture.is_active():
         on_finish()

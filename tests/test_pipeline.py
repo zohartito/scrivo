@@ -133,5 +133,22 @@ class MovedFunctionsTests(unittest.TestCase):
             self.assertIs(getattr(sotto, name), getattr(pipeline, name))
 
 
+class SharedWithWindowsTests(unittest.TestCase):
+    """Small rules both apps' live and Retry paths share (restructure step 7)."""
+
+    def test_detected_language_moves_into_preprocessing(self):
+        metadata, preprocessing = {"detected_language": "pt", "profile": "auto"}, {}
+        pipeline.move_detected_language(metadata, preprocessing)
+        self.assertEqual((metadata, preprocessing), ({"profile": "auto"}, {"detected_language": "pt"}))
+        metadata, preprocessing = {"detected_language": None, "profile": "en"}, {}
+        pipeline.move_detected_language(metadata, preprocessing)
+        self.assertEqual((metadata, preprocessing), ({"profile": "en"}, {}))
+
+    def test_a_failed_transcription_keeps_one_marker_text(self):
+        import transcription
+        self.assertEqual(pipeline.TRANSCRIPTION_FAILED_TEXT, "[transcription failed]")
+        self.assertIs(transcription.TRANSCRIPTION_FAILED_TEXT, pipeline.TRANSCRIPTION_FAILED_TEXT)
+
+
 if __name__ == "__main__":
     unittest.main()

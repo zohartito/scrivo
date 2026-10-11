@@ -137,5 +137,36 @@ class InFlightTests(unittest.TestCase):
         self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries))
 
 
+
+class DrainHelperTests(unittest.TestCase):
+    """The drain pieces Windows' Quit and Restart reuse (restructure step 7)."""
+
+    def test_a_drain_polls_until_idle_or_gives_up_at_its_deadline(self):
+        now = [0.0]
+
+        def sleep(seconds):
+            now[0] += seconds
+        self.assertTrue(sotto.wait_until_idle(lambda: now[0] < 0.6, poll_s=0.25, deadline_s=1.0,
+                                              clock=lambda: now[0], sleep=sleep))
+        self.assertEqual(now[0], 0.75)
+        now[0] = 0.0
+        self.assertFalse(sotto.wait_until_idle(lambda: True, poll_s=0.25, deadline_s=1.0,
+                                               clock=lambda: now[0], sleep=sleep))
+        self.assertEqual(now[0], 1.0)
+
+    def test_ending_a_gesture_runs_the_finish_it_was_handed(self):
+        # Windows hands a finish that copies instead of inserting; the Mac
+        # hands the engine's own on_finish.
+        from gestures import GestureEngine
+        engine_finishes, handed = [], []
+        engine = GestureEngine(lambda: None, lambda: engine_finishes.append(1), lambda: None)
+        engine.force_start()
+        capture = types.SimpleNamespace(is_active=lambda: True)
+        self.assertEqual(sotto.end_capture_now(engine, capture, lambda: handed.append("copy")), "gesture")
+        self.assertEqual((handed, engine_finishes), (["copy"], []))
+        self.assertEqual(sotto.end_capture_now(engine, capture, lambda: handed.append("orphan")), "orphan")
+        self.assertEqual(handed, ["copy", "orphan"])
+
+
 if __name__ == "__main__":
     unittest.main()
