@@ -42,6 +42,7 @@ RUNTIME_SOURCE_FILES = (
     "transcription.py",
     "sotto_log.py",
     "delivery.py",
+    "lifecycle.py",
     "launchd_templates.py",
     "audio_codec.py",
     "comparator_spool.py",

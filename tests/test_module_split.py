@@ -23,10 +23,19 @@ MOVED = {
         "character_before_caret", "compose_insertion", "flush_clipboard_restore", "frontmost_pid",
         "inject", "is_own_event", "own_window_without_text_field", "post_command_key", "post_own_event",
         "secure_input_active", "set_clipboard_text", "type_text"),
+    "lifecycle": (
+        "APP_DRAIN_TIMEOUT", "APP_RELAUNCH_SCRIPT", "DRAIN_POLL_S", "LAUNCHD_EXIT_TIMEOUT_S",
+        "LAUNCHD_LABEL", "QUIT_DRAIN_S", "RESTART_DRAIN_DEADLINE_S", "RESTART_FAILED_EXIT",
+        "RESTART_RELEASE_WAIT_S", "SIGTERM_DRAIN_S", "SIGTERM_KEEP_RESERVE_S", "SIGTERM_RESTORE_WAIT_S",
+        "CaptureGate", "Lifecycle", "RestartController", "ShutdownBoundary", "app_mode",
+        "commit_if_running", "dictation_in_flight", "end_capture_now", "launchd_owns_this_process",
+        "launched_as_sealed_job", "main_thread_dispatch", "relaunch_app_after_exit",
+        "shutdown_signal_handlers", "wait_until_idle"),
 }
 NOT_REEXPORTED = {
     "sotto_log": ("_app_log", "_app_log_lock", "_point_output_at", "_rotate_if_large"),
     "delivery": ("_pending_restore", "_restore_generation", "_secure_input_probe", "_restore_clipboard"),
+    "lifecycle": (),
 }
 
 

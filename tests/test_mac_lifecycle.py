@@ -21,6 +21,7 @@ from unittest.mock import patch
 if sys.platform != "darwin":
     raise unittest.SkipTest("the Mac app lifecycle — macOS-only")
 
+import lifecycle
 import sotto
 
 WAIT_S = 5.0
@@ -553,8 +554,8 @@ class RelaunchTests(unittest.TestCase):
     silent success that would end in exit 0."""
 
     def test_a_relaunch_helper_that_cannot_start_raises(self):
-        with patch.object(sotto, "launchd_owns_this_process", return_value=False), \
-             patch.object(sotto, "launched_as_sealed_job", return_value=False):
+        with patch.object(lifecycle, "launchd_owns_this_process", return_value=False), \
+             patch.object(lifecycle, "launched_as_sealed_job", return_value=False):
             restart = sotto.RestartController(sotto.ShutdownBoundary())
         env = {"SOTTO_LAUNCHER": "app", "SOTTO_APP_EXECUTABLE": "/Applications/Sotto.app/Contents/MacOS/Sotto"}
         with patch.dict(os.environ, env), patch("os.execv") as execute, \

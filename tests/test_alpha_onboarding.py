@@ -14,6 +14,7 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
+import lifecycle
 import sotto
 import sotto_log
 from launchd_templates import render
@@ -34,8 +35,8 @@ class _Immediate:
 
 
 def controller(*, managed=False, sealed=False, argv=('sotto.py', 'run')):
-    with patch.object(sotto, 'launchd_owns_this_process', return_value=managed), \
-         patch.object(sotto, 'launched_as_sealed_job', return_value=sealed), \
+    with patch.object(lifecycle, 'launchd_owns_this_process', return_value=managed), \
+         patch.object(lifecycle, 'launched_as_sealed_job', return_value=sealed), \
          patch.object(sys, 'argv', list(argv)):
         return sotto.RestartController(sotto.ShutdownBoundary())
 
