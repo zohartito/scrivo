@@ -353,7 +353,7 @@ class AdaptiveLearning:
         # Use the same semantic projection as persisted receipts.  In
         # particular, local snapshot/cache paths and runtime provenance are
         # transport details, not a new statistical comparison.
-        from speech_backends import _public_manifest
+        from maintainer.speech_backends import _public_manifest
         def semantic(manifest: dict[str, Any]) -> dict[str, Any]:
             result = _public_manifest(manifest)
             result["development_dependency_digests"] = sorted(manifest.get("development_dependency_digests", ()))
@@ -607,7 +607,7 @@ class AdaptiveLearning:
         with self._locked():
             state = self._read(); g = state["generations"][generation_id]
             if g["status"] not in {"pool_closed", "evaluating"}: raise RuntimeError("generation not evaluable")
-            from speech_backends import evaluator_hash
+            from maintainer.speech_backends import evaluator_hash
             if g.get("evaluator_hash") != evaluator_hash():
                 return self._technical_abort_locked(state, g, "evaluator_hash_current_mismatch")
             if g["champion"].get("evaluator_id") != PAIRED_EVALUATOR_ID: return self._technical_abort_locked(state, g, "evaluator_mismatch")
@@ -973,7 +973,7 @@ class AdaptiveLearning:
         """Stable deployment identity, excluding paths and mutable bookkeeping."""
         if not manifest:
             return None
-        from speech_backends import _public_manifest
+        from maintainer.speech_backends import _public_manifest
         return json.dumps(_public_manifest(manifest), sort_keys=True, separators=(",", ":"))
 
     @staticmethod

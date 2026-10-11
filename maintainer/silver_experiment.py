@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from evaluation import PairedPromotionRow, holm_fixed_family, paired_bootstrap_statistics
 from history import _atomic_jsonl
-from silver_store import SilverStore
+from maintainer.silver_store import SilverStore
 from storage_lock import advisory_lock, ensure_private_directory, ensure_private_file
 
 def _p95(values: list[float]) -> float:

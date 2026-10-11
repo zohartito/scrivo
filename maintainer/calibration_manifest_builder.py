@@ -7,7 +7,7 @@ from typing import Any
 
 from storage_lock import ensure_private_directory, advisory_lock
 from audio_codec import encode_canonical, write_canonical_wav
-from teacher_consensus import normalized_tokens, normalization_preserves_words, policy_hash
+from maintainer.teacher_consensus import normalized_tokens, normalization_preserves_words, policy_hash
 
 VOX_REVISION = "42f01879c780b4a2e90ec0b4f616c2ece526e4f1"
 TEST_SHA256 = "02cc7290425ddb95beeabda1d1e81e5e068cd7a25380bcf1fb69071b62610ffa"
@@ -20,7 +20,8 @@ MEMBERSHIP_HASH = "889de30c36dbce19e2c8a9679cd78bd4eb7c03bc9497cc06930641a4f26be
 LEDGER_HASH = "7e9a3d8e83052cbb4290df47d2f76646500aec3e0256bebf93240a41010dfa3a"
 SPLIT_COUNTS = {"test": 401, "validation": 99}
 READER_IDENTITY = {"python":"3.11.7","unicode":"14.0.0","pyarrow":"23.0.1","numpy":"2.0.2"}
-PROTOCOL_FILES=("calibration_manifest_builder.py","calibration_worker.py","teacher_consensus.py","audio_codec.py","teacher_backends.py","silver_store.py")
+# Repo-relative: the lane's files live in maintainer/, audio_codec.py is shared.
+PROTOCOL_FILES=("maintainer/calibration_manifest_builder.py","maintainer/calibration_worker.py","maintainer/teacher_consensus.py","audio_codec.py","maintainer/teacher_backends.py","maintainer/silver_store.py")
 
 def reader_runtime_identity() -> dict[str,str]:
     """Content-free identity for the pinned parquet-reader semantics."""
@@ -108,7 +109,7 @@ def _protocol_hash() -> str:
     return protocol_bundle_identity()["digest"]
 
 def protocol_bundle_identity() -> dict[str,Any]:
-    root=Path(__file__).parent; seen=set(); entries=[]
+    root=Path(__file__).parent.parent; seen=set(); entries=[]
     for name in PROTOCOL_FILES:
         path=Path(name)
         if path.is_absolute() or ".." in path.parts or name in seen: raise RuntimeError("unsafe protocol source")
@@ -133,7 +134,7 @@ def _write_protocol_bundle(bundle_dir: Path, identity: dict | None = None) -> di
         raise RuntimeError("protocol bundle identity mismatch")
     try:
         bundle_dir.mkdir(mode=0o700); os.chmod(bundle_dir,0o700)
-        root=Path(__file__).parent
+        root=Path(__file__).parent.parent
         for entry in identity["files"]:
             name=entry["path"]; relative=Path(name)
             if relative.is_absolute() or ".." in relative.parts: raise RuntimeError("unsafe protocol source")
@@ -248,8 +249,10 @@ def derive_plan_with_reader(test_parquet: Path, validation_parquet: Path, reader
     if not reader.is_absolute() or reader.is_symlink() or not reader.is_file() or not os.access(reader,os.X_OK): raise RuntimeError("unsafe parquet reader interpreter")
     root=Path(tempfile.mkdtemp(prefix="sotto-calibration-reader-")); os.chmod(root,0o700); bundle=root/"bundle"
     try:
-        command=[str(reader),str(Path(__file__).resolve()),"--reader-helper","--test-parquet",str(test_parquet),"--validation-parquet",str(validation_parquet),"--bundle",str(bundle)]
-        done=subprocess.run(command,shell=False,check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=120)
+        # Run as a module from the repo root, so the helper imports the same
+        # top-level and maintainer modules a script run beside them used to.
+        command=[str(reader),"-m","maintainer.calibration_manifest_builder","--reader-helper","--test-parquet",str(test_parquet),"--validation-parquet",str(validation_parquet),"--bundle",str(bundle)]
+        done=subprocess.run(command,shell=False,check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=120,cwd=str(Path(__file__).resolve().parent.parent))
         if done.returncode != 0: raise RuntimeError("pinned parquet reader failed")
         plan=bundle/"plan.json"
         if plan.is_symlink() or not plan.is_file(): raise RuntimeError("reader plan missing")

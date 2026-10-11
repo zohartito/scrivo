@@ -21,22 +21,22 @@ import sys
 if sys.platform != "darwin":
     raise unittest.SkipTest("adaptive lane is macOS-only in v1 (fcntl)")
 
-from adaptive_worker import AdaptiveWorker, sealed_readiness_status
-from adaptive_runtime import AdaptiveRuntime
+from maintainer.adaptive_worker import AdaptiveWorker, sealed_readiness_status
+from maintainer.adaptive_runtime import AdaptiveRuntime
 from adaptive_learning import AdaptiveLearning
-from deployment_controller import DeploymentController
-from silver_experiment import SilverExperiment
+from maintainer.deployment_controller import DeploymentController
+from maintainer.silver_experiment import SilverExperiment
 from history import _atomic_jsonl
 from history import HistoryStore
 from learning import LearningCoordinator, scrub_comparator_spools
-from silver_store import SilverStore, read_only_status
-from teacher_consensus import exact_unanimous
-from teacher_consensus import policy_hash
-from teacher_backends import family_hash
-from teacher_backends import TeacherPreempted
-from inference_scheduler import InferenceScheduler
-from speech_backends import WHISPER_ID
-from calibration_manifest_builder import derive_plan_with_reader, SOURCE_HASH, _protocol_hash, LEDGER_HASH
+from maintainer.silver_store import SilverStore, read_only_status
+from maintainer.teacher_consensus import exact_unanimous
+from maintainer.teacher_consensus import policy_hash
+from maintainer.teacher_backends import family_hash
+from maintainer.teacher_backends import TeacherPreempted
+from maintainer.inference_scheduler import InferenceScheduler
+from maintainer.speech_backends import WHISPER_ID
+from maintainer.calibration_manifest_builder import derive_plan_with_reader, SOURCE_HASH, _protocol_hash, LEDGER_HASH
 
 
 def _compiled_v2_expected() -> list[dict[str, str]]:
@@ -287,7 +287,7 @@ class SilverLaneTests(unittest.TestCase):
         meta={"accepted":200,"raw":300,"words":2000,"sessions":20,"days":7,"all_terminal":True,
               "coverage_frozen":True,"paired_gates":True,"identity_hash":horizon["identity_hash"],"winner":"candidate",
               "teacher_receipt_hash":"receipt","teacher_policy_hash":policy_hash(),"evaluator_hash":"e","evaluation_outcome":outcome}
-        from calibration_manifest_builder import SOURCE_HASH, _protocol_hash
+        from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash
         with store._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("INSERT INTO cohorts VALUES(?,?,?,?,?,?,?,?)",(cohort,"personal_horizon","evaluated_passed","m","c",__import__("json").dumps(meta),store.epoch(),0))
@@ -372,7 +372,7 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_calibration_v2_plan_is_immutable_and_claims_are_unique(self):
         store=SilverStore(self.root)
-        from calibration_manifest_builder import SOURCE_HASH, _protocol_hash
+        from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash
         expected=[{"item_hash":"i%03d"%i,"cluster_hash":"c%03d"%(i if i < 339 else i-339)} for i in range(500)]
         with self.assertRaises(RuntimeError):
             store.begin_calibration_v2(holdout_key="forged",manifest_hash="manifest",source_hash="forged",protocol_hash="forged",policy_hash="forged",receipt_hash="receipt",expected=expected)
@@ -384,7 +384,7 @@ class SilverLaneTests(unittest.TestCase):
             store.begin_calibration_v2(holdout_key=SOURCE_HASH,manifest_hash="manifest",source_hash=SOURCE_HASH,protocol_hash=_protocol_hash(),policy_hash=policy_hash(),receipt_hash="receipt",expected=changed)
 
     def test_reader_identity_rotates_protocol_and_rejects_mismatched_bundle(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         original=builder._protocol_hash()
         with mock.patch.object(builder,"READER_IDENTITY",{**builder.READER_IDENTITY,"unicode":"bogus"}):
             self.assertNotEqual(original,builder._protocol_hash())
@@ -403,8 +403,27 @@ class SilverLaneTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,"reader bundle identity invalid"):
                     builder.derive_plan_with_reader(self.root / "a",self.root / "b",Path("/bin/echo"))
 
+    def test_reader_helper_command_starts_from_the_repo_root(self):
+        """The reader re-runs this module out of maintainer/; it must still
+        import the shared top-level modules (a script run from maintainer/
+        stops at ModuleNotFoundError: storage_lock)."""
+        import subprocess
+        from maintainer import calibration_manifest_builder as builder
+        calls=[]
+        def run(command,**kwargs):
+            calls.append((command,kwargs)); return type("R",(),{"returncode":1})()
+        with mock.patch.object(builder,"_sha",side_effect=[builder.TEST_SHA256,builder.VALIDATION_SHA256]), \
+             mock.patch.object(builder.subprocess,"run",side_effect=run):
+            with self.assertRaisesRegex(RuntimeError,"pinned parquet reader failed"):
+                builder.derive_plan_with_reader(self.root / "a",self.root / "b",Path(sys.executable))
+        (command,kwargs),=calls
+        done=subprocess.run([sys.executable,*command[1:]],cwd=kwargs["cwd"],capture_output=True,text=True,timeout=60)
+        self.assertNotEqual(done.returncode,0)
+        self.assertNotIn("ModuleNotFoundError",done.stderr)
+        self.assertIn("FileNotFoundError",done.stderr.strip().splitlines()[-1])  # past its imports, at the parquet
+
     def test_reader_bundle_rejects_unknown_schema_field_with_valid_digest(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         body={"schema":1,"runtime":dict(builder.READER_IDENTITY),"entries":[],"unexpected":True}
         payload={**body,"digest":hashlib.sha256(json.dumps(body,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()}
         root=self.root / "reader-schema"; root.mkdir(mode=0o700); bundle=root / "bundle"; bundle.mkdir()
@@ -416,14 +435,14 @@ class SilverLaneTests(unittest.TestCase):
                 builder.derive_plan_with_reader(self.root / "a",self.root / "b",Path("/bin/echo"))
 
     def test_canonical_wav_memory_hash_matches_written_artifact(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         from audio_codec import write_canonical_wav
         pcm=(np.array([0,.25,-.25],dtype="<f4")*32767).astype("<i2").tobytes()
         path=self.root / "sample.wav"; write_canonical_wav(path,pcm)
         self.assertEqual(builder._canonical_wav_sha256(pcm),hashlib.sha256(path.read_bytes()).hexdigest())
 
     def test_builder_compiled_mismatch_creates_no_output(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         pcm=(np.zeros(8000,dtype="<i2")).tobytes(); output=self.root / "calibration-output"
         with mock.patch.object(builder,"derive_plan_with_reader",return_value=[("a","speaker","test",pcm,"reference")]):
             with self.assertRaises(RuntimeError): builder.build(self.root / "test",self.root / "validation",output,pyarrow_python="reader")
@@ -431,8 +450,8 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_builder_exact_source_publishes_loadable_private_manifest(self):
         """The pinned reader can publish and reload V2 without teachers."""
-        import calibration_manifest_builder as builder
-        from calibration_worker import load_manifest
+        from maintainer import calibration_manifest_builder as builder
+        from maintainer.calibration_worker import load_manifest
         reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
         test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
         validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
@@ -452,7 +471,7 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_builder_exact_source_bundle_failure_cleans_stage_and_preserves_target(self):
         """A post-audio bundle failure never publishes or overwrites output."""
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
         test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
         validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
@@ -474,8 +493,8 @@ class SilverLaneTests(unittest.TestCase):
         self.assertEqual(sentinel.read_text("utf-8"),"preserve")
 
     def test_worker_rejects_source_plan_mismatch_before_store_or_teacher(self):
-        import calibration_manifest_builder as builder
-        import calibration_worker as worker
+        from maintainer import calibration_manifest_builder as builder
+        from maintainer import calibration_worker as worker
         reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
         test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
         validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
@@ -493,8 +512,8 @@ class SilverLaneTests(unittest.TestCase):
                 worker.run(self.root,manifest,test_parquet=test,validation_parquet=validation,pyarrow_python=reader)
 
     def test_worker_releases_lease_without_terminal_on_mid_item_receipt_rotation(self):
-        import calibration_manifest_builder as builder
-        import calibration_worker as worker
+        from maintainer import calibration_manifest_builder as builder
+        from maintainer import calibration_worker as worker
         reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
         test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
         validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
@@ -573,18 +592,18 @@ class SilverLaneTests(unittest.TestCase):
         self.assertNotIn("stats",finished[0][1])
 
     def test_protocol_bundle_identity_matches_ordered_regular_sources(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         identity=builder.protocol_bundle_identity(); body=dict(identity); digest=body.pop("digest")
         self.assertEqual([entry["path"] for entry in identity["files"]],list(builder.PROTOCOL_FILES))
         for entry in identity["files"]:
-            path=Path(builder.__file__).parent / entry["path"]
+            path=Path(builder.__file__).parent.parent / entry["path"]
             self.assertTrue(path.is_file() and not path.is_symlink())
             self.assertEqual(entry["size"],path.stat().st_size)
             self.assertEqual(entry["sha256"],hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(digest,hashlib.sha256(json.dumps(body,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest())
 
     def test_protocol_bundle_identity_rotates_for_reader_and_app_runtime(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         baseline=builder.protocol_bundle_identity(); baseline_hash=builder._protocol_hash()
         with mock.patch.object(builder,"READER_IDENTITY",{**builder.READER_IDENTITY,"unicode":"14.0.1"}):
             self.assertNotEqual(builder.protocol_bundle_identity()["digest"],baseline["digest"])
@@ -602,16 +621,16 @@ class SilverLaneTests(unittest.TestCase):
         self.assertEqual(builder._protocol_hash(),baseline_hash)
 
     def test_write_protocol_bundle_copies_identity_bytes_privately(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         target=self.root / "protocol"; identity=builder._write_protocol_bundle(target)
         self.assertEqual(json.loads((target / "metadata.json").read_text()),identity)
         self.assertEqual(stat.S_IMODE(target.stat().st_mode),0o700)
         for entry in identity["files"]:
-            copied=target / entry["path"]; source=Path(builder.__file__).parent / entry["path"]
+            copied=target / entry["path"]; source=Path(builder.__file__).parent.parent / entry["path"]
             self.assertEqual(copied.read_bytes(),source.read_bytes()); self.assertEqual(stat.S_IMODE(copied.stat().st_mode),0o600)
 
     def test_write_protocol_bundle_rejects_mismatch_and_preserves_existing_target(self):
-        import calibration_manifest_builder as builder
+        from maintainer import calibration_manifest_builder as builder
         identity=builder.protocol_bundle_identity(); bad=json.loads(json.dumps(identity)); bad["files"][0]["sha256"]="0"*64
         target=self.root / "bad-protocol"
         with self.assertRaises(RuntimeError): builder._write_protocol_bundle(target,bad)
@@ -621,8 +640,8 @@ class SilverLaneTests(unittest.TestCase):
         self.assertEqual(sentinel.read_text(),"keep")
 
     def test_worker_protocol_bundle_loader_rejects_tamper(self):
-        import calibration_manifest_builder as builder
-        from calibration_worker import _load_protocol_bundle
+        from maintainer import calibration_manifest_builder as builder
+        from maintainer.calibration_worker import _load_protocol_bundle
         manifest=self.root / "manifest.json"; manifest.write_text("{}")
         identity=builder._write_protocol_bundle(self.root / "protocol")
         value={"schema":1,"path":"protocol/metadata.json","digest":identity["digest"]}
@@ -633,7 +652,7 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_immutable_observed_wav_survives_manifest_source_mutation(self):
         from audio_codec import read_canonical_wav, write_canonical_wav
-        from calibration_worker import _immutable_observed_wav, _verify_observed_wav
+        from maintainer.calibration_worker import _immutable_observed_wav, _verify_observed_wav
         source_dir=self.root / "manifest-audio"; source_dir.mkdir()
         source=source_dir / "source.wav"; pcm=(np.arange(32,dtype="<i2")-16).tobytes()
         write_canonical_wav(source,pcm)
@@ -651,8 +670,8 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_collect_observed_answers_uses_one_private_wav_for_all_teachers(self):
         from audio_codec import read_canonical_wav, write_canonical_wav
-        from calibration_worker import _collect_observed_answers
-        from teacher_backends import REQUIRED_TEACHERS
+        from maintainer.calibration_worker import _collect_observed_answers
+        from maintainer.teacher_backends import REQUIRED_TEACHERS
         source=self.root / "source.wav"; pcm=(np.arange(64,dtype="<i2")-32).tobytes()
         write_canonical_wav(source,pcm); expected_bytes=source.read_bytes()
         _samples,identity=read_canonical_wav(source)
@@ -915,11 +934,11 @@ class SilverLaneTests(unittest.TestCase):
         metric/holdout seams.  The only fakes are deterministic inference
         transports; every authority transition remains store/worker driven.
         """
-        from speech_backends import (PARAKEET_ID, WHISPER_ID, PreflightReceipts,
+        from maintainer.speech_backends import (PARAKEET_ID, WHISPER_ID, PreflightReceipts,
                                      _package_versions, _safe_snapshot_digest,
                                      candidate_manifest, evaluator_hash)
         from runtime_source_manifest import RUNTIME_SOURCE_SCHEMA, runtime_source_digest
-        from teacher_backends import REQUIRED_TEACHERS
+        from maintainer.teacher_backends import REQUIRED_TEACHERS
         now=[0.0]
         clock=lambda:now[0]
         store=SilverStore(self.root,clock=clock)
@@ -973,7 +992,7 @@ class SilverLaneTests(unittest.TestCase):
         # jitter must not decide a real persisted latency-ratio gate.
         import types
         transport_time = [0.0]
-        self.enterContext(mock.patch('adaptive_worker.time', types.SimpleNamespace(
+        self.enterContext(mock.patch('maintainer.adaptive_worker.time', types.SimpleNamespace(
             monotonic=lambda: transport_time[0], sleep=time.sleep)))
         class Backends:
             def transcribe(self, manifest, _samples, **_kwargs):
@@ -1117,7 +1136,7 @@ class SilverLaneTests(unittest.TestCase):
             def evaluate_persisted(self,cohort_id,*,identity_hash):
                 case.assertEqual((cohort_id,identity_hash),("passed","identity")); return dict(passed)
         worker=AdaptiveWorker(self.root,history=self.history,silver=Silver(),teachers=_Teachers())
-        with mock.patch("adaptive_worker.DeploymentController",Controller), mock.patch("adaptive_worker.SilverExperiment",Experiment):
+        with mock.patch("maintainer.adaptive_worker.DeploymentController",Controller), mock.patch("maintainer.adaptive_worker.SilverExperiment",Experiment):
             replayed=worker.reconcile_silver()
             self.assertTrue(replayed["authorized"])
             self.assertEqual(state["authorizations"],1)
@@ -2092,7 +2111,7 @@ class SilverLaneTests(unittest.TestCase):
         class Controller:
             def __init__(_self, *_args, **_kwargs): pass
             def reconcile_runtime(_self): events.append('runtime'); return 'five_percent'
-        with mock.patch('adaptive_runtime.AdaptiveRuntime',Human), mock.patch('adaptive_worker.DeploymentController',Controller):
+        with mock.patch('maintainer.adaptive_runtime.AdaptiveRuntime',Human), mock.patch('maintainer.adaptive_worker.DeploymentController',Controller):
             result=worker.run_once()
         self.assertEqual(result['comparators_processed'],1); self.assertEqual(events[:2],['comparator','teacher'])
         self.assertEqual(events.count('comparator'),1); self.assertEqual(teacher_calls[0],2)
@@ -2160,7 +2179,7 @@ class SilverLaneTests(unittest.TestCase):
         self.assertTrue(controller.invalidate_comparator_publication(current,"ack_failed")); self.assertEqual(controller._read()["tier"],"shadow_only")
 
     def test_calibration_cli_emits_one_content_free_json_and_exit_state(self):
-        import calibration_worker as worker
+        from maintainer import calibration_worker as worker
         argv=["--base-dir",str(self.root),"--manifest","manifest","--test-parquet","test","--validation-parquet","validation","--pyarrow-python","reader"]
         for result,code in (({"state":"passed","accepted":200,"clusters":149,"reference_errors":0,"total":500},0),
                             ({"state":"failed","accepted":0,"clusters":0,"reference_errors":1,"total":500},1)):
@@ -2173,11 +2192,11 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_sealed_readiness_is_content_free_read_only_and_fail_closed(self):
         from runtime_source_manifest import RUNTIME_SOURCE_SCHEMA, runtime_source_digest
-        from speech_backends import (PARAKEET_ID, WHISPER_ID, _package_versions,
+        from maintainer.speech_backends import (PARAKEET_ID, WHISPER_ID, _package_versions,
                                      _safe_snapshot_digest, candidate_manifest, evaluator_hash)
-        from teacher_backends import REQUIRED_TEACHERS, runtime_identity, sha256_file, snapshot_digest
-        from teacher_consensus import policy_hash
-        import teacher_consensus
+        from maintainer.teacher_backends import REQUIRED_TEACHERS, runtime_identity, sha256_file, snapshot_digest
+        from maintainer.teacher_consensus import policy_hash
+        from maintainer import teacher_consensus
         import sys
         store=SilverStore(self.root); silver=store.root; preflight=self.root/"adaptive-learning"/"preflight"; preflight.mkdir(mode=0o700)
         hf_home=self.root/"hf"; packages=_package_versions()
@@ -2198,8 +2217,8 @@ class SilverLaneTests(unittest.TestCase):
             teacher_identities[family.stable_id]=identity
             teacher[family.stable_id]={"family":family.stable_id,"repo":family.repo,"revision":family.revision,"interpreter":sys.executable,"interpreter_identity":identity,"snapshot_path":str(snapshot),"snapshot_digest":snapshot_digest(family,snapshot),"package_versions":identity["packages"],"adapter":str(adapter),"adapter_hash":sha256_file(adapter),"decode":family.decode,"canonicalizer_hash":policy_hash(),"canonicalizer_source_hash":sha256_file(Path(teacher_consensus.__file__))}
         receipts=silver/"teacher-receipts.json"; receipts.write_text(json.dumps(teacher)); os.chmod(receipts,0o600)
-        from calibration_manifest_builder import SOURCE_HASH, _protocol_hash
-        from teacher_backends import family_hash, receipt_identity
+        from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash
+        from maintainer.teacher_backends import family_hash, receipt_identity
         teacher_hash=hashlib.sha256((family_hash()+policy_hash()+"".join(sorted(receipt_identity(teacher[row.stable_id]) for row in REQUIRED_TEACHERS))).encode()).hexdigest()
         expected=_compiled_v2_expected(); ordinal={row["item_hash"]:index for index,row in enumerate(expected)}
         store.begin_calibration_v2(holdout_key=SOURCE_HASH,manifest_hash="sealed-status",source_hash=SOURCE_HASH,
@@ -2211,10 +2230,10 @@ class SilverLaneTests(unittest.TestCase):
         deployment=silver/"deployment.jsonl"; deployment.write_text(json.dumps({"schema":1,"revision":0,"tier":"shadow_only","current":None,"lkg":None,"canary":None,"route_generation":0,"audit":[]})+"\n"); os.chmod(deployment,0o600)
         inspected=(store.path,receipts,deployment,*preflight.glob("*.json"),*(hf_home.rglob("*")),*(self.root/"teacher-hf").rglob("*"),*(self.root.glob("*-adapter.py")))
         inspected=tuple(path for path in inspected if path.is_file() and not path.is_symlink()); before={path:(path.read_bytes(),path.stat().st_mtime_ns) for path in inspected}
-        import adaptive_worker as worker_module
+        from maintainer import adaptive_worker as worker_module
         with mock.patch.dict(os.environ,{"SOTTO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
-             mock.patch("speech_backends._candidate_runtime_identity",side_effect=lambda stable: dict(candidate_identities[stable])), \
-             mock.patch("teacher_backends.runtime_identity",side_effect=lambda _path,packages,expected=None: next(dict(teacher_identities[family.stable_id]) for family in REQUIRED_TEACHERS if tuple(packages)==family.critical_packages)):
+             mock.patch("maintainer.speech_backends._candidate_runtime_identity",side_effect=lambda stable: dict(candidate_identities[stable])), \
+             mock.patch("maintainer.teacher_backends.runtime_identity",side_effect=lambda _path,packages,expected=None: next(dict(teacher_identities[family.stable_id]) for family in REQUIRED_TEACHERS if tuple(packages)==family.critical_packages)):
             status=sealed_readiness_status(self.root)
             self.assertTrue(status["ready"],status); self.assertEqual(status["deployment"]["tier"],"shadow_only"); self.assertNotIn(str(self.root),json.dumps(status)); self.assertEqual(before,{path:(path.read_bytes(),path.stat().st_mtime_ns) for path in inspected})
             with mock.patch("sys.stdout",new_callable=StringIO) as output:
@@ -2230,7 +2249,7 @@ class SilverLaneTests(unittest.TestCase):
             self.assertFalse(sealed_readiness_status(self.root)["ready"])
             adapter.write_text("# fixture\n",encoding="utf-8")
             changed=dict(teacher_identities[REQUIRED_TEACHERS[0].stable_id]); changed["packages"]=dict(changed["packages"]); changed["packages"][REQUIRED_TEACHERS[0].critical_packages[0]]="rotated"
-            with mock.patch("teacher_backends.runtime_identity",side_effect=lambda _path,packages,expected=None: changed if tuple(packages)==REQUIRED_TEACHERS[0].critical_packages else dict(teacher_identities[REQUIRED_TEACHERS[1].stable_id])):
+            with mock.patch("maintainer.teacher_backends.runtime_identity",side_effect=lambda _path,packages,expected=None: changed if tuple(packages)==REQUIRED_TEACHERS[0].critical_packages else dict(teacher_identities[REQUIRED_TEACHERS[1].stable_id])):
                 self.assertFalse(sealed_readiness_status(self.root)["ready"])
             # A claimed receipt cannot make a missing/different launcher current.
             original_teacher=json.loads(receipts.read_text("utf-8")); changed_teacher=json.loads(receipts.read_text("utf-8"))

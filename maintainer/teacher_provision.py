@@ -9,12 +9,12 @@ from pathlib import Path
 
 from storage_lock import ensure_private_directory
 from history import _fsync_dir
-from teacher_backends import GRANITE, QWEN, receipt_path, runtime_identity, sha256_file, snapshot_digest, teacher_snapshot
-from teacher_consensus import policy_hash
+from maintainer.teacher_backends import GRANITE, QWEN, receipt_path, runtime_identity, sha256_file, snapshot_digest, teacher_snapshot
+from maintainer.teacher_consensus import policy_hash
 
 
 def _receipt(family, interpreter: Path, snapshot: Path, adapter: Path) -> dict:
-    import teacher_consensus
+    from maintainer import teacher_consensus
     # Capture runtime identity once so the package map and interpreter identity
     # cannot describe two different probe moments in one receipt.
     identity = runtime_identity(interpreter, family.critical_packages)

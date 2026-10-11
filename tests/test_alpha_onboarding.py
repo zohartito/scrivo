@@ -3,7 +3,6 @@ import inspect
 import json
 import os
 from pathlib import Path
-import plistlib
 import queue
 import subprocess
 import sys
@@ -17,7 +16,6 @@ from unittest.mock import Mock, patch
 import lifecycle
 import sotto
 import sotto_log
-from launchd_templates import render
 from speech_config import MODEL_PROFILES, MODEL_REVISIONS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -964,20 +962,6 @@ class ModelAndTemplateTests(unittest.TestCase):
                 self.assertEqual(local.one_pass([0.0], (), language='pt'), ('pt', None))
             with fake_decoding([1] * 20):
                 self.assertEqual(local.one_pass([0.0], (), language='pt')[1]['text'], 'partial')
-
-    @unittest.skipUnless(sys.platform == 'darwin', 'launchd templates take POSIX absolute paths (macOS-only)')
-    def test_template_rendering_preserves_sealed_offline_arguments_and_escapes_home(self):
-        home = Path('/tmp/Alpha & Ω')
-        templates = sorted((ROOT / 'launchd').glob('*.plist'))
-        self.assertEqual(len(templates), 2)
-        for template in templates:
-            original = plistlib.loads(template.read_bytes())
-            value = plistlib.loads(render(template.read_bytes(), home=home, ffmpeg='/tmp/ffmpeg'))
-            self.assertEqual(value['ProgramArguments'][:4], ['/usr/bin/python3', '-I', '-S', '-B'])
-            self.assertTrue(value['ProgramArguments'][4].startswith(str(home)))
-            self.assertEqual(value['KeepAlive'], original['KeepAlive'])
-            self.assertEqual(value['EnvironmentVariables']['SOTTO_OFFLINE'], '1')
-            self.assertNotIn('__SOTTO_', str(value))
 
 
 class ChooseLanguageTests(unittest.TestCase):

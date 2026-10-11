@@ -15,8 +15,8 @@ from typing import Any, Callable
 
 from offline_runtime import offline_subprocess_env
 from storage_lock import ensure_private_directory, ensure_private_file
-import teacher_consensus
-from teacher_consensus import policy_hash
+from maintainer import teacher_consensus
+from maintainer.teacher_consensus import policy_hash
 
 
 @dataclass(frozen=True)

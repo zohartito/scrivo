@@ -21,10 +21,10 @@ import sys
 if sys.platform != "darwin":
     raise unittest.SkipTest("adaptive lane is macOS-only in v1 (fcntl)")
 
-from adaptive_runtime import AdaptiveRuntime
+from maintainer.adaptive_runtime import AdaptiveRuntime
 from adaptive_learning import AdaptiveLearning
-from inference_scheduler import InferenceScheduler
-from speech_backends import PreflightReceipts, WHISPER_ID, candidate_manifest
+from maintainer.inference_scheduler import InferenceScheduler
+from maintainer.speech_backends import PreflightReceipts, WHISPER_ID, candidate_manifest
 from storage_lock import advisory_lock
 
 
@@ -390,7 +390,7 @@ class HistoryLearningTests(unittest.TestCase):
         self.assertTrue(learning.silver_lane_exists(base))
 
     def test_clear_refuses_when_the_silver_lane_appears_mid_clear(self):
-        from silver_store import SilverStore
+        from maintainer.silver_store import SilverStore
         row = self.live()
         original = AdaptiveLearning.clear_personal_state
 

@@ -994,8 +994,8 @@ class SilverStore:
             if (job.get("receipt_hash") != receipt or not isinstance(job.get("teacher_family_hash"),str)
                     or not isinstance(job.get("consensus_policy_hash"),str)):
                 db.execute("UPDATE prospective_horizons SET status='invalidated' WHERE horizon_id=?", (horizon_id,)); db.commit(); return False
-            from teacher_backends import family_hash
-            from teacher_consensus import policy_hash
+            from maintainer.teacher_backends import family_hash
+            from maintainer.teacher_consensus import policy_hash
             if job["teacher_family_hash"] != family_hash() or job["consensus_policy_hash"] != policy_hash():
                 db.execute("UPDATE prospective_horizons SET status='invalidated' WHERE horizon_id=?", (horizon_id,)); db.commit(); return False
             if float(captured_ts) < float(start):
@@ -1096,7 +1096,7 @@ class SilverStore:
         one transaction.
         """
         now = self.clock() if now is None else now
-        from teacher_consensus import policy_hash
+        from maintainer.teacher_consensus import policy_hash
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             epoch = int(db.execute("SELECT value FROM meta WHERE key='clear_epoch'").fetchone()[0])
@@ -2158,8 +2158,8 @@ class SilverStore:
         with self._connect() as db:
             v2=db.execute("SELECT holdout_key,manifest_hash,source_hash,protocol_hash,policy_hash,receipt_hash,state,result FROM calibration_universes ORDER BY created_ts DESC LIMIT 1").fetchone()
             if v2 is not None:
-                from calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
-                from teacher_consensus import policy_hash as current_policy_hash
+                from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
+                from maintainer.teacher_consensus import policy_hash as current_policy_hash
                 expected_count=db.execute("SELECT COUNT(*) FROM calibration_expected_v2 WHERE holdout_key=?",(v2[0],)).fetchone()[0]
                 item_count=db.execute("SELECT COUNT(*) FROM calibration_items_v2 WHERE holdout_key=? AND state='terminal'",(v2[0],)).fetchone()[0]
                 raw_item_count=db.execute("SELECT COUNT(*) FROM calibration_items_v2 WHERE holdout_key=?",(v2[0],)).fetchone()[0]
@@ -2204,8 +2204,8 @@ class SilverStore:
         """Consume a canonical public source universe and freeze its exact items."""
         # This authority seam refuses caller-selected source/protocol/policy
         # aliases even when invoked directly (rather than through the worker).
-        from calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
-        from teacher_consensus import policy_hash as current_policy_hash
+        from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
+        from maintainer.teacher_consensus import policy_hash as current_policy_hash
         if holdout_key != SOURCE_HASH or source_hash != SOURCE_HASH or protocol_hash != _protocol_hash() or policy_hash != current_policy_hash():
             raise RuntimeError("calibration authority identity is not current")
         ledger=hashlib.sha256(json.dumps([(index,str(item.get("item_hash","")),str(item.get("cluster_hash",""))) for index,item in enumerate(expected)],separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
@@ -2300,8 +2300,8 @@ class SilverStore:
                 return {"state":status["state"],"accepted":status["accepted"],"clusters":status["clusters"],"reference_errors":status["reference_errors"],"total":status["total"]}
             if universe[0] != "running":
                 db.rollback(); raise RuntimeError("invalid calibration universe state")
-            from calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
-            from teacher_consensus import policy_hash as current_policy_hash
+            from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
+            from maintainer.teacher_consensus import policy_hash as current_policy_hash
             frozen=[tuple(row) for row in db.execute("SELECT ordinal,item_hash,cluster_hash FROM calibration_expected_v2 WHERE holdout_key=? ORDER BY ordinal",(holdout_key,))]
             raw_item_count=db.execute("SELECT COUNT(*) FROM calibration_items_v2 WHERE holdout_key=?",(holdout_key,)).fetchone()[0]
             if (holdout_key != SOURCE_HASH or tuple(universe[2:]) != (SOURCE_HASH,_protocol_hash(),current_policy_hash()) or len(frozen) != 500 or

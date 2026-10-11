@@ -81,7 +81,7 @@ prepare_plist() {
 }
 
 install_current_plist() {
-    plist_env /usr/bin/python3 -I -S -B "$RELEASES/current/source/launchd_templates.py" \
+    plist_env /usr/bin/python3 -I -S -B "$RELEASES/current/source/maintainer/launchd_templates.py" \
         --template "$RELEASES/current/source/$PLIST_TEMPLATE" --output "$INSTALLED_PLIST"
     /usr/bin/plutil -lint "$INSTALLED_PLIST" >/dev/null
 }
@@ -125,7 +125,7 @@ rollback() {
     "$REPO/venv/bin/python" - <<EOF
 import pathlib, sys
 sys.path.insert(0, "$REPO")
-from sealed_release import rollback_release
+from maintainer.sealed_release import rollback_release
 print("rolled back to", rollback_release(pathlib.Path("$RELEASES")).name)
 EOF
     # A failed LKG preflight must not abort the restart: a running app with
@@ -139,7 +139,7 @@ EOF
 }
 
 echo "== syntax check"
-"$REPO/venv/bin/python" -m compileall -q "$REPO"/*.py "$REPO/tests"
+"$REPO/venv/bin/python" -m compileall -q "$REPO"/*.py "$REPO/maintainer" "$REPO/tests"
 
 echo "== validate + back up LaunchAgent"
 prepare_plist
@@ -148,7 +148,7 @@ echo "== stage + activate"
 DIGEST=$("$REPO/venv/bin/python" - <<EOF
 import pathlib, sys
 sys.path.insert(0, "$REPO")
-from sealed_release import stage_release, activate_release
+from maintainer.sealed_release import stage_release, activate_release
 releases = pathlib.Path("$RELEASES")
 bundle = stage_release(releases, source_root=pathlib.Path("$REPO"))
 activate_release(releases, bundle.name)

@@ -834,7 +834,7 @@ def adaptive_status_text(snapshots, *, base_dir: Path | None = None) -> str:
     else:
         stage = f"collecting development {dev}/20"
     try:
-        from silver_store import read_only_status
+        from maintainer.silver_store import read_only_status
         silver=read_only_status(root)
         deploy=_read_only_last_jsonl(root / "adaptive-learning" / "silver" / "deployment.jsonl")
         if not isinstance(deploy,dict) or deploy.get("schema") != 1 or not isinstance(deploy.get("tier"),str):
@@ -1153,7 +1153,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     dependency_guard = AdaptiveLearning(store.base_dir)
     adaptive_runtime = None
     if adaptive:
-        from adaptive_runtime import AdaptiveRuntime
+        from maintainer.adaptive_runtime import AdaptiveRuntime
         adaptive_runtime = AdaptiveRuntime(history=store, learning=learning_store,
                                            coordinator=coordinator)
         adaptive_runtime.register_retained_history()
@@ -1602,6 +1602,21 @@ def doctor() -> None:
         sys.exit(1)
 
 
+# The CLI commands that run the maintainer lane (they need maintainer/).
+LANE_COMMANDS = frozenset({"learning-preflight", "learning-review-list", "learning-evaluate", "learning-rollback"})
+
+
+def maintainer_lane_available() -> bool:
+    """Whether this copy includes the maintainer lane; the alpha source
+    archive leaves the ``maintainer`` package out. Side effects: imports the
+    package's (empty) ``__init__`` only."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec("maintainer.adaptive_runtime") is not None
+    except ImportError:
+        return False
+
+
 def main() -> None:
     from speech_config import SUPPORTED_LANGUAGES
     parser = argparse.ArgumentParser(description="Local push-to-talk dictation.")
@@ -1632,6 +1647,8 @@ def main() -> None:
                         help="seconds to retain the mic after key-up "
                              "(0 = immediately; negative = never)")
     args = parser.parse_args()
+    if (args.command in LANE_COMMANDS or (args.command == "run" and args.adaptive)) and not maintainer_lane_available():
+        parser.error("this needs the maintainer lane (maintainer/), which this copy of Sotto does not include")
     if app_mode() and args.command == "run":
         from sotto_paths import DATA_DIR
         route_app_logs(DATA_DIR)
@@ -1700,7 +1717,7 @@ def main() -> None:
         return
 
     if args.command in {"learning-preflight", "learning-review-list", "learning-evaluate", "learning-rollback"}:
-        from adaptive_runtime import AdaptiveRuntime
+        from maintainer.adaptive_runtime import AdaptiveRuntime
         runtime = AdaptiveRuntime()
         if args.command == "learning-preflight":
             for result in runtime.preflight():

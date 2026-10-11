@@ -563,8 +563,8 @@ class LearningCoordinator:
         """
         if not silver_lane_exists(self.history.base_dir):
             return set(), None
-        from silver_store import SilverStore
-        from deployment_controller import DeploymentController
+        from maintainer.silver_store import SilverStore
+        from maintainer.deployment_controller import DeploymentController
         dependencies,intent=SilverStore(self.history.base_dir).revoke_history_with_intent(entry_id,history_revision=history_revision,
                                                                                              reason="human_or_history_mutation",operation=operation)
         DeploymentController(self.history.base_dir).invalidate_for_cohorts(dependencies, "human_or_history_mutation")
@@ -977,7 +977,7 @@ class LearningCoordinator:
 
     def finish_pending_revoke_intent(self, intent: dict[str, Any]) -> None:
         """Idempotently finish one content-free schema-2 revoke target."""
-        from silver_store import _valid_revoke_intent
+        from maintainer.silver_store import _valid_revoke_intent
         if not _valid_revoke_intent(intent):
             raise ValueError("invalid revoke intent")
         history_id=str(intent["history_id"]); old_revision=intent["history_revision"]
@@ -1044,8 +1044,8 @@ class LearningCoordinator:
         # that has never had a silver ledger has no epoch to fence.
         lane=silver_lane_exists(self.history.base_dir)
         if lane:
-            from silver_store import SilverStore
-            from deployment_controller import DeploymentController
+            from maintainer.silver_store import SilverStore
+            from maintainer.deployment_controller import DeploymentController
             store=SilverStore(self.history.base_dir)
             store.clear(reason="history_clear")
             scrub_intent=store.scrub_pending()
@@ -1076,7 +1076,7 @@ class LearningCoordinator:
         # outbox synchronously on the ordinary path; recovery performs these
         # same idempotent erasures if this process dies between steps.
         if lane:
-            from silver_experiment import SilverExperiment
+            from maintainer.silver_experiment import SilverExperiment
             SilverExperiment(self.history.base_dir).clear_personal_state()
             DeploymentController(self.history.base_dir).clear_personal_state()
             # SQLite has already removed comparator intent/pair authority.  Its

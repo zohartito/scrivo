@@ -133,7 +133,7 @@ def _runtime_policy() -> dict[str, Any]:
     graph.  Only the explicitly named build tooling is excluded; a release
     refuses a venv whose executable closure no longer exactly matches it.
     """
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parent.parent
     policy_path = root / _RUNTIME_POLICY_FILE
     requirements = root / "requirements.txt"
     try:
@@ -372,9 +372,10 @@ print(json.dumps({'python':{'version':sys.version,'executable':sys.executable,'i
 
 def _release_body(source: dict[str, Any], runtime: dict[str, Any]) -> dict[str, Any]:
     return {"schema": RELEASE_SCHEMA, "source_manifest": source, "runtime": runtime,
-            "entrypoints": {"app": "sotto.py", "worker": "adaptive_worker.py", "bootstrap": "sealed_release_bootstrap.py",
-                            "teacher_provision": "teacher_provision.py", "calibration_manifest": "calibration_manifest_builder.py",
-                            "calibration_worker": "calibration_worker.py"}}
+            "entrypoints": {"app": "sotto.py", "worker": "maintainer/adaptive_worker.py", "bootstrap": "sealed_release_bootstrap.py",
+                            "teacher_provision": "maintainer/teacher_provision.py",
+                            "calibration_manifest": "maintainer/calibration_manifest_builder.py",
+                            "calibration_worker": "maintainer/calibration_worker.py"}}
 
 
 def _release_digest(body: dict[str, Any]) -> str:
@@ -385,7 +386,7 @@ def stage_release(releases_root: Path | str, *, source_root: Path | str | None =
                   runtime: dict[str, Any] | None = None) -> Path:
     """Atomically publish one content-addressed, private source bundle."""
     root = Path(releases_root); _create_private_dir(root)
-    source_root = Path(source_root) if source_root is not None else Path(__file__).resolve().parent
+    source_root = Path(source_root) if source_root is not None else Path(__file__).resolve().parent.parent
     source = runtime_source_manifest(source_root); closure = runtime if runtime is not None else runtime_closure()
     body = _release_body(source, closure); digest = _release_digest(body); final = root / digest
     if final.exists() or os.path.lexists(final):

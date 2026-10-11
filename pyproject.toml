@@ -8,12 +8,8 @@ target-version = "py312"
 # The sealed adaptive lane (maintainer-only, gate-heavy, receipts sealed to its
 # source digest) and its tests are not linted yet.
 extend-exclude = [
-    "adaptive_learning.py", "adaptive_runtime.py", "adaptive_worker.py", "benchmark.py",
-    "calibration_manifest_builder.py", "calibration_worker.py", "comparator_spool.py",
-    "deployment_controller.py", "evaluation.py", "history.py", "inference_scheduler.py", "learning.py",
-    "offline_backup.py", "runtime_source_manifest.py", "sealed_release.py", "sealed_release_bootstrap.py",
-    "silver_experiment.py", "silver_store.py", "speech_backends.py", "teacher_backends.py",
-    "teacher_consensus.py", "teacher_provision.py", "teachers/",
+    "maintainer/", "adaptive_learning.py", "benchmark.py", "comparator_spool.py", "evaluation.py",
+    "history.py", "learning.py", "runtime_source_manifest.py", "sealed_release_bootstrap.py",
     "tests/test_adaptive_learning.py", "tests/test_adaptive_runtime.py", "tests/test_comparator_spool.py",
     "tests/test_evaluation.py", "tests/test_history_learning.py", "tests/test_inference_scheduler.py",
     "tests/test_offline_backup.py", "tests/test_runtime_source_manifest.py", "tests/test_sealed_release.py",
