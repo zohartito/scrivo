@@ -17,6 +17,7 @@ if sys.platform != "darwin":
 
 import Quartz as RealQuartz
 
+import delivery
 import sotto
 
 PLAIN_TEXT = "public.utf8-plain-text"
@@ -184,7 +185,7 @@ class VirtualTimers:
 
 
 class _ThreadingWithTimer:
-    """sotto.threading with Timer swapped for the virtual one."""
+    """delivery.threading with Timer swapped for the virtual one."""
 
     def __init__(self, timer):
         self.Timer = timer
@@ -194,7 +195,7 @@ class _ThreadingWithTimer:
 
 
 def patch_insertion(test, *, clipboard="ORIGINAL user clipboard", secure=False):
-    """Point sotto.inject / _restore_clipboard at the fakes for one test."""
+    """Point delivery.inject / _restore_clipboard at the fakes for one test."""
     timers = VirtualTimers()
     pasteboard = FakePasteboard(clipboard)
     quartz = FakeQuartz()
@@ -204,10 +205,10 @@ def patch_insertion(test, *, clipboard="ORIGINAL user clipboard", secure=False):
             ("NSPasteboardTypeString", PLAIN_TEXT), ("secure_input_active", lambda: secure),
             ("log", logs.append), ("threading", _ThreadingWithTimer(timers.Timer)),
             ("_restore_generation", 0)):
-        patcher = patch.object(sotto, target, value)
+        patcher = patch.object(delivery, target, value)
         patcher.start()
         test.addCleanup(patcher.stop)
-    patcher = patch.object(sotto, "_pending_restore", None, create=True)
+    patcher = patch.object(delivery, "_pending_restore", None, create=True)
     patcher.start()
     test.addCleanup(patcher.stop)
     patcher = patch("PyObjCTools.AppHelper.callAfter", lambda fn, *args: fn(*args))
