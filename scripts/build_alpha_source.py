@@ -72,6 +72,7 @@ PUBLIC_TEST_FILES = (
     'tests/test_gesture_engine.py',
     'tests/test_history_learning.py',
     'tests/test_hotkey_state.py',
+    'tests/test_hotkey_tap.py',
     'tests/test_inference_scheduler.py',
     'tests/test_nemotron.py',
     'tests/test_nemotron_pipeline.py',
