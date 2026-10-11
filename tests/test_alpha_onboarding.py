@@ -527,7 +527,8 @@ class AppLogRotationTests(unittest.TestCase):
                 path = sotto.route_app_logs(data, max_bytes=100)
                 self.assertEqual(dict(sotto_log._app_log), {"path": path, "max_bytes": 100})
                 self.assertEqual(path, data / "logs" / "sotto.log")
-                self.assertEqual(os.stat(data / "logs").st_mode & 0o777, 0o700)
+                if os.name == "posix":                         # Windows has no owner-only mode bits
+                    self.assertEqual(os.stat(data / "logs").st_mode & 0o777, 0o700)
                 path.write_text("x" * 150)                    # an oversized log from the last run
                 sotto.route_app_logs(data, max_bytes=100)
             self.assertEqual(pointed, [path, path])

@@ -30,11 +30,11 @@ class ComposeInsertionTests(unittest.TestCase):
 class TypingTests(unittest.TestCase):
     def test_typing_sends_small_utf16_aware_chunks_and_never_touches_the_clipboard(self):
         posted = []
-        with patch.object(sotto.Quartz, "CGEventCreateKeyboardEvent", side_effect=lambda *a: MagicMock()), \
-             patch.object(sotto.Quartz, "CGEventKeyboardSetUnicodeString",
+        with patch.object(delivery.Quartz, "CGEventCreateKeyboardEvent", side_effect=lambda *a: MagicMock()), \
+             patch.object(delivery.Quartz, "CGEventKeyboardSetUnicodeString",
                           side_effect=lambda event, units, chunk: posted.append((units, chunk))), \
-             patch.object(sotto.Quartz, "CGEventSetIntegerValueField"), \
-             patch.object(sotto.Quartz, "CGEventPost"), patch.object(sotto.time, "sleep"), \
+             patch.object(delivery.Quartz, "CGEventSetIntegerValueField"), \
+             patch.object(delivery.Quartz, "CGEventPost"), patch.object(delivery.time, "sleep"), \
              patch.object(delivery, "NSPasteboard") as pasteboard, \
              patch.object(delivery, "secure_input_active", return_value=False):
             sotto.inject("Hello 😀 world, this is typed", insert_mode="type", spacing="none")
