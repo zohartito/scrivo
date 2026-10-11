@@ -393,11 +393,9 @@ class QuitDrainTests(unittest.TestCase):
         # tests/test_mac_lifecycle.py.
         self.assertIn("busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,",
                       inspect.getsource(sotto.run))
-        # The engine switch: tests/test_app_controller.py EngineTests and
+        # The engine switch and Update Now ask Lifecycle.busy, before and while
+        # draining: tests/test_app_controller.py EngineTests and ApplyUpdateTests,
         # tests/test_mac_lifecycle.py EngineSwitchTests.
-        source = _closure_source("action_apply_update")
-        self.assertNotIn("jobs.unfinished_tasks", source)
-        self.assertIn("lifecycle.busy()", source)
 
     def test_a_finishing_capture_stays_in_flight_until_its_job_is_queued(self):
         # capture.end() makes the capture inactive before the job is queued; the
@@ -408,21 +406,12 @@ class QuitDrainTests(unittest.TestCase):
         body = _closure_source("finish_capture")
         self.assertLess(body.index("capture.end("), body.index('shutdown.enqueue(jobs, ("live"'))
 
-    def test_only_sotto_app_offers_to_update_itself(self):
-        # [N28] A terminal run is told the manual command (updates.describe with
-        # self_update=False); only Sotto.app's own launcher gets "Update Now",
-        # whose installer rebuilds Sotto.app and restarts it.
-        source = _closure_source("action_check_updates")
-        self.assertIn("self_update=app_mode()", source)
-        self.assertIn('result.state == "available" and app_mode()', source)
-        self.assertIn("updates.mac_manual_update(", source)
-        self.assertIn("if not app_mode():", _closure_source("action_apply_update"))
-
     def test_the_update_restart_wait_has_a_deadline(self):
         # The gate is closed while it waits, so a wedged native call (or a paste
-        # count that never drops) must not refuse recordings forever.
-        source = _closure_source("action_apply_update")
-        self.assertIn("deadline_s=UPDATE_DRAIN_DEADLINE_S", source)
+        # count that never drops) must not refuse recordings forever. Update Now
+        # passes this deadline to its drain (tests/test_app_controller.py
+        # ApplyUpdateTests); [N28] only Sotto.app offers or runs Update Now
+        # (CheckUpdatesTests, ApplyUpdateTests.test_a_terminal_run_never_updates_itself).
         self.assertGreater(sotto.UPDATE_DRAIN_DEADLINE_S, sotto.HANDS_FREE_MAX_S)  # outlasts any recording
 
 
@@ -451,10 +440,12 @@ class FinishCaptureNowTests(unittest.TestCase):
         on_finish.assert_not_called()
 
     def test_quit_and_finish_now_share_it(self):
-        # Quit, Restart and the signal drain end it through Lifecycle.end_recording.
+        # Quit, Restart and the signal drain end it through Lifecycle.end_recording;
+        # the menu's Finish now through AppController.finish_now, with the
+        # gesture's own on_finish (tests/test_app_controller.py FinishNowTests;
+        # through the real run(), test_nemotron_pipeline's dictation ends with it).
         self.assertIn("end_recording=lambda: end_capture_now(engine, capture, on_finish)",
                       inspect.getsource(sotto.run))
-        self.assertIn("end_capture_now(engine, capture, on_finish)", _closure_source("action_finish_now"))
 
 
 class EngineInstallerTests(unittest.TestCase):

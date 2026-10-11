@@ -175,13 +175,11 @@ class SignalStopTests(unittest.TestCase):
         self.assertGreaterEqual(world.clock(), sotto.QUIT_DRAIN_S)
 
 
-# -- Quit, through the real action_quit closure (N44: behaviour, not source) ---
+# -- Quit, through the real AppController.quit (N44: behaviour, not source) ----
 
 class QuitTests(unittest.TestCase):
     def wire(self, world):
-        namespace = {"shutdown": world.shutdown, "lifecycle": world.lifecycle,
-                     "capture_gate": world.gate, "log": lambda line: None}
-        return closures(["action_quit"], namespace)["action_quit"]
+        return controller(shutdown=world.shutdown, lifecycle=world.lifecycle, log=lambda line: None).quit
 
     def test_quit_refuses_new_recordings_and_waits_for_the_paste(self):
         world = World(frozen=True)
@@ -217,11 +215,9 @@ class MenuRestartTests(unittest.TestCase):
                 return True
         self.errors = []
         status_ui = types.SimpleNamespace(show_error=lambda *a: self.errors.append(a))
-        namespace = {"shutdown": world.shutdown, "lifecycle": world.lifecycle,
-                     "capture_gate": world.gate, "restart": Restart(), "status_ui": status_ui,
-                     "ui_call": lambda method, *a: method(*a), "log": lambda line: None}
-        names = ["action_restart"] + (["restart_now"] if world.lifecycle else [])
-        return closures(names, namespace)["action_restart"]
+        return controller(shutdown=world.shutdown, lifecycle=world.lifecycle, restart=Restart(),
+                          status_ui=status_ui, ui_call=lambda method, *a: method(*a),
+                          log=lambda line: None).restart_when_idle
 
     def test_restart_waits_for_the_dictation_with_the_gate_closed(self):
         world = World(frozen=True)
@@ -275,7 +271,7 @@ class ClosedGateTests(unittest.TestCase):
             "current_speech_config": lambda: "config", "binding": {"trigger": "fn"},
             "hands_free_hint": lambda trigger: "",
         }
-        names = ["on_start", "on_hands_free", "action_start_now"]
+        names = ["on_start", "on_hands_free"]
         if world.lifecycle is not None:
             names.append("hide_refused_start")
         closures(names, namespace)
@@ -283,10 +279,11 @@ class ClosedGateTests(unittest.TestCase):
                                      lambda: self.ui.append("discard"),
                                      on_hands_free=namespace["on_hands_free"])
         namespace["engine"] = engine
-        namespace["action_retry"] = controller(
+        actions = controller(
             shutdown=world.shutdown, lifecycle=world.lifecycle, jobs=jobs, status_ui=status_ui,
             ui_call=namespace["ui_call"], log=self.logs.append,
-            current_speech_config=namespace["current_speech_config"]).retry
+            current_speech_config=namespace["current_speech_config"], engine=engine)
+        namespace["action_retry"], namespace["action_start_now"] = actions.retry, actions.start_now
         return namespace, engine, jobs
 
     def closed_world(self):

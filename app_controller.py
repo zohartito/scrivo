@@ -17,7 +17,7 @@ import time
 import uuid
 from pathlib import Path
 
-from lifecycle import app_mode
+from lifecycle import UPDATE_DRAIN_DEADLINE_S, app_mode, end_capture_now, wait_until_idle
 
 
 def start_daemon_thread(target) -> None:
@@ -28,7 +28,8 @@ def start_daemon_thread(target) -> None:
 
 
 class AppController:
-    """What the menu bar's History and Settings items do."""
+    """What the menu bar's items do: History, Settings, dictation, restart,
+    quit and updates. ``menu_callbacks()`` is what run() hands the menu bar."""
 
     def __init__(self, *, shutdown, lifecycle, jobs, store, coordinator, dependency_guard,
                  adaptive_runtime, status_ui, ui_call, deliver_call, pending_deliveries, set_clipboard,
@@ -38,7 +39,8 @@ class AppController:
                  use_parakeet: bool, engine_switching: bool, active_engine: str, settings_locked,
                  binding: dict, rebind, restart, language_lock, language_state: dict, save_language_mode,
                  parakeet_cached, persist_engine_and_restart, run_installer, triggers: dict,
-                 trigger_labels: dict, sotto_script: Path, start_thread=start_daemon_thread) -> None:
+                 trigger_labels: dict, sotto_script: Path, engine, capture, on_finish,
+                 start_thread=start_daemon_thread, wait_until_idle=wait_until_idle) -> None:
         self.shutdown = shutdown
         self.lifecycle = lifecycle
         self.jobs = jobs
@@ -94,8 +96,17 @@ class AppController:
         self.triggers = triggers
         self.trigger_labels = trigger_labels
         self.sotto_script = sotto_script
+        # The gesture engine, the microphone capture and the gesture's own
+        # finish, for the menu's Start and Finish now.
+        self.engine = engine
+        self.capture = capture
+        self.on_finish = on_finish
         # Runs an action's slow part off the main thread; tests run it inline.
         self.start_thread = start_thread
+        # The update restart's drain (lifecycle.wait_until_idle).
+        self.wait_until_idle = wait_until_idle
+        # Update Now is running (one at a time).
+        self.update_running = False
         # The Settings window once opened, and the engine downloads running.
         self.settings_window = None
         self.nemotron_installing = False
@@ -572,6 +583,189 @@ class AppController:
                 self.log(f"! Parakeet download failed ({detail[:80]})")
                 self.ui_call(self.status_ui.show_error, "Could not download Parakeet", detail)
         self.start_thread(work)
+
+    # -- dictation, restart and quit ---------------------------------------------------
+
+    def finish_now(self) -> None:
+        """Menu escape hatch — always works, no gesture required.
+
+        Side effects: ends the recording in progress (even one the gesture
+        engine lost) so it is transcribed; logs."""
+        if self.shutdown.requested():
+            return
+        ended = end_capture_now(self.engine, self.capture, self.on_finish)
+        if ended == "gesture":
+            self.log("● finished via menu")
+        elif ended == "orphan":
+            self.log("● orphan capture finished via menu")
+
+    def start_now(self) -> None:
+        """Hands-free from the menu; refused while the gate is closed (N3).
+        A start that races the gate closing is refused by on_start.
+
+        Side effects: starts a hands-free recording; logs."""
+        if self.shutdown.requested():
+            return
+        if self.lifecycle.closed:
+            self.log(f"○ Sotto is {self.lifecycle.closed} — dictation not started")
+            return
+        if self.engine.force_start():
+            self.log("● dictation started via menu (hands-free)")
+
+    def restart_when_idle(self) -> None:
+        """The menu's Restart: finish the dictation in flight like Quit,
+        then restart (N12).
+
+        Side effects: closes the gate and drains on a thread, then restarts;
+        logs."""
+        if self.lifecycle.restart(self.restart_now):
+            self.log("● restart requested from the menu — after the current dictation")
+        else:
+            self.log(f"○ Sotto is {self.lifecycle.closed or 'stopping'} — restart not requested")
+
+    def restart_now(self, after_failure=None) -> None:
+        """Restart this foreground process or its own sealed supervisor.
+        after_failure runs if the restart does not happen.
+
+        Side effects: requests the restart (shutdown follows); logs, or
+        shows why it did not happen."""
+        def failed(message: str) -> None:
+            if after_failure is not None:
+                after_failure()
+            self.ui_call(self.status_ui.show_error, "Could not restart Sotto", message[:160])
+        try:
+            if not self.restart.request(on_failure=failed):
+                raise RuntimeError("Sotto is already shutting down")
+            self.log("● restarting Sotto")
+        except Exception as exc:
+            failed(str(exc))
+
+    def quit(self) -> None:
+        """Quit once the dictation in progress is done, waiting at most
+        QUIT_DRAIN_S (Lifecycle.quit; Ctrl-C and SIGTERM stop the same
+        way). Side effects: refuses new recordings, ends the recording in
+        progress (even one the gesture engine lost), waits until it is
+        pasted, then requests shutdown."""
+        self.lifecycle.quit()
+
+    # -- updates ---------------------------------------------------------------------------
+
+    def apply_update(self) -> None:
+        """Update this checkout with the installer, then restart into it.
+
+        Side effects: on a background thread, runs the installer's update;
+        then closes the gate, drains (at most UPDATE_DRAIN_DEADLINE_S) and
+        restarts, or shows why the update did not finish; logs."""
+        if not app_mode():
+            return  # [N28] its installer rebuilds Sotto.app; a terminal run is given the command
+        if self.update_running:
+            return
+        if self.lifecycle.busy():
+            self.ui_call(self.status_ui.show_error, "Finish dictation first",
+                         "Update after the current recording and transcription finish.")
+            return
+        self.update_running = True
+        self.log("● updating Sotto")
+
+        def work() -> None:
+            import updates
+            from sotto_paths import DATA_DIR
+            finished, tail, source_changed = updates.apply_mac(
+                self.sotto_script.parent, sys.executable, DATA_DIR / "logs" / "update.log")
+            self.update_running = False
+            if finished:
+                self.log("✓ update installed — restarting once dictation is done")
+                # A restart discards any recording or transcription in progress,
+                # and the user may have dictated while the update ran. Refuse new
+                # recordings first, then drain, so none can start in between.
+                if not self.lifecycle.close("updating"):
+                    self.log(f"○ Sotto is {self.lifecycle.closed or 'stopping'}; the update applies at the next start")
+                    return
+                if not self.wait_until_idle(lambda: self.lifecycle.busy() and self.lifecycle.closed == "updating",
+                                            deadline_s=UPDATE_DRAIN_DEADLINE_S):
+                    self.log(f"! dictation still running after {UPDATE_DRAIN_DEADLINE_S:.0f}s — "
+                             "restarting into the update anyway")
+                if self.lifecycle.closed == "updating":  # else a Quit took over
+                    self.restart_now(after_failure=lambda: self.lifecycle.reopen("updating"))
+            elif source_changed:
+                self.log("! update installed but its setup did not finish (see logs/update.log)")
+                self.ui_call(self.status_ui.show_error, "Update not finished",
+                             f"{tail}\n\nThe new version is in place but its setup did not finish. "
+                             "Run scripts/install-mac.sh --update in Terminal to finish it, then "
+                             "choose Restart Sotto. Details are in logs/update.log in the data folder.")
+            else:
+                self.log("! update failed (see logs/update.log)")
+                self.ui_call(self.status_ui.show_error, "Update failed",
+                             f"{tail}\n\nThe source was not switched, so Sotto keeps running the "
+                             "current version. Details are in logs/update.log in the data folder.")
+        self.start_thread(work)
+
+    def check_updates(self) -> None:
+        """Contact GitHub only now, because the user asked.
+
+        Side effects: on a background thread, runs git against GitHub and
+        logs the result; on the main thread, shows it (offering Update Now
+        to Sotto.app, or the Releases page to a copy without git)."""
+        def work() -> None:
+            import updates
+            from offline_runtime import offline_requested
+            result = updates.check(self.sotto_script.parent, offline=offline_requested())
+            self.log(f"update check: {result.state}" + (f", {result.behind} behind" if result.behind else ""))
+
+            def present() -> None:
+                # [N28] Only Sotto.app updates itself; a terminal run is given the command.
+                manual = ("run scripts/install-mac.sh --update in Terminal from the Sotto folder."
+                          if app_mode() else updates.mac_manual_update(self.sotto_script.parent))
+                title, text = updates.describe(result, manual, self_update=app_mode())
+                if result.state == "available" and app_mode():
+                    if self.status_ui.ask(title, text, "Update Now", "Later"):
+                        self.apply_update()
+                elif result.state == "not-git":
+                    if self.status_ui.ask("Download the latest release", result.detail,
+                                          "Open Releases Page", "Close"):
+                        import AppKit
+                        AppKit.NSWorkspace.sharedWorkspace().openURL_(
+                            AppKit.NSURL.URLWithString_(updates.RELEASES_URL))
+                elif result.state == "failed":
+                    self.status_ui.show_error(title, text)
+                else:
+                    self.status_ui.show_info(title, text)
+            self.ui_call(present)
+        self.start_thread(work)
+
+    # -- the menu bar -------------------------------------------------------------------------
+
+    def only_while_running(self, callback):
+        """``callback`` as a menu item: once shutdown is requested it
+        returns None without running."""
+        def wrapped(*args, **kwargs):
+            if self.shutdown.requested():
+                return None
+            return callback(*args, **kwargs)
+        return wrapped
+
+    def menu_callbacks(self) -> dict:
+        """The menu bar's items (ui.StatusUI.set_history_callbacks). Every
+        item but Quit is inert once shutdown is requested."""
+        return {
+            "quit": self.quit,
+            "restart": self.only_while_running(self.restart_when_idle),
+            "copy": self.only_while_running(self.copy), "retry": self.only_while_running(self.retry),
+            "save": self.only_while_running(self.save), "delete": self.only_while_running(self.delete),
+            "clear": self.only_while_running(self.clear), "correct": self.only_while_running(self.correct),
+            "enroll": self.only_while_running(self.enroll), "revoke": self.only_while_running(self.revoke),
+            "correct_as_is": self.only_while_running(self.correct_as_is),
+            "no_speech": self.only_while_running(self.no_speech),
+            "skip_learning_review": self.only_while_running(self.skip_learning_review),
+            "finish_now": self.only_while_running(self.finish_now),
+            "start_now": self.only_while_running(self.start_now),
+            "set_language": self.only_while_running(self.set_language),
+            "set_engine": self.only_while_running(self.set_engine),
+            "add_rules": self.only_while_running(self.add_rules),
+            "open_dictionary": self.only_while_running(self.open_dictionary),
+            "open_settings": self.only_while_running(self.open_settings),
+            "check_updates": self.only_while_running(self.check_updates),
+        }
 
 
 class SettingsModel:

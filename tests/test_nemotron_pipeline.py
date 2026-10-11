@@ -184,6 +184,39 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual([(row["id"], row["revision"]) for row in store.entries()], [(kept["id"], 0)])
             self.assertFalse(captures[0].is_active())
 
+    MENU_ITEMS = {"quit", "restart", "copy", "retry", "save", "delete", "clear", "correct", "enroll", "revoke",
+                  "correct_as_is", "no_speech", "skip_learning_review", "finish_now", "start_now",
+                  "set_language", "set_engine", "add_rules", "open_dictionary", "open_settings",
+                  "check_updates"}
+    MENU_ARGS = {"copy": ("row",), "retry": ("row",), "save": ("row",), "delete": ("row",),
+                 "correct": ("row", "text"), "enroll": ("row",), "revoke": ("row",), "correct_as_is": ("row",),
+                 "no_speech": ("row",), "skip_learning_review": ("row", "noise"), "set_language": ("en",),
+                 "set_engine": ("whisper",), "add_rules": ([("a", "b")],)}
+
+    def test_the_menu_offers_every_item_and_only_quit_runs_once_stopping(self):
+        """run() hands the menu bar one callback per item; once shutdown is
+        requested every item but Quit returns without acting."""
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            store = history.HistoryStore(Path(directory))
+            seen = {}
+
+            def drive(app):
+                callbacks = app["callbacks"]
+                seen["items"] = set(callbacks)
+                app["boundaries"][0].request()
+                before = list(app["status"].mock_calls)
+                with patch("threading.Thread") as thread, patch("subprocess.Popen") as popen:
+                    seen["results"] = {name: callbacks[name](*self.MENU_ARGS.get(name, ()))
+                                       for name in callbacks if name != "quit"}
+                seen["acted"] = (thread.called, popen.called, app["status"].mock_calls[len(before):])
+
+            _status, pasted, _captures, runtime = self._run_one_dictation(
+                Path(directory), lambda **kwargs: store, drive=drive)
+            self.assertEqual(seen["items"], self.MENU_ITEMS)
+            self.assertEqual(set(seen["results"].values()), {None})
+            self.assertEqual(seen["acted"], (False, False, []))
+            self.assertEqual(runtime.retries, [])
+
     def test_remove_from_learning_set_revokes_what_is_enrolled_on_disk_now(self):
         """The menu's "Remove from learning set" acts on the learning set as it
         is on disk, not as run() loaded it at launch: a sample enrolled after
