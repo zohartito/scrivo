@@ -107,6 +107,7 @@ WINDOWS_FILES = (
     'sotto_log.py',
     'delivery.py',
     'lifecycle.py',
+    'gestures.py',
     'scripts/install-windows.ps1',
     'scripts/update-windows.ps1',
     'scripts/get.ps1',

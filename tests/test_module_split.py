@@ -30,12 +30,14 @@ MOVED = {
         "CaptureGate", "Lifecycle", "RestartController", "ShutdownBoundary", "app_mode",
         "commit_if_running", "dictation_in_flight", "end_capture_now", "launchd_owns_this_process",
         "launched_as_sealed_job", "main_thread_dispatch", "relaunch_app_after_exit",
-        "shutdown_signal_handlers", "wait_until_idle"),
+        "shutdown_signal_handlers", "wait_until_idle", "UPDATE_DRAIN_DEADLINE_S"),
+    "gestures": ("DOUBLE_TAP_WINDOW_S", "HANDS_FREE_MAX_S", "HOLD_THRESHOLD_S", "GestureEngine"),
 }
 NOT_REEXPORTED = {
     "sotto_log": ("_app_log", "_app_log_lock", "_point_output_at", "_rotate_if_large"),
     "delivery": ("_pending_restore", "_restore_generation", "_secure_input_probe", "_restore_clipboard"),
     "lifecycle": (),
+    "gestures": (),
 }
 
 

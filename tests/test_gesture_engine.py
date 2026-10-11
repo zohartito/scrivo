@@ -13,6 +13,7 @@ import threading
 import unittest
 from unittest import mock
 
+import gestures
 import sotto
 
 
@@ -44,8 +45,8 @@ class ManualTimers:
 class EngineHarness(unittest.TestCase):
     def setUp(self):
         self.timers = ManualTimers()
-        for patcher in (mock.patch.object(sotto.threading, "Timer", self.timers),
-                        mock.patch.object(sotto, "log", lambda msg: None)):
+        for patcher in (mock.patch.object(gestures.threading, "Timer", self.timers),
+                        mock.patch.object(gestures, "log", lambda msg: None)):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.events = []
@@ -173,7 +174,7 @@ class OrderedActionTests(EngineHarness):
         tap_thread = threading.Thread(target=engine.pressed, daemon=True)
         tap_thread.start()
         self.assertTrue(start_entered.wait(5))
-        with mock.patch.object(sotto, "HOLD_THRESHOLD_S", 0.0):
+        with mock.patch.object(gestures, "HOLD_THRESHOLD_S", 0.0):
             engine.released()                # the resync poller's synthesized release
         self.assertEqual(engine.snapshot(), (False, False))   # decided at once ...
         self.assertEqual(order, [], "finish ran while start was still in flight")
@@ -258,7 +259,7 @@ class GestureDecisionTests(EngineHarness):
         self.assertEqual(self.engine.snapshot(), (False, False))
 
     def test_a_held_press_is_push_to_talk(self):
-        with mock.patch.object(sotto, "HOLD_THRESHOLD_S", 0.0):
+        with mock.patch.object(gestures, "HOLD_THRESHOLD_S", 0.0):
             self.engine.pressed(); self.engine.released()
         self.assertEqual(self.events, ["start", "finish"])
         self.assertEqual(self.engine.snapshot(), (False, False))
@@ -313,7 +314,7 @@ class GestureDecisionTests(EngineHarness):
             raise RuntimeError("mic busy")
         engine = sotto.GestureEngine(failing_start, lambda: self.events.append("finish"),
                                      lambda: self.events.append("discard"))
-        with mock.patch.object(sotto, "log", logs.append):
+        with mock.patch.object(gestures, "log", logs.append):
             engine.pressed()
         self.assertEqual(engine.snapshot(), (False, False))
         self.assertEqual(logs, ["! gesture callback failed: mic busy"])
@@ -322,7 +323,7 @@ class GestureDecisionTests(EngineHarness):
 
     def test_arming_hands_free_logs_the_hint(self):
         logs = []
-        with mock.patch.object(sotto, "log", logs.append):
+        with mock.patch.object(gestures, "log", logs.append):
             self.arm_hands_free()
         self.assertEqual(logs, ["● hands-free (tap again to stop)"])
 
