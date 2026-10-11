@@ -1,4 +1,71 @@
-# Sotto — source alpha
+# Sotto
+
+**Hold a key, talk, and your words appear wherever you're typing.**
+Free and open source. It runs on your Mac, so your voice never leaves it.
+
+<p align="center">
+  <img src="docs/images/demo.gif" width="720" alt="A Mac with an empty TextEdit page. A small dark pill at the top of the screen fills with words as they are spoken: Everything I say shows up right where my cursor is. Then the sentence appears on the page.">
+</p>
+
+<sub>A real recording in real time. This clip uses the optional English engine, which shows your words while you talk. With the standard engine, the words appear the moment you let go of the key.</sub>
+
+## Get started in 3 steps
+
+You need a Mac with Apple silicon (M1 or newer) and macOS 14 or later.
+Using Windows? [Jump to Windows](#windows).
+
+### 1. Paste one line into Terminal
+
+Open **Terminal**: press **⌘ Space**, type `Terminal`, press **Return**. Copy the
+line below (point at the box and a copy button appears at its right end),
+paste it into Terminal with **⌘ V**, and press **Return**.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.sh | bash
+```
+
+<img src="docs/images/step1-terminal.png" width="720" alt="A Terminal window with the install line pasted in, ready to press Return.">
+
+It downloads Sotto and its speech model (about 1.6 GB the first time), so give it
+a few minutes. It is finished when Terminal says **Done**. If it stops with a
+message instead, do what the message says and paste the line again:
+
+- *First install Apple's command line tools*: paste `xcode-select --install`,
+  press Return, and click **Install** in the window that opens.
+- *Sotto needs Python 3.12*: download the macOS installer for Python 3.12 from
+  [python.org](https://www.python.org/downloads/macos/) and open it.
+
+### 2. Open Sotto and say yes to two questions
+
+Open **Sotto** like any app (⌘ Space, type `Sotto`, Return). It asks for two things:
+
+- **Accessibility**, so it can hear your key and type for you. Click
+  **Open System Settings** and switch **Sotto** on. (Newer macOS calls this
+  list *Device Control and Data Access*.)
+- **The microphone**. Click **Allow**. Sotto only listens while you are dictating.
+
+<img src="docs/images/step2-switch.png" width="560" alt="Sotto switched on in System Settings.">
+
+### 3. Hold Right Option ⌥, talk, let go
+
+Click where you want the words to go: an email, a note, a chat. Hold the
+**Option ⌥** key on the right side of the space bar, say your sentence, and let
+go. Your words appear at the cursor.
+
+<img src="docs/images/step3-pill.png" width="560" alt="The Sotto pill at the top of the screen: an orange dot and the words being spoken.">
+
+While you hold the key, a small pill with an orange dot sits at the top of the
+screen: Sotto is listening. For longer dictation, tap the key twice quickly and
+talk hands-free; tap it once more to stop. Sotto lives in the menu bar at the
+top right: its menu keeps your recent dictations (copy any of them again),
+**Settings…** (another key, your languages, starting at login) and **Quit**.
+
+---
+
+Everything below is the full reference: requirements, options, engines, your
+data, troubleshooting and Windows.
+
+## About this alpha
 
 Local push-to-talk dictation for Apple Silicon Macs (and, separately, Windows).
 Hold a key, speak, release; final text lands at the cursor. Whisper is the

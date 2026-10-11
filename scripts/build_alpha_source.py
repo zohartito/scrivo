@@ -145,6 +145,8 @@ WINDOWS_FILES = (
 
 PUBLIC_FILES = sorted(set(RUNTIME_SOURCE_FILES) | set(PUBLIC_TEST_FILES) | set(WINDOWS_FILES) | {
     'README.md', 'LICENSE', 'AGENTS.md', 'pyproject.toml', 'requirements-alpha.txt', 'constraints-alpha.txt',
+    'docs/images/demo.gif', 'docs/images/step1-terminal.png', 'docs/images/step2-switch.png',
+    'docs/images/step3-pill.png',
     'scripts/setup_nemotron.py', 'scripts/test_alpha.py', 'scripts/build_alpha_source.py',
     'scripts/install-mac.sh', 'scripts/install_app.py', 'scripts/get.sh',
     'scripts/rollout.sh', 'benchmark.py', 'docs/alpha-release-notes.md',
