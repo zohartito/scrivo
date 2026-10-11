@@ -28,6 +28,27 @@ class CleanTests(unittest.TestCase):
         self.assertEqual(clean("Hello, new line, how are you?")[0], "Hello,\nHow are you?")
         self.assertEqual(clean("We launched a new line of products.")[0], "We launched a new line of products.")
 
+    def test_line_breaks_said_mid_sentence_without_pauses(self):
+        # Dogfooding 2026-10-10: Nemotron wrote "This is the first sentence new
+        # line second sentence." with no punctuation around the command, so it
+        # was typed instead of breaking the line.
+        self.assertEqual(clean("This is the first sentence new line second sentence.")[0],
+                         "This is the first sentence\nSecond sentence.")
+        self.assertEqual(clean("first part new paragraph second part")[0], "first part\n\nSecond part")
+        # Content, not a command: a determiner before it, or "of" after it.
+        self.assertEqual(clean("Start a new paragraph here.")[0], "Start a new paragraph here.")
+        self.assertEqual(clean("Our new line of chairs ships soon.")[0], "Our new line of chairs ships soon.")
+        self.assertEqual(clean("It is a brand new line.")[0], "It is a brand new line.")
+
+    def test_line_break_guards_stay_within_the_phrase(self):
+        # #24 review: an opening quote or bracket after the command belongs to
+        # the next text; a determiner or "of" across a sentence break is not
+        # part of the command's phrase.
+        self.assertEqual(clean('First new line "Second".')[0], 'First\n"Second".')
+        self.assertEqual(clean("First new line (second).")[0], "First\n(second).")
+        self.assertEqual(clean("Please do that. New line. Thanks.")[0], "Please do that.\nThanks.")
+        self.assertEqual(clean("That is the end. New line. Of course.")[0], "That is the end.\nOf course.")
+
     def test_scratch_that_alone_is_an_action_and_otherwise_just_words(self):
         self.assertEqual(clean("Scratch that."), ("", "scratch"))
         self.assertEqual(clean("Please scratch that line.")[1], None)
