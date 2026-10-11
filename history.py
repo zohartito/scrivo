@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import re
 import sys
 import threading
 import time
 import uuid
 import stat
+import wave
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +32,8 @@ from audio_codec import (
     write_canonical_wav,
     write_pcm16_wav,
 )
-from storage_lock import advisory_lock, ensure_private_directory, ensure_private_file
+from storage_lock import (advisory_lock, ensure_private_directory, ensure_private_file, try_lock_exclusive,
+                          unlock_exclusive)
 
 from sotto_paths import DATA_DIR
 
@@ -671,3 +676,196 @@ class HistoryStore:
             _fsync_dir(self.audio_dir)
             _fsync_dir(self.raw_audio_dir)
             _fsync_dir(self.silver_evidence_dir)
+
+
+# N9b: a finished capture's audio waits here from key-up until its History
+# row exists, so a crash, SIGKILL or a logout that skips the drain cannot lose
+# it. One file per capture: "<capture id>-<key-up time in ms>.wav", the raw
+# capture as PCM16 at its native rate (what History's audio-raw keeps).
+CAPTURE_SPOOL_DIR = "capture-spool"
+_SPOOLED_NAME = re.compile(r"([0-9a-f]{32})-([0-9]{1,16})\.wav")
+_CAPTURE_ID = re.compile(r"[0-9a-f]{32}")
+# How long giving up the claim waits for spool writes already queued.
+SPOOL_CLOSE_WAIT_S = 1.0
+
+
+@dataclass(frozen=True)
+class SpooledCapture:
+    capture_id: str
+    captured_ms: int
+    path: Path
+
+    @property
+    def captured_ts(self) -> float:
+        return self.captured_ms / 1000
+
+
+class CaptureSpool:
+    """Finished captures on disk until their History row exists (N9b).
+
+    ``submit`` (key-up) only queues the audio: one writer thread writes it
+    atomically (private temp file, fsync, rename), so the event tap and the
+    keyboard hook never wait on disk, and nothing is written while idle.
+    ``release`` deletes a capture's file once a row holds its audio or its
+    fate is otherwise decided (a tap, delivered text); a release that comes
+    before the write makes the write skip it. Only the Sotto that ``claim``ed
+    the folder spools or recovers: a second copy on the same data folder
+    would otherwise take the first one's captures in flight.
+    """
+
+    def __init__(self, base_dir: Path | str, *, log) -> None:
+        self.directory = Path(base_dir) / CAPTURE_SPOOL_DIR
+        self.log = log
+        self.claimed = False
+        self._owner_fd: int | None = None
+        self._lock = threading.Lock()
+        self._pending: dict[str, bool] = {}  # capture id -> released before its write landed
+        self._written: dict[str, Path] = {}
+        self._queue: queue.Queue = queue.Queue()
+        self._writer: threading.Thread | None = None
+
+    def claim(self) -> bool:
+        """Own this data folder's spool for the life of the process; False
+        when another running Sotto owns it.
+
+        Side effects: creates the private folder and its ``.owner`` lock file."""
+        ensure_private_directory(self.directory)
+        fd = os.open(self.directory / ".owner", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        if not try_lock_exclusive(fd):
+            os.close(fd)
+            return False
+        self._owner_fd, self.claimed = fd, True
+        return True
+
+    def close(self, wait_s: float = SPOOL_CLOSE_WAIT_S) -> None:
+        """Give up the claim when a run ends inside a process that goes on
+        (Windows restarts in a new process before this one exits), after up
+        to ``wait_s`` for writes already queued. Releases still work.
+
+        Side effects: may wait; unlocks and closes the ``.owner`` file."""
+        deadline = time.monotonic() + wait_s
+        while self._queue.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.01)
+        with self._lock:
+            fd, self._owner_fd, self.claimed = self._owner_fd, None, False
+        if fd is not None:
+            unlock_exclusive(fd)
+            os.close(fd)
+
+    def submit(self, capture_id: str, raw: np.ndarray, native_rate: float, captured_ts: float) -> None:
+        """Queue one finished capture for the writer and return at once.
+
+        Side effects: starts the writer thread on the first capture."""
+        if not self.claimed or not isinstance(capture_id, str) or not _CAPTURE_ID.fullmatch(capture_id):
+            return
+        with self._lock:
+            self._pending[capture_id] = False
+            if self._writer is None:
+                self._writer = threading.Thread(target=self._write_loop, daemon=True,
+                                                name="sotto-capture-spool")
+                self._writer.start()
+        self._queue.put((capture_id, raw, native_rate, captured_ts))
+
+    def release(self, capture_id: Any) -> None:
+        """This capture's row exists, or its fate is decided: its file goes.
+
+        Side effects: unlinks the file, or makes a write still queued skip
+        it; logs (never raises) when the unlink fails."""
+        with self._lock:
+            if capture_id in self._pending:
+                self._pending[capture_id] = True
+                return
+            path = self._written.pop(capture_id, None)
+            if path is None:
+                return
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                self.log(f"! a spooled capture could not be removed ({type(exc).__name__}: {str(exc)[:120]})")
+                return
+        _fsync_dir(self.directory)
+
+    def _write_loop(self) -> None:
+        while True:
+            capture_id, raw, native_rate, captured_ts = self._queue.get()
+            try:
+                self._write(capture_id, raw, native_rate, captured_ts)
+            except Exception as exc:
+                with self._lock:
+                    self._pending.pop(capture_id, None)
+                self.log(f"! capture not spooled to disk ({type(exc).__name__}: {str(exc)[:120]}); "
+                         "it is in memory only until History has it")
+            finally:
+                self._queue.task_done()
+
+    def _write(self, capture_id: str, raw: np.ndarray, native_rate: float, captured_ts: float) -> None:
+        with self._lock:
+            if self._pending.get(capture_id):  # released before its write began
+                del self._pending[capture_id]
+                return
+        rate = int(native_rate)
+        pcm, _ = encode_pcm16(raw, rate)
+        final = self.directory / f"{capture_id}-{round(captured_ts * 1000)}.wav"
+        temp = self.directory / f".{final.name}.{uuid.uuid4().hex}.tmp"
+        ensure_private_directory(self.directory)
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                with wave.open(handle, "wb") as wav:
+                    wav.setnchannels(1)
+                    wav.setsampwidth(2)
+                    wav.setframerate(rate)
+                    wav.writeframes(pcm)
+                handle.flush()
+                os.fsync(handle.fileno())
+            with self._lock:
+                if self._pending.pop(capture_id, False):
+                    temp.unlink()
+                    return
+                os.replace(temp, final)
+                self._written[capture_id] = final
+        except BaseException:
+            temp.unlink(missing_ok=True)
+            raise
+        _fsync_dir(self.directory)
+
+    def leftovers(self) -> list[SpooledCapture]:
+        """Captures a stopped Sotto left here, oldest first ([] unless claimed)."""
+        if not self.claimed:
+            return []
+        found = []
+        for path in self.directory.iterdir():
+            match = _SPOOLED_NAME.fullmatch(path.name)
+            try:
+                regular = stat.S_ISREG(os.lstat(path).st_mode)
+            except OSError:
+                continue
+            if match and regular:
+                found.append(SpooledCapture(match[1], int(match[2]), path))
+        return sorted(found, key=lambda item: item.captured_ms)
+
+    @staticmethod
+    def load(item: SpooledCapture) -> tuple[np.ndarray, int]:
+        """(raw samples, native rate) of a leftover. Scaled as the exact
+        inverse of ``encode_pcm16``, so the History row's raw WAV holds the
+        same bytes the live row would have."""
+        with wave.open(str(item.path), "rb") as wav:
+            if (wav.getnchannels(), wav.getsampwidth(), wav.getcomptype()) != (1, 2, "NONE"):
+                raise ValueError("not a mono PCM16 capture")
+            rate, pcm = wav.getframerate(), wav.readframes(wav.getnframes())
+        return np.frombuffer(pcm, dtype="<i2").astype(np.float32) / np.float32(32767), rate
+
+    def remove(self, item: SpooledCapture) -> None:
+        """Side effects: unlinks a leftover that is now a History row."""
+        item.path.unlink(missing_ok=True)
+        _fsync_dir(self.directory)
+
+    def discard_partial(self) -> None:
+        """Side effects: unlinks writes a stop cut short (never renamed, so
+        never a complete capture)."""
+        if not self.claimed:
+            return
+        for path in self.directory.glob(".*.tmp"):
+            if not path.is_symlink() and path.is_file():
+                path.unlink(missing_ok=True)
+        _fsync_dir(self.directory)
