@@ -2,8 +2,10 @@
 
 Runs on the final text only, after the personal dictionary, and only when the
 dictation is English: other languages keep every word ("um" is a word in
-Portuguese). Commands count only when said as their own phrase, so "a new
-line of products" stays as spoken.
+Portuguese). "New line" / "new paragraph" count wherever they are said, with or
+without pauses, except right after a determiner (a, the, our, ...) or before
+"of", so "a new line of products" stays as spoken. "Scratch that" counts only
+as the whole dictation.
 
 - "new line" / "new paragraph" → a line break / a blank line
 - "scratch that" on its own → undo the previous dictation (the caller acts)
@@ -14,9 +16,13 @@ from __future__ import annotations
 import re
 
 FILLER = re.compile(r"(?i)(,\s*)?(?<![\w'-])(?:u+m+|u+h+|u+h+m+|e+r+m+)(?![\w'-])(\s*,)?")
-# Engines may punctuate between the two words ("New. Line.", "Scratch. That.");
-# the command still counts only when said as its own phrase.
-BREAK = re.compile(r"(?i)(^|[.!?,;:])\s*new[^\w\n]+(line|paragraph)(?=\s*(?:[.!?,;:]|$))\s*[.!?,;:]?\s*")
+# Engines may punctuate between the two words ("New. Line.", "Scratch. That.")
+# or not at all around the command ("first sentence new line second").
+BREAK = re.compile(r"(?i)[ \t]*\bnew[^\w\n]+(line|paragraph)\b[^\w\n]*")
+# Right after one of these, "new line" is content: "a new line of products".
+CONTENT_AFTER = frozenset({"a", "an", "the", "this", "that", "these", "those", "my", "our",
+                           "your", "his", "her", "its", "their", "one", "each", "every",
+                           "another", "any", "no", "some", "brand", "whole", "entire"})
 SCRATCH = re.compile(r"(?i)^\W*scratch\W+that\W*$")
 SCRATCH_WINDOW_S = 60.0  # "scratch that" only undoes a dictation this recent
 
@@ -46,8 +52,12 @@ def _drop_fillers(text: str) -> str:
 
 
 def _line_breaks(text: str) -> str:
-    def replace(match: re.Match) -> str:  # keep the punctuation said before it
-        return match.group(1) + ("\n\n" if match.group(2).lower() == "paragraph" else "\n")
+    def replace(match: re.Match) -> str:  # punctuation said before it stays
+        before = re.findall(r"[A-Za-z']+", text[:match.start()])
+        after = text[match.end():]
+        if (before and before[-1].lower() in CONTENT_AFTER) or re.match(r"(?i)of\b", after):
+            return match.group(0)
+        return "\n\n" if match.group(1).lower() == "paragraph" else "\n"
     broken = BREAK.sub(replace, text)
     return re.sub(r"\n([a-z])", lambda match: "\n" + match.group(1).upper(), broken)
 
