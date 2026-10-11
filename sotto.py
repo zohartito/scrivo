@@ -1500,8 +1500,13 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         history_keep=HISTORY_KEEP, overlay_learning_state=overlay_learning_state,
         active_learning_history_ids=_active_learning_history_ids, nonadaptive_correct=nonadaptive_correct,
         nonadaptive_delete=nonadaptive_delete, nonadaptive_clear=nonadaptive_clear,
-        nonadaptive_revoke_learning=nonadaptive_revoke_learning, save_audio_copy=save_audio_copy)
-    refresh_history = controller.refresh_history
+        nonadaptive_revoke_learning=nonadaptive_revoke_learning, save_audio_copy=save_audio_copy,
+        adaptive=adaptive, use_nemotron=use_nemotron, use_parakeet=use_parakeet,
+        engine_switching=engine_switching, active_engine=active_engine, settings_locked=settings_locked,
+        binding=binding, rebind=rebind, restart=restart, language_lock=language_lock,
+        language_state=language_state, save_language_mode=save_language_mode, parakeet_cached=parakeet_cached,
+        persist_engine_and_restart=persist_engine_and_restart, run_installer=run_installer, triggers=TRIGGERS,
+        trigger_labels=TRIGGER_LABELS, sotto_script=Path(__file__).resolve())
 
     # Built here, after inject_when_clear / undo_when_clear exist: the worker
     # holds its collaborators instead of resolving them late like the closure
@@ -1511,7 +1516,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     worker = TranscriptionWorker(
         shutdown=shutdown, jobs=jobs, log=log, model=model, mlx_whisper=mlx_whisper,
         nemotron=nemotron, current_speech_config=current_speech_config,
-        coordinator=coordinator, refresh_history=refresh_history,
+        coordinator=coordinator, refresh_history=controller.refresh_history,
         adaptive_runtime=adaptive_runtime, adaptive=adaptive, use_nemotron=use_nemotron,
         status_ui=status_ui, ui_call=ui_call, deliver_call=deliver_call,
         inject_when_clear=inject_when_clear,
@@ -1785,56 +1790,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
                 return callback(*args, **kwargs)
             return wrapped
 
-        def action_set_language(mode: str) -> None:
-            if adaptive or use_nemotron or use_parakeet:
-                return
-            try:
-                selected = save_language_mode(mode)
-                with language_lock:
-                    language_state["mode"] = selected
-                ui_call(status_ui.set_language_mode, selected, True)
-                log(f"language: {selected} (applies to the next recording)")
-            except Exception as exc:
-                ui_call(status_ui.show_error, "Could not change language", str(exc)[:160])
-
-        def action_set_engine(mode: str) -> None:
-            if adaptive or not engine_switching or mode == active_engine:
-                return
-            if lifecycle.busy():
-                ui_call(status_ui.show_error, "Finish dictation first",
-                        "Switch engines after the current recording and transcription finish.")
-                return
-            # The restart discards a capture in progress: refuse new ones
-            # first, then check again, as the update restart does (N8).
-            if not lifecycle.close("switching engines"):
-                ui_call(status_ui.show_error, "Could not change engine",
-                        f"Sotto is {lifecycle.closed or 'stopping'}.")
-                return
-
-            def failed(message: str) -> None:
-                lifecycle.reopen("switching engines")
-                ui_call(status_ui.show_error, "Could not change engine", message[:160])
-            try:
-                if mode == "nemotron":
-                    from nemotron_backend import installation
-                    installation()  # verify before persisting a restart choice
-                if mode == "parakeet" and not parakeet_cached():
-                    raise RuntimeError("Download Parakeet first: Settings → Download Parakeet.")
-                if lifecycle.busy():
-                    raise RuntimeError("Finish the current dictation before switching engines.")
-                persist_engine_and_restart(mode, restart.request, on_failure=failed)
-            except Exception as exc:
-                failed(str(exc))
-
-        def action_open_dictionary() -> None:
-            try:
-                import dictionary
-                import subprocess
-                path = dictionary.ensure_file(dictionary.DICTIONARY_PATH)
-                subprocess.Popen(["/usr/bin/open", "-t", str(path)])
-            except Exception as exc:
-                ui_call(status_ui.show_error, "Could not open the dictionary", str(exc)[:160])
-
         def action_finish_now() -> None:
             """Menu escape hatch — always works, no gesture required."""
             if shutdown.requested():
@@ -1885,138 +1840,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             progress (even one the gesture engine lost), waits until it is
             pasted, then requests shutdown."""
             lifecycle.quit()
-
-        settings_view = {"controller": None, "installing": False, "parakeet_installing": False}
-
-        class SettingsModel:
-            """What the Settings window reads and changes (main thread only)."""
-
-            def state(self) -> dict:
-                import dictionary
-                import login_item
-                import settings as store
-                from nemotron_backend import is_installed
-                from speech_config import ENGINE_CHOICES, WHISPER_LANGUAGES, automatic_languages
-                preferences = store.load(store.SETTINGS_PATH)
-                return {
-                    "settings": preferences, "trigger": binding["trigger"],
-                    "hotkey": binding["hotkey_spec"], "locked": set(settings_locked),
-                    "trigger_labels": {name: TRIGGER_LABELS[name] for name in store.TRIGGER_KEYS
-                                       if name in TRIGGERS},
-                    "engine_labels": dict(ENGINE_CHOICES),
-                    "engine": active_engine,
-                    "engine_switching": not adaptive and engine_switching,
-                    "nemotron_installed": is_installed(),
-                    "nemotron_installing": settings_view["installing"],
-                    "parakeet_installed": parakeet_cached(),
-                    "parakeet_installing": settings_view["parakeet_installing"],
-                    "fast_available": not use_nemotron and not adaptive,
-                    "language_names": WHISPER_LANGUAGES,
-                    "automatic_languages": list(automatic_languages(preferences["languages"])),
-                    "login_enabled": login_item.enabled(),
-                    "login_available": app_mode() and bool(os.environ.get("SOTTO_APP_EXECUTABLE")),
-                    "dictionary_rules": len(dictionary.load(dictionary.DICTIONARY_PATH)),
-                    "data_dir": str(store.DATA_DIR),
-                }
-
-            def change(self, key: str, value) -> str | None:
-                import settings as store
-                if key in settings_locked:
-                    return "That setting was chosen with a command-line flag for this run."
-                try:
-                    if key == "engine":
-                        action_set_engine(value)
-                        return None
-                    if key == "launch_at_login":
-                        import login_item
-                        executable = os.environ.get("SOTTO_APP_EXECUTABLE", "")
-                        if value and not (app_mode() and executable):
-                            return "Install Sotto as an app first (scripts/install-mac.sh)."
-                        login_item.enable(executable) if value else login_item.disable()
-                    store.save({key: value}, store.SETTINGS_PATH)
-                    if key == "trigger":
-                        rebind(new_trigger=value)
-                    elif key == "hotkey":
-                        rebind(new_hotkey_spec=value)
-                    elif key == "languages":
-                        status_ui.automatic_languages = list(value)
-                        refresh_history()
-                    log(f"settings: {key} changed")
-                    return None
-                except Exception as exc:
-                    return str(exc)
-
-            def action(self, name: str) -> None:
-                import subprocess
-                if name == "open_dictionary":
-                    action_open_dictionary()
-                elif name == "show_data_folder":
-                    from sotto_paths import DATA_DIR
-                    subprocess.Popen(["/usr/bin/open", str(DATA_DIR)])
-                elif name == "install_nemotron" and not settings_view["installing"]:
-                    install_nemotron_in_background()
-                elif name == "install_parakeet" and not settings_view["parakeet_installing"]:
-                    install_parakeet_in_background()
-
-        def install_nemotron_in_background() -> None:
-            from offline_runtime import offline_requested
-            if offline_requested():
-                ui_call(status_ui.show_error, "Offline mode is on",
-                        "Installing Nemotron downloads about 700 MB; start Sotto without the offline flags.")
-                return
-            settings_view["installing"] = True
-
-            def work() -> None:
-                script = Path(__file__).resolve().parent / "scripts" / "setup_nemotron.py"
-                log("● installing Nemotron (about 700 MB) ...")
-                try:
-                    ok, detail = run_installer([sys.executable, str(script)])
-                finally:
-                    settings_view["installing"] = False
-                refresh_history()
-                if settings_view["controller"] is not None:
-                    ui_call(settings_view["controller"].refresh)
-                if ok:
-                    log("✓ Nemotron installed")
-                    ui_call(status_ui.show_info, "Nemotron installed",
-                            "Choose Speech engine → Nemotron (English streaming) to use it.")
-                else:
-                    log(f"! Nemotron install failed ({detail[:80]})")
-                    ui_call(status_ui.show_error, "Could not install Nemotron", detail)
-            threading.Thread(target=work, daemon=True).start()
-
-        def install_parakeet_in_background() -> None:
-            from offline_runtime import offline_requested
-            if offline_requested():
-                ui_call(status_ui.show_error, "Offline mode is on",
-                        "Downloading Parakeet (2.5 GB) needs the network; start Sotto without the offline flags.")
-                return
-            settings_view["parakeet_installing"] = True
-
-            def work() -> None:
-                log("● downloading Parakeet (about 2.5 GB) ...")
-                try:
-                    ok, detail = run_installer([sys.executable, str(Path(__file__).resolve()),
-                                                "setup", "--profile", "parakeet"])
-                finally:
-                    settings_view["parakeet_installing"] = False
-                refresh_history()
-                if settings_view["controller"] is not None:
-                    ui_call(settings_view["controller"].refresh)
-                if ok:
-                    log("✓ Parakeet downloaded")
-                    ui_call(status_ui.show_info, "Parakeet downloaded",
-                            "Choose Speech engine → Parakeet to use it.")
-                else:
-                    log(f"! Parakeet download failed ({detail[:80]})")
-                    ui_call(status_ui.show_error, "Could not download Parakeet", detail)
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_open_settings() -> None:
-            if settings_view["controller"] is None:
-                from settings_window import SettingsController
-                settings_view["controller"] = SettingsController.alloc().initWithModel_(SettingsModel())
-            settings_view["controller"].show()
 
         update_state = {"running": False}
 
@@ -2107,16 +1930,16 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             "skip_learning_review": only_while_running(controller.skip_learning_review),
             "finish_now": only_while_running(action_finish_now),
             "start_now": only_while_running(action_start_now),
-            "set_language": only_while_running(action_set_language),
-            "set_engine": only_while_running(action_set_engine),
+            "set_language": only_while_running(controller.set_language),
+            "set_engine": only_while_running(controller.set_engine),
             "add_rules": only_while_running(controller.add_rules),
-            "open_dictionary": only_while_running(action_open_dictionary),
-            "open_settings": only_while_running(action_open_settings),
+            "open_dictionary": only_while_running(controller.open_dictionary),
+            "open_settings": only_while_running(controller.open_settings),
             "check_updates": only_while_running(action_check_updates),
         })
         status_ui.on_wake = lambda: (not shutdown.requested() and
                                      (engine.force_reset(), Quartz.CGEventTapEnable(tap, True)))
-        refresh_history()
+        controller.refresh_history()
 
     log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
         + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkey else "")

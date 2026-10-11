@@ -5,15 +5,19 @@ These were closures inside ``sotto.run()``; they are methods of one
 collaborator passed to ``__init__`` (dependency injection), so tests build
 it with fakes. tests/test_app_controller.py pins what each action does.
 
-Imports nothing from sotto: ``run()`` passes in the History helpers that
-still live there.
+Imports nothing from sotto: ``run()`` passes in the History and engine
+helpers that still live there.
 """
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import time
 import uuid
 from pathlib import Path
+
+from lifecycle import app_mode
 
 
 def start_daemon_thread(target) -> None:
@@ -24,13 +28,17 @@ def start_daemon_thread(target) -> None:
 
 
 class AppController:
-    """What the menu bar's History items do."""
+    """What the menu bar's History and Settings items do."""
 
     def __init__(self, *, shutdown, lifecycle, jobs, store, coordinator, dependency_guard,
                  adaptive_runtime, status_ui, ui_call, deliver_call, pending_deliveries, set_clipboard,
                  current_speech_config, log, history_keep: int, overlay_learning_state,
                  active_learning_history_ids, nonadaptive_correct, nonadaptive_delete, nonadaptive_clear,
-                 nonadaptive_revoke_learning, save_audio_copy, start_thread=start_daemon_thread) -> None:
+                 nonadaptive_revoke_learning, save_audio_copy, adaptive: bool, use_nemotron: bool,
+                 use_parakeet: bool, engine_switching: bool, active_engine: str, settings_locked,
+                 binding: dict, rebind, restart, language_lock, language_state: dict, save_language_mode,
+                 parakeet_cached, persist_engine_and_restart, run_installer, triggers: dict,
+                 trigger_labels: dict, sotto_script: Path, start_thread=start_daemon_thread) -> None:
         self.shutdown = shutdown
         self.lifecycle = lifecycle
         self.jobs = jobs
@@ -59,8 +67,39 @@ class AppController:
         self.nonadaptive_clear = nonadaptive_clear
         self.nonadaptive_revoke_learning = nonadaptive_revoke_learning
         self.save_audio_copy = save_audio_copy
+        # How this run was started: adaptive routing, the engine in use, and
+        # whether the engine may be switched; settings_locked names the
+        # settings a command-line flag chose for this run.
+        self.adaptive = adaptive
+        self.use_nemotron = use_nemotron
+        self.use_parakeet = use_parakeet
+        self.engine_switching = engine_switching
+        self.active_engine = active_engine
+        self.settings_locked = settings_locked
+        # The live trigger/hotkey binding (rebind moves it at the next press)
+        # and the restart an engine switch goes through.
+        self.binding = binding
+        self.rebind = rebind
+        self.restart = restart
+        # The language choice, shared with run()'s current_speech_config.
+        self.language_lock = language_lock
+        self.language_state = language_state
+        self.save_language_mode = save_language_mode
+        # Engine and trigger helpers that live in sotto.py; sotto_script is
+        # sotto.py itself (Parakeet's download runs its setup command, and
+        # Nemotron's installer sits in its scripts/ folder).
+        self.parakeet_cached = parakeet_cached
+        self.persist_engine_and_restart = persist_engine_and_restart
+        self.run_installer = run_installer
+        self.triggers = triggers
+        self.trigger_labels = trigger_labels
+        self.sotto_script = sotto_script
         # Runs an action's slow part off the main thread; tests run it inline.
         self.start_thread = start_thread
+        # The Settings window once opened, and the engine downloads running.
+        self.settings_window = None
+        self.nemotron_installing = False
+        self.parakeet_installing = False
 
     # -- History ----------------------------------------------------------------
 
@@ -317,3 +356,236 @@ class AppController:
             except Exception as exc:
                 self.ui_call(self.status_ui.show_error, "Could not review recording", str(exc)[:160])
         self.start_thread(work)
+
+    # -- language and engine ------------------------------------------------------
+
+    def set_language(self, mode: str) -> None:
+        """Choose the language the next recordings are decoded in.
+
+        Side effects: saves the choice, changes the shared language state,
+        updates the menu and logs; shows an error if it cannot be saved."""
+        if self.adaptive or self.use_nemotron or self.use_parakeet:
+            return
+        try:
+            selected = self.save_language_mode(mode)
+            with self.language_lock:
+                self.language_state["mode"] = selected
+            self.ui_call(self.status_ui.set_language_mode, selected, True)
+            self.log(f"language: {selected} (applies to the next recording)")
+        except Exception as exc:
+            self.ui_call(self.status_ui.show_error, "Could not change language", str(exc)[:160])
+
+    def set_engine(self, mode: str) -> None:
+        """Switch the speech engine: closes the capture gate, saves the
+        choice and restarts Sotto; refused while dictation is in flight.
+
+        Side effects: closes the gate (reopened if the switch fails),
+        persists the engine and requests the restart; shows any refusal."""
+        if self.adaptive or not self.engine_switching or mode == self.active_engine:
+            return
+        if self.lifecycle.busy():
+            self.ui_call(self.status_ui.show_error, "Finish dictation first",
+                         "Switch engines after the current recording and transcription finish.")
+            return
+        # The restart discards a capture in progress: refuse new ones
+        # first, then check again, as the update restart does (N8).
+        if not self.lifecycle.close("switching engines"):
+            self.ui_call(self.status_ui.show_error, "Could not change engine",
+                         f"Sotto is {self.lifecycle.closed or 'stopping'}.")
+            return
+
+        def failed(message: str) -> None:
+            self.lifecycle.reopen("switching engines")
+            self.ui_call(self.status_ui.show_error, "Could not change engine", message[:160])
+        try:
+            if mode == "nemotron":
+                from nemotron_backend import installation
+                installation()  # verify before persisting a restart choice
+            if mode == "parakeet" and not self.parakeet_cached():
+                raise RuntimeError("Download Parakeet first: Settings → Download Parakeet.")
+            if self.lifecycle.busy():
+                raise RuntimeError("Finish the current dictation before switching engines.")
+            self.persist_engine_and_restart(mode, self.restart.request, on_failure=failed)
+        except Exception as exc:
+            failed(str(exc))
+
+    # -- Settings window ----------------------------------------------------------
+
+    def open_dictionary(self) -> None:
+        """Open the personal dictionary in the text editor.
+
+        Side effects: creates the dictionary file if missing; starts open(1)."""
+        try:
+            import dictionary
+            import subprocess
+            path = dictionary.ensure_file(dictionary.DICTIONARY_PATH)
+            subprocess.Popen(["/usr/bin/open", "-t", str(path)])
+        except Exception as exc:
+            self.ui_call(self.status_ui.show_error, "Could not open the dictionary", str(exc)[:160])
+
+    def open_settings(self) -> None:
+        """Show the Settings window, made on first use.
+
+        Side effects: creates and shows an AppKit window."""
+        if self.settings_window is None:
+            from settings_window import SettingsController
+            self.settings_window = SettingsController.alloc().initWithModel_(SettingsModel(self))
+        self.settings_window.show()
+
+    def settings_state(self) -> dict:
+        """What the Settings window shows."""
+        import dictionary
+        import login_item
+        import settings as store
+        from nemotron_backend import is_installed
+        from speech_config import ENGINE_CHOICES, WHISPER_LANGUAGES, automatic_languages
+        preferences = store.load(store.SETTINGS_PATH)
+        return {
+            "settings": preferences, "trigger": self.binding["trigger"],
+            "hotkey": self.binding["hotkey_spec"], "locked": set(self.settings_locked),
+            "trigger_labels": {name: self.trigger_labels[name] for name in store.TRIGGER_KEYS
+                               if name in self.triggers},
+            "engine_labels": dict(ENGINE_CHOICES),
+            "engine": self.active_engine,
+            "engine_switching": not self.adaptive and self.engine_switching,
+            "nemotron_installed": is_installed(),
+            "nemotron_installing": self.nemotron_installing,
+            "parakeet_installed": self.parakeet_cached(),
+            "parakeet_installing": self.parakeet_installing,
+            "fast_available": not self.use_nemotron and not self.adaptive,
+            "language_names": WHISPER_LANGUAGES,
+            "automatic_languages": list(automatic_languages(preferences["languages"])),
+            "login_enabled": login_item.enabled(),
+            "login_available": app_mode() and bool(os.environ.get("SOTTO_APP_EXECUTABLE")),
+            "dictionary_rules": len(dictionary.load(dictionary.DICTIONARY_PATH)),
+            "data_dir": str(store.DATA_DIR),
+        }
+
+    def change_setting(self, key: str, value) -> str | None:
+        """Apply one change from the Settings window; returns why it was
+        refused, or None.
+
+        Side effects: saves the setting; may switch the engine, change the
+        login item, move the trigger or hotkey, or refresh the menu; logs."""
+        import settings as store
+        if key in self.settings_locked:
+            return "That setting was chosen with a command-line flag for this run."
+        try:
+            if key == "engine":
+                self.set_engine(value)
+                return None
+            if key == "launch_at_login":
+                import login_item
+                executable = os.environ.get("SOTTO_APP_EXECUTABLE", "")
+                if value and not (app_mode() and executable):
+                    return "Install Sotto as an app first (scripts/install-mac.sh)."
+                login_item.enable(executable) if value else login_item.disable()
+            store.save({key: value}, store.SETTINGS_PATH)
+            if key == "trigger":
+                self.rebind(new_trigger=value)
+            elif key == "hotkey":
+                self.rebind(new_hotkey_spec=value)
+            elif key == "languages":
+                self.status_ui.automatic_languages = list(value)
+                self.refresh_history()
+            self.log(f"settings: {key} changed")
+            return None
+        except Exception as exc:
+            return str(exc)
+
+    def settings_action(self, name: str) -> None:
+        """A Settings window button.
+
+        Side effects: opens the dictionary or the data folder, or starts an
+        engine download."""
+        import subprocess
+        if name == "open_dictionary":
+            self.open_dictionary()
+        elif name == "show_data_folder":
+            from sotto_paths import DATA_DIR
+            subprocess.Popen(["/usr/bin/open", str(DATA_DIR)])
+        elif name == "install_nemotron" and not self.nemotron_installing:
+            self.install_nemotron()
+        elif name == "install_parakeet" and not self.parakeet_installing:
+            self.install_parakeet()
+
+    def install_nemotron(self) -> None:
+        """Install Nemotron in the background; refused in offline mode.
+
+        Side effects: on a background thread, runs the installer (about
+        700 MB), refreshes the menu and an open Settings window, logs and
+        shows the result."""
+        from offline_runtime import offline_requested
+        if offline_requested():
+            self.ui_call(self.status_ui.show_error, "Offline mode is on",
+                         "Installing Nemotron downloads about 700 MB; start Sotto without the offline flags.")
+            return
+        self.nemotron_installing = True
+
+        def work() -> None:
+            script = self.sotto_script.parent / "scripts" / "setup_nemotron.py"
+            self.log("● installing Nemotron (about 700 MB) ...")
+            try:
+                ok, detail = self.run_installer([sys.executable, str(script)])
+            finally:
+                self.nemotron_installing = False
+            self.refresh_history()
+            if self.settings_window is not None:
+                self.ui_call(self.settings_window.refresh)
+            if ok:
+                self.log("✓ Nemotron installed")
+                self.ui_call(self.status_ui.show_info, "Nemotron installed",
+                             "Choose Speech engine → Nemotron (English streaming) to use it.")
+            else:
+                self.log(f"! Nemotron install failed ({detail[:80]})")
+                self.ui_call(self.status_ui.show_error, "Could not install Nemotron", detail)
+        self.start_thread(work)
+
+    def install_parakeet(self) -> None:
+        """Download Parakeet in the background; refused in offline mode.
+
+        Side effects: on a background thread, runs sotto.py setup (about
+        2.5 GB), refreshes the menu and an open Settings window, logs and
+        shows the result."""
+        from offline_runtime import offline_requested
+        if offline_requested():
+            self.ui_call(self.status_ui.show_error, "Offline mode is on",
+                         "Downloading Parakeet (2.5 GB) needs the network; start Sotto without the offline flags.")
+            return
+        self.parakeet_installing = True
+
+        def work() -> None:
+            self.log("● downloading Parakeet (about 2.5 GB) ...")
+            try:
+                ok, detail = self.run_installer([sys.executable, str(self.sotto_script),
+                                                 "setup", "--profile", "parakeet"])
+            finally:
+                self.parakeet_installing = False
+            self.refresh_history()
+            if self.settings_window is not None:
+                self.ui_call(self.settings_window.refresh)
+            if ok:
+                self.log("✓ Parakeet downloaded")
+                self.ui_call(self.status_ui.show_info, "Parakeet downloaded",
+                             "Choose Speech engine → Parakeet to use it.")
+            else:
+                self.log(f"! Parakeet download failed ({detail[:80]})")
+                self.ui_call(self.status_ui.show_error, "Could not download Parakeet", detail)
+        self.start_thread(work)
+
+
+class SettingsModel:
+    """What the Settings window reads and changes (main thread only):
+    settings_window.SettingsController's model, backed by the controller."""
+
+    def __init__(self, controller: AppController) -> None:
+        self.controller = controller
+
+    def state(self) -> dict:
+        return self.controller.settings_state()
+
+    def change(self, key: str, value) -> str | None:
+        return self.controller.change_setting(key, value)
+
+    def action(self, name: str) -> None:
+        self.controller.settings_action(name)

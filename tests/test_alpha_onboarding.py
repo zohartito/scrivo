@@ -393,10 +393,11 @@ class QuitDrainTests(unittest.TestCase):
         # tests/test_mac_lifecycle.py.
         self.assertIn("busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,",
                       inspect.getsource(sotto.run))
-        for name in ("action_apply_update", "action_set_engine"):
-            source = _closure_source(name)
-            self.assertNotIn("jobs.unfinished_tasks", source, name)
-            self.assertIn("lifecycle.busy()", source, name)
+        # The engine switch: tests/test_app_controller.py EngineTests and
+        # tests/test_mac_lifecycle.py EngineSwitchTests.
+        source = _closure_source("action_apply_update")
+        self.assertNotIn("jobs.unfinished_tasks", source)
+        self.assertIn("lifecycle.busy()", source)
 
     def test_a_finishing_capture_stays_in_flight_until_its_job_is_queued(self):
         # capture.end() makes the capture inactive before the job is queued; the

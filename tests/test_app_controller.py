@@ -11,7 +11,6 @@ them exactly.
 """
 from __future__ import annotations
 
-import ast
 import os
 import queue
 import subprocess
@@ -253,7 +252,14 @@ def build(world: World) -> AppController:
         active_learning_history_ids=world.active_learning_history_ids,
         nonadaptive_correct=world.nonadaptive_correct, nonadaptive_delete=world.nonadaptive_delete,
         nonadaptive_clear=world.nonadaptive_clear, nonadaptive_revoke_learning=world.nonadaptive_revoke_learning,
-        save_audio_copy=world.save_audio_copy, start_thread=world.start_thread)
+        save_audio_copy=world.save_audio_copy, adaptive=world.adaptive, use_nemotron=world.use_nemotron,
+        use_parakeet=world.use_parakeet, engine_switching=world.engine_switching,
+        active_engine=world.active_engine, settings_locked=world.settings_locked, binding=world.binding,
+        rebind=world.rebind, restart=world.restart, language_lock=world.language_lock,
+        language_state=world.language_state, save_language_mode=world.save_language_mode,
+        parakeet_cached=world.parakeet_cached, persist_engine_and_restart=world.persist_engine_and_restart,
+        run_installer=world.run_installer, triggers=sotto.TRIGGERS, trigger_labels=sotto.TRIGGER_LABELS,
+        sotto_script=Path(sotto.__file__).resolve(), start_thread=world.start_thread)
 
 
 # -- History ------------------------------------------------------------------
@@ -550,73 +556,12 @@ class LearningTests(unittest.TestCase):
                                                 ("ui", "refresh_history", [])])
 
 
-# -- Settings: the closures in sotto.run(), compiled against the World ---------
-
-SETTINGS_CLOSURES = ("action_set_language", "action_set_engine", "action_open_dictionary", "SettingsModel",
-                     "install_nemotron_in_background", "install_parakeet_in_background",
-                     "action_open_settings")
-
-
-def _run_definitions():
-    source = Path(sotto.__file__).read_text(encoding="utf-8")
-    run = next(node for node in ast.parse(source).body
-               if isinstance(node, ast.FunctionDef) and node.name == "run")
-    found = {}
-
-    def visit(body):
-        for node in body:
-            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-                found.setdefault(node.name, node)
-            elif isinstance(node, (ast.If, ast.With, ast.Try)):
-                visit(node.body)
-                visit(getattr(node, "orelse", []))
-    visit(run.body)
-    return found
-
-
-def build_settings(world: World):
-    """The Settings actions as run() defines them, closed over the World's fakes."""
-    class SyncThread:
-        def __init__(self, target, daemon):
-            assert daemon
-            self.target = target
-
-        def start(self):
-            world.start_thread(self.target)
-    namespace = {
-        "adaptive": world.adaptive, "use_nemotron": world.use_nemotron, "use_parakeet": world.use_parakeet,
-        "engine_switching": world.engine_switching, "active_engine": world.active_engine,
-        "settings_locked": world.settings_locked, "binding": world.binding, "rebind": world.rebind,
-        "restart": world.restart, "lifecycle": world.lifecycle, "status_ui": world.status_ui,
-        "ui_call": world.ui_call, "log": world.log, "save_language_mode": world.save_language_mode,
-        "language_lock": world.language_lock, "language_state": world.language_state,
-        "parakeet_cached": world.parakeet_cached, "persist_engine_and_restart": world.persist_engine_and_restart,
-        "run_installer": world.run_installer, "refresh_history": build(world).refresh_history,
-        "TRIGGERS": sotto.TRIGGERS, "TRIGGER_LABELS": sotto.TRIGGER_LABELS, "app_mode": sotto.app_mode,
-        "os": os, "sys": sys, "Path": Path, "threading": types.SimpleNamespace(Thread=SyncThread),
-        "__file__": sotto.__file__,
-        "settings_view": {"controller": None, "installing": False, "parakeet_installing": False},
-    }
-    definitions = _run_definitions()
-    module = ast.Module(body=[definitions[name] for name in SETTINGS_CLOSURES], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
-    model = namespace["SettingsModel"]
-    return types.SimpleNamespace(
-        set_language=namespace["action_set_language"], set_engine=namespace["action_set_engine"],
-        open_dictionary=namespace["action_open_dictionary"], settings_state=lambda: model().state(),
-        change_setting=lambda key, value: model().change(key, value),
-        settings_action=lambda name: model().action(name),
-        install_nemotron=namespace["install_nemotron_in_background"],
-        install_parakeet=namespace["install_parakeet_in_background"],
-        open_settings=namespace["action_open_settings"])
-
-
 # -- Settings -------------------------------------------------------------------
 
 class LanguageTests(unittest.TestCase):
     def test_the_choice_is_saved_shown_and_used_by_the_next_recording(self):
         world = World()
-        build_settings(world).set_language("en")
+        build(world).set_language("en")
         self.assertEqual(world.language_state, {"mode": "canonical-en"})
         self.assertEqual(world.events, [
             ("save_language_mode", "en"), ("ui", "set_language_mode", "canonical-en", True),
@@ -628,13 +573,13 @@ class LanguageTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 world = World()
                 setattr(world, flag, True)
-                build_settings(world).set_language("en")
+                build(world).set_language("en")
                 self.assertEqual((world.events, world.language_state), ([], {"mode": "auto"}))
 
     def test_a_save_error_is_shown_and_changes_nothing(self):
         world = World()
         world.fail["save_language_mode"] = OSError("read-only")
-        build_settings(world).set_language("he")
+        build(world).set_language("he")
         self.assertEqual(world.language_state, {"mode": "auto"})
         self.assertEqual(world.events[-1], ("ui", "show_error", "Could not change language", "read-only"))
 
@@ -642,7 +587,7 @@ class LanguageTests(unittest.TestCase):
 class EngineTests(unittest.TestCase):
     def test_switching_closes_the_gate_then_persists_and_restarts(self):
         world = World()
-        build_settings(world).set_engine("parakeet")
+        build(world).set_engine("parakeet")
         self.assertEqual(world.events, [("persist_engine_and_restart", "parakeet", False)])
         self.assertEqual(world.lifecycle.closed, "switching engines")
 
@@ -651,28 +596,28 @@ class EngineTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 world = World()
                 setattr(world, flag, value)
-                build_settings(world).set_engine("parakeet")
+                build(world).set_engine("parakeet")
                 self.assertEqual(world.events, [])
                 self.assertIsNone(world.lifecycle.closed)
 
     def test_a_busy_app_refuses(self):
         world = World()
         world.busy = True
-        build_settings(world).set_engine("parakeet")
+        build(world).set_engine("parakeet")
         self.assertEqual(world.events, [("ui", "show_error", "Finish dictation first",
                                          "Switch engines after the current recording and transcription finish.")])
         self.assertIsNone(world.lifecycle.closed)
 
     def test_a_closed_gate_refuses(self):
         world = World(closed="updating")
-        build_settings(world).set_engine("parakeet")
+        build(world).set_engine("parakeet")
         self.assertEqual(world.events, [("ui", "show_error", "Could not change engine", "Sotto is updating.")])
         self.assertEqual(world.lifecycle.closed, "updating")
 
     def test_parakeet_must_be_downloaded_first(self):
         world = World()
         world.parakeet_ready = False
-        build_settings(world).set_engine("parakeet")
+        build(world).set_engine("parakeet")
         self.assertEqual(world.events, [("ui", "show_error", "Could not change engine",
                                          "Download Parakeet first: Settings → Download Parakeet.")])
         self.assertIsNone(world.lifecycle.closed, "the gate stayed closed")
@@ -680,19 +625,19 @@ class EngineTests(unittest.TestCase):
     def test_nemotron_is_verified_before_the_choice_is_saved(self):
         world = World()
         with patch.object(nemotron_backend, "installation", side_effect=RuntimeError("model missing")):
-            build_settings(world).set_engine("nemotron")
+            build(world).set_engine("nemotron")
         self.assertEqual(world.events, [("ui", "show_error", "Could not change engine", "model missing")])
         self.assertIsNone(world.lifecycle.closed)
         world = World()
         with patch.object(nemotron_backend, "installation") as installation:
-            build_settings(world).set_engine("nemotron")
+            build(world).set_engine("nemotron")
         installation.assert_called_once_with()
         self.assertEqual(world.events, [("persist_engine_and_restart", "nemotron", False)])
 
     def test_a_failed_restart_reopens_the_gate(self):
         world = World()
         world.persist_failure = "launchd could not restart Sotto"
-        build_settings(world).set_engine("parakeet")
+        build(world).set_engine("parakeet")
         self.assertEqual(world.events[-1], ("ui", "show_error", "Could not change engine",
                                             "launchd could not restart Sotto"))
         self.assertIsNone(world.lifecycle.closed)
@@ -703,7 +648,7 @@ class OpenDictionaryTests(unittest.TestCase):
         world = World()
         with patch.object(dictionary, "ensure_file", return_value=Path("/data/dictionary.txt")) as ensure, \
              patch.object(subprocess, "Popen") as popen:
-            build_settings(world).open_dictionary()
+            build(world).open_dictionary()
         ensure.assert_called_once_with(dictionary.DICTIONARY_PATH)
         popen.assert_called_once_with(["/usr/bin/open", "-t", "/data/dictionary.txt"])
         self.assertEqual(world.events, [])
@@ -711,7 +656,7 @@ class OpenDictionaryTests(unittest.TestCase):
     def test_an_error_is_shown(self):
         world = World()
         with patch.object(dictionary, "ensure_file", side_effect=OSError("read-only")):
-            build_settings(world).open_dictionary()
+            build(world).open_dictionary()
         self.assertEqual(world.events, [("ui", "show_error", "Could not open the dictionary", "read-only")])
 
 
@@ -739,7 +684,7 @@ class SettingsStateTests(unittest.TestCase):
             for name in ("SOTTO_LAUNCHER", "SOTTO_APP_EXECUTABLE"):
                 if name not in (environ or {}):
                     os.environ.pop(name, None)
-            return build_settings(world).settings_state()
+            return build(world).settings_state()
 
     def test_what_the_window_shows(self):
         from speech_config import ENGINE_CHOICES, WHISPER_LANGUAGES
@@ -783,7 +728,7 @@ class ChangeSettingTests(unittest.TestCase):
             for name in ("SOTTO_LAUNCHER", "SOTTO_APP_EXECUTABLE"):
                 if name not in (environ or {}):
                     os.environ.pop(name, None)
-            answer = build_settings(world).change_setting(key, value)
+            answer = build(world).change_setting(key, value)
         return answer, saved
 
     def test_a_flag_locked_setting_is_refused(self):
@@ -841,7 +786,7 @@ class SettingsActionTests(unittest.TestCase):
         world = World()
         with patch.object(dictionary, "ensure_file", return_value=Path("/d.txt")), \
              patch.object(subprocess, "Popen") as popen:
-            actions = build_settings(world)
+            actions = build(world)
             actions.settings_action("open_dictionary")
             actions.settings_action("show_data_folder")
             actions.settings_action("unknown")
@@ -852,7 +797,7 @@ class SettingsActionTests(unittest.TestCase):
         world = World()
         seen = []
         world.run_installer = lambda argv: (seen.append(actions.settings_state()), (True, "ok"))[1]
-        actions = build_settings(world)
+        actions = build(world)
         with patch.object(offline_runtime, "offline_requested", return_value=False), state_sources():
             actions.settings_action("install_nemotron")
             actions.settings_action("install_parakeet")
@@ -866,7 +811,7 @@ PARAKEET_SETUP = [sys.executable, str(Path(sotto.__file__).resolve()), "setup", 
 
 class InstallTests(unittest.TestCase):
     def install(self, world, engine, *, offline=False, window=None):
-        actions = build_settings(world)
+        actions = build(world)
         if window is not None:
             with patch.object(settings_window, "SettingsController", window):
                 actions.open_settings()
@@ -919,7 +864,7 @@ class InstallTests(unittest.TestCase):
             with self.subTest(engine=engine):
                 world = World()
                 world.fail["run_installer"] = OSError("fork failed")
-                actions = build_settings(world)
+                actions = build(world)
                 with patch.object(offline_runtime, "offline_requested", return_value=False), \
                      self.assertRaises(OSError):
                     getattr(actions, f"install_{engine}")()
@@ -953,7 +898,7 @@ class FakeWindow:
 class OpenSettingsTests(unittest.TestCase):
     def test_one_window_is_made_and_shown_each_time(self):
         world = World()
-        actions = build_settings(world)
+        actions = build(world)
         with patch.object(settings_window, "SettingsController", FakeWindow.controller(world)):
             actions.open_settings()
             actions.open_settings()
@@ -965,7 +910,7 @@ class OpenSettingsTests(unittest.TestCase):
         controller = FakeWindow.controller(world)
         alloc = controller.alloc
         controller.alloc = lambda: windows.append(alloc()) or windows[-1]
-        actions = build_settings(world)
+        actions = build(world)
         with patch.object(settings_window, "SettingsController", controller):
             actions.open_settings()
         model = windows[0].model
