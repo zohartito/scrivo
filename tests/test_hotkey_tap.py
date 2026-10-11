@@ -349,6 +349,15 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
 
 @unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
 class TapSetupTests(unittest.TestCase):
+    def test_run_records_the_commit_it_started_from_once(self):
+        # Check for Updates compares the folder's HEAD with it (2026-10-10:
+        # a git merge under the running app was reported as "up to date").
+        started = "c2e7f0f" + "0" * 33
+        with patch("updates.started_from", return_value=started) as started_from:
+            app = run_app(self, lambda app: None)
+        started_from.assert_called_once_with(Path(sotto.__file__).resolve().parent)
+        self.assertEqual(app.controller_kwargs["started_from"], started)
+
     def test_a_listen_only_session_tap_on_flags_and_keys_is_added_to_the_run_loop_and_enabled(self):
         seen = {}
 

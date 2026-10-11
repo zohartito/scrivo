@@ -86,6 +86,7 @@ class FakeController:
     def set_speed(self, speed): self._record("set_speed", speed)
     def open_dictionary(self): self._record("open_dictionary")
     def restart(self): self._record("restart")
+    def update_and_restart(self): self._record("update_and_restart")
     def quit(self): self._record("quit")
 
 
@@ -160,6 +161,52 @@ class MenuTest(unittest.TestCase):
         with mock.patch.object(win_ui.TrayApp, "notify"):
             self.invoke(speeds[1])
         self.assertEqual(self.controller.calls[-1], ("set_speed", "fast"))
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows-only module")
+@unittest.skipUnless(_pystray_available(), "pystray/Pillow not installed (requirements-alpha-windows.txt)")
+class UpdateDialogTest(unittest.TestCase):
+    """Check for updates on the tray: the Mac's offers, in the same words."""
+
+    MANUAL = "run git pull, then scripts\\install-windows.ps1, from the Sotto folder."
+
+    def dialog(self, result, answer=True):
+        import updates
+        app = win_ui.TrayApp(quit=lambda: None, log=lambda message: None)
+        app.controller = FakeController()
+        with mock.patch("tkinter.messagebox.askyesno", return_value=answer) as ask, \
+                mock.patch("tkinter.messagebox.showinfo") as info, \
+                mock.patch.object(win_ui.TrayApp, "notify"):
+            app.update_dialog(None, result)
+            if answer and ask.called:
+                self.assertTrue(app.controller.done.wait(5))
+        title, text = updates.describe(result, self.MANUAL)
+        return app.controller.calls, ask, info, (title, text)
+
+    def test_a_stale_run_offers_the_restart_or_the_update(self) -> None:
+        # 2026-10-10: a git merge moved the folder under the running app, and
+        # Check for updates said "up to date" while the old code ran.
+        import updates
+        same = updates.UpdateCheck("current", version="3bcf356",
+                                   stale=updates.StaleRun("c2e7f0f", "3bcf356", False))
+        calls, ask, info, (title, text) = self.dialog(same)
+        ask.assert_called_once_with(title, text, parent=None)
+        self.assertEqual(title, "Finish updating Sotto")
+        self.assertEqual(calls, [("restart",)])
+        changed = updates.UpdateCheck("current", version="3bcf356",
+                                      stale=updates.StaleRun("c2e7f0f", "3bcf356", True))
+        calls, ask, info, (title, text) = self.dialog(changed)
+        ask.assert_called_once_with(title, text, parent=None)
+        self.assertEqual(calls, [("update_and_restart",)])
+        offline = updates.UpdateCheck("offline", "Offline mode is on, so Sotto does not contact GitHub.",
+                                      stale=updates.StaleRun("c2e7f0f", "3bcf356", True))
+        calls, ask, info, (title, text) = self.dialog(offline)
+        ask.assert_not_called()
+        info.assert_called_once_with(title, text, parent=None)
+        self.assertIn("Quit Sotto, then run git pull", text)
+        self.assertEqual(calls, [])
+        calls, ask, info, _ = self.dialog(same, answer=False)
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

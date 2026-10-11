@@ -995,12 +995,17 @@ class ControllerTest(unittest.TestCase):
                     mock.patch.object(dictionary, "DICTIONARY_PATH", rules_file), \
                     mock.patch.object(sotto_win, "log", logs.append), \
                     mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary), \
-                    mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"):
+                    mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"), \
+                    mock.patch("updates.started_from", return_value="c2e7f0f" + "0" * 33) as started_from:
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
                 sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
                 driver.join(10)
             saved = real_load_settings(settings_file)
+
+        # Check for updates compares the folder with the commit this run started from.
+        started_from.assert_called_once_with(Path(sotto_win.__file__).resolve().parent)
+        self.assertEqual(controllers[0].started_from, "c2e7f0f" + "0" * 33)
 
         self.assertEqual(delivered, ["Wispr Flow works"])  # the retry never pastes
         retried = results["after_retry"]

@@ -390,15 +390,19 @@ class TrayApp:
         import updates
         title, text = updates.describe(
             result, "run git pull, then scripts\\install-windows.ps1, from the Sotto folder.")
-        if result.state == "available":
+        offer = updates.offer(result)  # the Mac's offers (app_controller.check_updates)
+        if offer == "update":
             if messagebox.askyesno(title, text, parent=root):
                 self._act(self.controller.update_and_restart)(None, None)
-        elif result.state == "not-git":
+        elif offer == "restart":
+            if messagebox.askyesno(title, text, parent=root):
+                self._act(self.controller.restart)(None, None)
+        elif offer == "releases":
             if messagebox.askyesno("Download the latest release",
                                    f"{result.detail}\n\nOpen the releases page?", parent=root):
                 import webbrowser
                 webbrowser.open(updates.RELEASES_URL)
-        elif result.state == "failed":
+        elif offer == "error":
             messagebox.showerror(title, text, parent=root)
         else:
             messagebox.showinfo(title, text, parent=root)

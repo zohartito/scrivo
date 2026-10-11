@@ -1000,7 +1000,12 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         speech_config=None, glossary_terms: tuple[str, ...] = (), adaptive: bool = False,
         engine_switching: bool = True, settings_locked: frozenset | set = frozenset()) -> None:
     """Run capture using a resolved config, without importing MLX before setup."""
+    import updates
     from speech_config import language_mode, resolve_speech_config, save_language_mode, with_language
+    # The commit this process runs, read once at launch (local git only):
+    # Check for Updates compares the folder's HEAD with it (a git pull or
+    # merge in this folder while Sotto runs).
+    started_from = updates.started_from(Path(__file__).resolve().parent)
     if speech_config is None:
         speech_config = resolve_speech_config(model=model)
     model = speech_config.model_repo
@@ -1388,7 +1393,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         language_state=language_state, save_language_mode=save_language_mode, parakeet_cached=parakeet_cached,
         persist_engine_and_restart=persist_engine_and_restart, run_installer=run_installer, triggers=TRIGGERS,
         trigger_labels=TRIGGER_LABELS, sotto_script=Path(__file__).resolve(), engine=engine, capture=capture,
-        on_finish=on_finish)
+        on_finish=on_finish, started_from=started_from)
 
     # Built here, after inject_when_clear / undo_when_clear exist: the worker
     # holds its collaborators instead of resolving them late like the closure
