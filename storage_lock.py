@@ -25,6 +25,14 @@ if sys.platform == "win32":
             except OSError:
                 time.sleep(0.01)
 
+    def try_lock_exclusive(fd: int) -> bool:
+        """Non-blocking exclusive lock on byte 0; False while another holds it."""
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+
     def unlock_exclusive(fd: int) -> None:
         try:
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
@@ -35,6 +43,14 @@ else:
 
     def lock_exclusive(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_EX)
+
+    def try_lock_exclusive(fd: int) -> bool:
+        """Non-blocking exclusive lock; False while another open file holds it."""
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            return False
 
     def unlock_exclusive(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_UN)
