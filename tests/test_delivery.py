@@ -9,6 +9,7 @@ import ast
 import inspect
 import sys
 import threading
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -648,21 +649,16 @@ class EventTapCallbackHarness:
                                           lambda: self.events.append("finish"),
                                           lambda: self.events.append("discard"))
         test.addCleanup(self.engine.force_reset)
-        mask, keycode, device_bit = sotto.TRIGGERS[trigger]
-        self.binding = {"keycode": keycode, "mask": mask, "device_bit": device_bit, "trigger": trigger}
-        self.trigger_state = {"down": False}
         self.user_keydowns = {"count": 0}
         self.quartz = quartz
-        namespace = dict(vars(sotto))
-        namespace.update({
-            "Quartz": quartz, "shutdown": types.SimpleNamespace(requested=lambda: False),
-            "trigger_state": self.trigger_state, "binding": self.binding, "engine": self.engine,
-            "hotkey": sotto.parse_hotkey("ctrl-opt-d"),        # run()'s default
-            "hotkey_state": {"pressed_at": None, "skip_up": False},
-            "log": lambda _m: None, "revive_tap": lambda _reason: None,
-            "user_keydowns": self.user_keydowns,
-        })
-        self.callback = run_closures(["callback"], namespace)["callback"]
+        listener = sotto.HotkeyListener(
+            trigger, "ctrl-opt-d",                              # run()'s default hotkey
+            quartz=quartz, engine=self.engine, capture=None,
+            shutdown=types.SimpleNamespace(requested=lambda: False), is_own_event=sotto.is_own_event,
+            user_keydowns=self.user_keydowns, log=lambda _m: None, status_ui=None, ui_call=None,
+            clock=time.monotonic, sleep=None)
+        self.binding = listener.binding
+        self.callback = listener.callback
 
     def press_trigger(self):
         event = {"keycode": self.binding["keycode"], "flags": self.binding["mask"] | self.binding["device_bit"],
