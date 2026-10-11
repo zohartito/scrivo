@@ -31,6 +31,9 @@ ignore = ["E701", "E702"]
 # B905 as part of that work. (B023: the 30 loop closures moved into
 # transcription.py with the worker and were all called synchronously — F65.)
 "sotto.py" = ["E402", "E501", "E703", "F841", "B905"]
+# Moved verbatim out of sotto.py with its B905 exemption (two zips of parallel
+# per-block lists); review with sotto.py's.
+"capture.py" = ["B905"]
 # Being restructured elsewhere. B018: `ctypes.windll.user32.SendInput` is a
 # deliberate availability probe inside `doctor`.
 "sotto_win.py" = ["B018", "B904"]

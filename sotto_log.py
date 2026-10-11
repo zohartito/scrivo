@@ -2,7 +2,7 @@
 file. Logs hold counts and timings only, never what was said.
 
 Moved verbatim out of sotto.py so the modules split from it (delivery,
-lifecycle, gestures) can log without importing sotto. sotto re-exports the
+lifecycle, gestures, capture) can log without importing sotto. sotto re-exports the
 public names, so ``sotto.log is sotto_log.log``; the rotation state stays
 private here, so patch it here (``sotto_log._point_output_at``).
 """

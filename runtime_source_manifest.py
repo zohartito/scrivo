@@ -44,6 +44,7 @@ RUNTIME_SOURCE_FILES = (
     "delivery.py",
     "lifecycle.py",
     "gestures.py",
+    "capture.py",
     "launchd_templates.py",
     "audio_codec.py",
     "comparator_spool.py",

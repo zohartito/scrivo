@@ -24,6 +24,7 @@ from unittest import mock
 
 import numpy as np
 
+import capture as capture_module
 import sotto
 
 
@@ -130,7 +131,7 @@ class FakeEngine:
 
 
 def fake_avfoundation(engine_factory):
-    """sotto imports AVAudioEngine lazily inside _start_engine_locked."""
+    """capture imports AVAudioEngine lazily inside _start_engine_locked."""
     module = types.ModuleType("AVFoundation")
 
     class AVAudioEngine:
@@ -213,7 +214,7 @@ class DeviceNameLeakTest(unittest.TestCase):
             raise AssertionError(f"unexpected library {path}")
 
         with mock.patch("ctypes.CDLL", cdll):
-            devices = sotto._audio_devices()
+            devices = capture_module._audio_devices()
         self.assertEqual([d["name"] for d in devices], ["MacBook Pro Microphone"])
         self.assertEqual(core_foundation.released, [FakeCoreAudio.NAME_REF],
                          "kAudioObjectPropertyName is a +1 CFStringRef; name_of must CFRelease it")
@@ -224,7 +225,7 @@ class DeviceNameLeakTest(unittest.TestCase):
 class TeardownTest(unittest.TestCase):
     def setUp(self):
         self.logs = []
-        patcher = mock.patch.object(sotto, "log", self.logs.append)
+        patcher = mock.patch.object(capture_module, "log", self.logs.append)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -264,7 +265,7 @@ class TeardownTest(unittest.TestCase):
 class IdleReleaseTest(unittest.TestCase):
     def setUp(self):
         self.logs = []
-        patcher = mock.patch.object(sotto, "log", self.logs.append)
+        patcher = mock.patch.object(capture_module, "log", self.logs.append)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -346,8 +347,8 @@ class RouteChangeMidCaptureTest(unittest.TestCase):
         capture = sotto.CaptureService()
         capture._engine_obj = engine
         with fake_avfoundation(lambda: engine), \
-             mock.patch.object(sotto, "log", lambda msg: None), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", lambda n: 77), \
+             mock.patch.object(capture_module, "log", lambda msg: None), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda n: 77), \
              mock.patch.object(sotto.threading, "Thread", InlineThread):
             capture._start_engine()                          # built-in mic, 48 kHz
             capture.begin()                                  # key down
@@ -417,7 +418,7 @@ class FailedMicStartTest(unittest.TestCase):
         real_sleep = time.sleep
         for patcher in (mock.patch.object(sotto.threading, "Thread", RecordingThread),
                         mock.patch.object(sotto.time, "sleep", lambda s: None),  # retry pauses
-                        mock.patch.object(sotto, "log", self.logs.append)):
+                        mock.patch.object(capture_module, "log", self.logs.append)):
             patcher.start()
             self.addCleanup(patcher.stop)
         # announce_live's own clock: its 10 s "mic live" deadline passes in 0.5 s
@@ -470,7 +471,7 @@ class FailedMicStartTest(unittest.TestCase):
 
     def test_a_failed_start_never_announces_a_live_mic(self):
         with fake_avfoundation(lambda: None), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", lambda node: 77):
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
             capture, gesture, ui, jobs = self.wire(with_handler=False)
             gesture.pressed()                               # key down: five failed starts
             self.join_all()
@@ -482,7 +483,7 @@ class FailedMicStartTest(unittest.TestCase):
 
     def test_a_failed_start_ends_the_gesture_and_tells_the_user_once(self):
         with fake_avfoundation(lambda: None), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", lambda node: 77):
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
             capture, gesture, ui, jobs = self.wire(with_handler=True)
             gesture.pressed()
             self.join_all()
@@ -514,7 +515,7 @@ class DoctorProbeTest(unittest.TestCase):
 
         out = __import__("io").StringIO()
         with fake_avfoundation(lambda: engine), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", pin), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", pin), \
              contextlib.redirect_stdout(out):
             status = sotto.doctor_input_probe()
         self.assertEqual(status, 0)
@@ -555,8 +556,8 @@ BUILT_IN = device(1, "MacBook Pro Microphone", "bltn")
 
 class DeviceSelectionTest(unittest.TestCase):
     def select(self, devices):
-        with mock.patch.object(sotto, "_audio_devices", lambda: devices):
-            return sotto._select_input_device()
+        with mock.patch.object(capture_module, "_audio_devices", lambda: devices):
+            return capture_module._select_input_device()
 
     def test_a_worn_headset_beats_the_built_in_mic(self):
         airpods = device(2, "Zohar's AirPods Pro", "blue")
@@ -591,20 +592,20 @@ class DeviceSelectionTest(unittest.TestCase):
 
         def broken():
             raise OSError("CoreAudio gone")
-        with mock.patch.object(sotto, "_audio_devices", broken):
-            self.assertEqual(sotto._select_input_device(), (None, "device query failed"))
+        with mock.patch.object(capture_module, "_audio_devices", broken):
+            self.assertEqual(capture_module._select_input_device(), (None, "device query failed"))
 
     def test_the_built_in_failover_target_ignores_a_worn_headset(self):
         airpods = device(2, "AirPods", "blue")
-        with mock.patch.object(sotto, "_audio_devices", lambda: [airpods, BUILT_IN]):
-            self.assertEqual(sotto._builtin_input_device(), 1)
-        with mock.patch.object(sotto, "_audio_devices", lambda: [airpods]):
-            self.assertIsNone(sotto._builtin_input_device())
+        with mock.patch.object(capture_module, "_audio_devices", lambda: [airpods, BUILT_IN]):
+            self.assertEqual(capture_module._builtin_input_device(), 1)
+        with mock.patch.object(capture_module, "_audio_devices", lambda: [airpods]):
+            self.assertIsNone(capture_module._builtin_input_device())
 
         def broken():
             raise OSError("CoreAudio gone")
-        with mock.patch.object(sotto, "_audio_devices", broken):
-            self.assertIsNone(sotto._builtin_input_device())
+        with mock.patch.object(capture_module, "_audio_devices", broken):
+            self.assertIsNone(capture_module._builtin_input_device())
 
 
 class FakeAudioToolbox:
@@ -635,10 +636,10 @@ class PinInputTest(unittest.TestCase):
                 raise toolbox
             return toolbox
 
-        with mock.patch.object(sotto, "_select_input_device", lambda: selected), \
-             mock.patch.object(sotto, "log", logs.append), \
+        with mock.patch.object(capture_module, "_select_input_device", lambda: selected), \
+             mock.patch.object(capture_module, "log", logs.append), \
              mock.patch("ctypes.CDLL", cdll):
-            result = sotto._pin_input_to_builtin(PinnableNode())
+            result = capture_module._pin_input_to_builtin(PinnableNode())
         return result, logs, opened
 
     def test_the_selected_device_becomes_the_input_units_current_device(self):
@@ -672,7 +673,7 @@ class IdleDeviceScanTest(unittest.TestCase):
 
     def setUp(self):
         self.logs = []
-        patcher = mock.patch.object(sotto, "log", self.logs.append)
+        patcher = mock.patch.object(capture_module, "log", self.logs.append)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -685,7 +686,7 @@ class IdleDeviceScanTest(unittest.TestCase):
         capture._device_id = 1
         capture.idle_release_s = -1                          # keep the engine; only the scan acts
         calls = []
-        patchers = (mock.patch.object(sotto, "_select_input_device", lambda: wanted),
+        patchers = (mock.patch.object(capture_module, "_select_input_device", lambda: wanted),
                     mock.patch.object(capture, "_release_engine", lambda **kw: calls.append("release") or True),
                     mock.patch.object(capture, "_start_engine", lambda: calls.append("start")))
         for patcher in patchers:

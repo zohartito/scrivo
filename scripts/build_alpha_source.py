@@ -108,6 +108,7 @@ WINDOWS_FILES = (
     'delivery.py',
     'lifecycle.py',
     'gestures.py',
+    'capture.py',
     'scripts/install-windows.ps1',
     'scripts/update-windows.ps1',
     'scripts/get.ps1',
