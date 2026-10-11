@@ -3,6 +3,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+import delivery
 import sotto
 
 
@@ -29,13 +30,13 @@ class ComposeInsertionTests(unittest.TestCase):
 class TypingTests(unittest.TestCase):
     def test_typing_sends_small_utf16_aware_chunks_and_never_touches_the_clipboard(self):
         posted = []
-        with patch.object(sotto.Quartz, "CGEventCreateKeyboardEvent", side_effect=lambda *a: MagicMock()), \
-             patch.object(sotto.Quartz, "CGEventKeyboardSetUnicodeString",
+        with patch.object(delivery.Quartz, "CGEventCreateKeyboardEvent", side_effect=lambda *a: MagicMock()), \
+             patch.object(delivery.Quartz, "CGEventKeyboardSetUnicodeString",
                           side_effect=lambda event, units, chunk: posted.append((units, chunk))), \
-             patch.object(sotto.Quartz, "CGEventSetIntegerValueField"), \
-             patch.object(sotto.Quartz, "CGEventPost"), patch.object(sotto.time, "sleep"), \
-             patch.object(sotto, "NSPasteboard") as pasteboard, \
-             patch.object(sotto, "secure_input_active", return_value=False):
+             patch.object(delivery.Quartz, "CGEventSetIntegerValueField"), \
+             patch.object(delivery.Quartz, "CGEventPost"), patch.object(delivery.time, "sleep"), \
+             patch.object(delivery, "NSPasteboard") as pasteboard, \
+             patch.object(delivery, "secure_input_active", return_value=False):
             sotto.inject("Hello 😀 world, this is typed", insert_mode="type", spacing="none")
         chunks = [chunk for _units, chunk in posted[::2]]  # key-down and key-up carry the same chunk
         self.assertEqual("".join(chunks), "Hello 😀 world, this is typed")
@@ -44,8 +45,8 @@ class TypingTests(unittest.TestCase):
         pasteboard.generalPasteboard.assert_not_called()
 
     def test_secure_input_blocks_both_modes(self):
-        with patch.object(sotto, "secure_input_active", return_value=True), \
-             patch.object(sotto, "type_text") as typed, patch.object(sotto, "NSPasteboard") as pasteboard:
+        with patch.object(delivery, "secure_input_active", return_value=True), \
+             patch.object(delivery, "type_text") as typed, patch.object(delivery, "NSPasteboard") as pasteboard:
             sotto.inject("secret", insert_mode="type")
             sotto.inject("secret", insert_mode="paste")
         typed.assert_not_called()
@@ -61,9 +62,9 @@ class TypingTests(unittest.TestCase):
 class SecureInputProbeTests(unittest.TestCase):
     def test_probe_calls_carbon_and_fails_open_only_when_unavailable(self):
         self.assertIsInstance(sotto.secure_input_active(), bool)
-        with patch.object(sotto, "_secure_input_probe", lambda: True):
+        with patch.object(delivery, "_secure_input_probe", lambda: True):
             self.assertTrue(sotto.secure_input_active())
-        with patch.object(sotto, "_secure_input_probe", side_effect=OSError("gone")):
+        with patch.object(delivery, "_secure_input_probe", side_effect=OSError("gone")):
             self.assertFalse(sotto.secure_input_active())
 
 
