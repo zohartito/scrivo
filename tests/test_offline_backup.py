@@ -15,11 +15,11 @@ import tempfile
 from unittest.mock import patch
 from pathlib import Path
 
-import offline_backup
-from adaptive_runtime import AdaptiveRuntime
+from maintainer import offline_backup
+from maintainer.adaptive_runtime import AdaptiveRuntime
 from audio_codec import prepare_canonical
 from comparator_spool import ComparatorSpool
-from silver_store import SilverStore
+from maintainer.silver_store import SilverStore
 
 
 class OfflineBackupTests(unittest.TestCase):

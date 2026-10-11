@@ -11,8 +11,8 @@ import sys
 if sys.platform != "darwin":
     raise unittest.SkipTest("adaptive lane is macOS-only in v1 (fcntl)")
 
-from inference_scheduler import InferenceScheduler
-from inference_scheduler import default_boot_session_id, default_process_start_token
+from maintainer.inference_scheduler import InferenceScheduler
+from maintainer.inference_scheduler import default_boot_session_id, default_process_start_token
 
 
 class SchedulerTests(unittest.TestCase):

@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import runtime_source_manifest as source
 import sealed_release_bootstrap as bootstrap
-import sealed_release as release
-from sealed_release import (_release_body, activate_release, prepare_logs, rollback_release,
+from maintainer import sealed_release as release
+from maintainer.sealed_release import (_release_body, activate_release, prepare_logs, rollback_release,
                             runtime_closure, stage_release, verify_release)
 
 
@@ -79,6 +79,22 @@ class SealedReleaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "extra"):
                     verify_release(untouched, runtime_validator=validator)
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'launchd templates take POSIX absolute paths (macOS-only)')
+    def test_template_rendering_preserves_sealed_offline_arguments_and_escapes_home(self):
+        # Moved from test_alpha_onboarding.py: launchd_templates is maintainer-only.
+        from maintainer.launchd_templates import render
+        home = Path('/tmp/Alpha & Ω')
+        templates = sorted((Path(__file__).resolve().parents[1] / 'launchd').glob('*.plist'))
+        self.assertEqual(len(templates), 2)
+        for template in templates:
+            original = plistlib.loads(template.read_bytes())
+            value = plistlib.loads(render(template.read_bytes(), home=home, ffmpeg='/tmp/ffmpeg'))
+            self.assertEqual(value['ProgramArguments'][:4], ['/usr/bin/python3', '-I', '-S', '-B'])
+            self.assertTrue(value['ProgramArguments'][4].startswith(str(home)))
+            self.assertEqual(value['KeepAlive'], original['KeepAlive'])
+            self.assertEqual(value['EnvironmentVariables']['SOTTO_OFFLINE'], '1')
+            self.assertNotIn('__SOTTO_', str(value))
+
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
     def test_activation_lkg_rollback_logs_and_template_contracts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -100,7 +116,7 @@ class SealedReleaseTests(unittest.TestCase):
             self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in logs.values()))
             templates=[]
             for template, entry, log_name in (("launchd/com.zohartito.sotto.app.plist", "sotto.py", "app.log"),
-                                              ("launchd/com.zohartito.sotto.adaptive-silver.plist", "adaptive_worker.py", "worker.log")):
+                                              ("launchd/com.zohartito.sotto.adaptive-silver.plist", "maintainer/adaptive_worker.py", "worker.log")):
                 value = plistlib.loads((Path(__file__).parents[1] / template).read_bytes())
                 templates.append(value)
                 self.assertEqual(value["ProgramArguments"][0], "/usr/bin/python3")
@@ -163,6 +179,38 @@ class SealedReleaseTests(unittest.TestCase):
             self.assertEqual(json.loads(recorded.read_text())[1:], ["run","--trigger","right-option","--idle-release","45","--language","en","--adaptive"])
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
+    def test_a_maintainer_entry_imports_its_package_from_the_sealed_source_root(self):
+        """The worker entry lives in maintainer/; the bootstrap puts the release
+        source root first on sys.path, so ``from maintainer import …`` resolves
+        inside the sealed tree with no other start-up code."""
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); source_root=root/"source"; package=source_root/"maintainer"; package.mkdir(parents=True)
+            recorded=root/"imported.json"
+            files={"maintainer/__init__.py":"",
+                   "maintainer/probe.py":"",
+                   "maintainer/adaptive_worker.py":f"import json,pathlib,sys\nfrom maintainer import probe\npathlib.Path({str(recorded)!r}).write_text(json.dumps([probe.__file__,sys.argv[1:]]))\n"}
+            for name,body in files.items():
+                path=source_root/name; path.write_text(body); os.chmod(path,0o600)
+            runtime=Path(sys.executable).resolve()
+            site=Path(sys.prefix)/"lib"/f"python{sys.version_info.major}.{sys.version_info.minor}"/"site-packages"
+            declared={"source_manifest":{"files":[{"path":name,"sha256":hashlib.sha256(body.encode()).hexdigest()} for name,body in files.items()]}}
+            saved_main=sys.modules["__main__"]; saved_argv=list(sys.argv); saved_path=list(sys.path)
+            saved_package={name:module for name,module in sys.modules.items() if name.split(".")[0]=="maintainer"}
+            for name in saved_package: del sys.modules[name]
+            try:
+                with patch.object(bootstrap,"_canonical_isolation",return_value=True), patch.object(bootstrap,"verify",return_value=(root,{**declared,"runtime":{"python":{},"import_roots":[bootstrap._sealed_import_root(site)]},"entrypoints":{"worker":"maintainer/adaptive_worker.py"}})), \
+                     patch.object(bootstrap,"_verify_runtime",return_value=runtime), \
+                     patch.object(bootstrap,"_running_pinned_launcher",return_value=True):
+                    bootstrap.main(["--release-root",str(root),"--entry","maintainer/adaptive_worker.py","--serve"])
+            finally:
+                for name in [name for name in sys.modules if name.split(".")[0]=="maintainer"]: del sys.modules[name]
+                sys.modules.update(saved_package)
+                sys.modules["__main__"]=saved_main; sys.argv[:]=saved_argv; sys.path[:]=saved_path
+            imported,argv=json.loads(recorded.read_text())
+            self.assertEqual(Path(imported),root/"source"/"maintainer"/"probe.py")
+            self.assertEqual(argv,["--serve"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
     @unittest.skipIf(sys.version_info < (3, 14),
                      "sealed -I -S venv integration requires Python 3.14; alpha foreground uses 3.12")
     def test_configured_venv_launcher_is_probed_and_bootstrapped_without_bytecode(self):
@@ -172,7 +220,8 @@ class SealedReleaseTests(unittest.TestCase):
             source_root=root/"source"; source_root.mkdir()
             shutil.copy2(Path(__file__).parents[1]/"sealed_release_bootstrap.py",source_root/"sealed_release_bootstrap.py")
             (source_root/"sotto.py").write_text("import huggingface_hub, os, sys\nprint('sealed-prefix='+sys.prefix)\nprint('offline='+os.environ.get('HF_HUB_OFFLINE','missing'))\nprint(huggingface_hub.__name__)\n")
-            (source_root/"adaptive_worker.py").write_text("import huggingface_hub, os, sys\nprint('sealed-prefix='+sys.prefix)\nprint('offline='+os.environ.get('HF_HUB_OFFLINE','missing'))\nprint('sealed-worker='+huggingface_hub.__name__)\n")
+            (source_root/"maintainer").mkdir(); (source_root/"maintainer"/"__init__.py").write_text("")
+            (source_root/"maintainer"/"adaptive_worker.py").write_text("import huggingface_hub, os, sys\nprint('sealed-prefix='+sys.prefix)\nprint('offline='+os.environ.get('HF_HUB_OFFLINE','missing'))\nprint('sealed-worker='+huggingface_hub.__name__)\n")
             ffmpeg=root/"ffmpeg"; ffmpeg.write_text("#!/bin/sh\nprintf 'ffmpeg version fixture\\n'\n"); os.chmod(ffmpeg,0o700)
             closure=runtime_closure(python=launcher,ffmpeg=ffmpeg)
             self.assertTrue(all(len(import_root["marker"]) == 4 and
@@ -185,7 +234,7 @@ class SealedReleaseTests(unittest.TestCase):
             self.assertEqual(closure["python"]["resolved_path"],str(resolved))
             self.assertNotEqual(closure["python"]["prefix"],closure["python"]["base_prefix"])
             self.assertTrue(closure["python"]["launcher_chain"])
-            with patch.object(source,"RUNTIME_SOURCE_FILES",("sotto.py","adaptive_worker.py","sealed_release_bootstrap.py")):
+            with patch.object(source,"RUNTIME_SOURCE_FILES",("sotto.py","maintainer/__init__.py","maintainer/adaptive_worker.py","sealed_release_bootstrap.py")):
                 bundle=stage_release(root/"releases",source_root=source_root,runtime=closure)
                 activate_release(root/"releases",bundle.name,runtime_validator=lambda value:value==closure)
             bootstrap_path=bundle/"source"/"sealed_release_bootstrap.py"
@@ -197,7 +246,7 @@ class SealedReleaseTests(unittest.TestCase):
             environment=dict(os.environ); environment.pop("PYTHONDONTWRITEBYTECODE",None)
             for name in ("SOTTO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE"): environment.pop(name,None)
             environment["PYTHONPATH"]=str(injection)
-            for entry,marker in (("sotto.py","huggingface_hub"),("adaptive_worker.py","sealed-worker=huggingface_hub")):
+            for entry,marker in (("sotto.py","huggingface_hub"),("maintainer/adaptive_worker.py","sealed-worker=huggingface_hub")):
                 command=[sys.executable,"-I","-S","-B",str(bootstrap_path),"--release-root",str(root/"releases"),"--entry",entry]
                 for _ in range(2):
                     result=subprocess.run(command,text=True,capture_output=True,env=environment,check=True)
@@ -338,16 +387,16 @@ class SealedReleaseTests(unittest.TestCase):
                     bootstrap._verify_runtime(runtime)
 
     def test_declared_provisioning_and_calibration_entrypoints_are_allowlisted(self):
-        declared={"teacher_provision.py","calibration_manifest_builder.py","calibration_worker.py"}
+        declared={"maintainer/teacher_provision.py","maintainer/calibration_manifest_builder.py","maintainer/calibration_worker.py"}
         self.assertTrue(declared.issubset(set(source.RUNTIME_SOURCE_FILES)))
         self.assertTrue(declared.issubset(set(_release_body({}, {})["entrypoints"].values())))
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); entry=root/"entry.py"; entry.write_text("pass\n"); os.chmod(entry,0o600)
-            with patch.object(bootstrap,"_canonical_isolation",return_value=True), patch.object(bootstrap,"verify",return_value=(root,{"runtime":{},"entrypoints":{"teacher":"teacher_provision.py"}})), \
+            with patch.object(bootstrap,"_canonical_isolation",return_value=True), patch.object(bootstrap,"verify",return_value=(root,{"runtime":{},"entrypoints":{"teacher":"maintainer/teacher_provision.py"}})), \
                  patch.object(bootstrap,"_verify_runtime",return_value=Path(sys.executable)), \
                  patch.object(bootstrap,"_running_pinned_launcher",return_value=True):
                 with self.assertRaisesRegex(RuntimeError,"declared"):
-                    bootstrap.main(["--release-root",str(root),"--entry","calibration_worker.py"])
+                    bootstrap.main(["--release-root",str(root),"--entry","maintainer/calibration_worker.py"])
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
     def test_runtime_policy_rejects_missing_direct_and_extra_locked_dependency(self):

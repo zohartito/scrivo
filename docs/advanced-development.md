@@ -7,8 +7,13 @@ experimental development workflows; they are not onboarding steps.
 
 Sealed deployment remains a separate maintainer workflow through
 `scripts/rollout.sh`. Templates contain placeholders and must be rendered by
-`launchd_templates.py`; copying a template directly into LaunchAgents is not
+`maintainer/launchd_templates.py`; copying a template directly into LaunchAgents is not
 a supported installation. Source changes invalidate source-bound receipts.
+
+The lane's code lives in the `maintainer/` package (the source alpha archive
+leaves it out). Run its commands as modules from the repo root, e.g.
+`venv/bin/python -m maintainer.adaptive_worker`; a sealed release starts them
+through `sealed_release_bootstrap.py --entry maintainer/<module>.py`.
 
 ## Experimental learning and evaluation
 
@@ -52,7 +57,7 @@ the frozen normalized token sequence; blanks/no-speech, errors, mismatches,
 numbers, names, acronyms, negations, and command-like text abstain. Teacher
 surface hypotheses are memory-only.  Accepted evidence is labelled SILVER.
 
-`adaptive_worker.py` is headless: it imports neither AppKit nor Quartz and can
+`maintainer/adaptive_worker.py` is headless: it imports neither AppKit nor Quartz and can
 run without the dictation application. It validates history revision/audio
 digest, clear epoch, receipt, lineage, and policy immediately before accepting
 a label. Human correction/delete/clear revokes prior silver first, fail-closed;
@@ -72,20 +77,20 @@ V2 and strict sealed readiness pass. After that it may run shadow-only to
 collect the personal horizon; candidate routing remains impossible until
 personal evaluation authorizes at least 500 captures over at least 7 days.
 Teacher packages are intentionally isolated from the live app requirements in
-`teachers/requirements-qwen.txt` and `teachers/requirements-granite.txt`.
+`maintainer/teachers/requirements-qwen.txt` and `maintainer/teachers/requirements-granite.txt`.
 Provision computes (rather than trusts) absolute interpreter/package, adapter,
 canonicalizer, and full snapshot identities. Runtime is offline and must never
 resolve Hub ids:
 
 ```bash
-venv/bin/python adaptive_worker.py --base-dir "$HOME/Library/Application Support/sotto"
-venv/bin/python adaptive_worker.py --base-dir "$HOME/Library/Application Support/sotto" --status
-venv/bin/python teacher_provision.py --base-dir "$HOME/Library/Application Support/sotto" \
+venv/bin/python -m maintainer.adaptive_worker --base-dir "$HOME/Library/Application Support/sotto"
+venv/bin/python -m maintainer.adaptive_worker --base-dir "$HOME/Library/Application Support/sotto" --status
+venv/bin/python -m maintainer.teacher_provision --base-dir "$HOME/Library/Application Support/sotto" \
   --qwen-python "$HOME/Library/Application Support/sotto/teacher-runtimes/qwen3-asr-1.7b/venv/bin/python" \
   --qwen-snapshot "$HOME/Library/Application Support/sotto/huggingface/models--Qwen--Qwen3-ASR-1.7B/snapshots/<pinned-revision>" \
   --granite-python "$HOME/Library/Application Support/sotto/teacher-runtimes/granite-4.0-1b-speech/venv/bin/python" \
   --granite-snapshot "$HOME/Library/Application Support/sotto/huggingface/models--ibm-granite--granite-4.0-1b-speech/snapshots/<pinned-revision>"
-venv/bin/python calibration_worker.py --base-dir "$HOME/Library/Application Support/sotto" --manifest /absolute/frozen-calibration.json \
+venv/bin/python -m maintainer.calibration_worker --base-dir "$HOME/Library/Application Support/sotto" --manifest /absolute/frozen-calibration.json \
   --test-parquet /absolute/en-test-00000-of-00001.parquet \
   --validation-parquet /absolute/en-validation-00000-of-00001.parquet \
   --pyarrow-python /absolute/pyenv/versions/3.11.7/bin/python3.11
@@ -102,7 +107,7 @@ authorization from frozen evidence; there is no CLI command that bypasses
 those gates. Parakeet requires FFmpeg under launchd; the template carries
 `__SOTTO_HOME__`/`__SOTTO_FFMPEG__` placeholders plus the required safe PATH.
 Never install a raw template: render it first with
-`/usr/bin/python3 -I -S -B launchd_templates.py --template <template> --output <LaunchAgents plist>`
+`/usr/bin/python3 -I -S -B maintainer/launchd_templates.py --template <template> --output <LaunchAgents plist>`
 (`scripts/rollout.sh` does this for the app agent; `SOTTO_FFMPEG` selects the
 FFmpeg path, default `/opt/homebrew/bin/ffmpeg`).
 
@@ -144,7 +149,7 @@ Once the public Calibration V2 gate has passed, the headless worker may run in
 `shadow_only` mode to collect the first prospective personal horizon. This is
 evidence collection only: no candidate routing or authorization is possible
 until the separate frozen personal-horizon evaluation has passed. Use
-`adaptive_worker.py --base-dir <private-state-root> --status` for the strict,
+`-m maintainer.adaptive_worker --base-dir <private-state-root> --status` for the strict,
 content-free sealed readiness JSON; it exits zero only when that shadow
 collection policy is ready and otherwise fails closed without constructing or
 repairing state.
@@ -233,7 +238,7 @@ deployment ledger to `shadow_only`; a restored candidate needs fresh evidence
 and authorization before it can route traffic.
 
 ```bash
-venv/bin/python offline_backup.py backup --source /private/state-copy --bundle /private/backups/new
-venv/bin/python offline_backup.py verify --bundle /private/backups/<digest>
-venv/bin/python offline_backup.py restore --bundle /private/backups/<digest> --target /private/restore-fixture
+venv/bin/python -m maintainer.offline_backup backup --source /private/state-copy --bundle /private/backups/new
+venv/bin/python -m maintainer.offline_backup verify --bundle /private/backups/<digest>
+venv/bin/python -m maintainer.offline_backup restore --bundle /private/backups/<digest> --target /private/restore-fixture
 ```

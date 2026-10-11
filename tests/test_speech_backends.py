@@ -12,7 +12,7 @@ from unittest.mock import patch
 import numpy as np
 
 from audio_codec import prepare_canonical, read_canonical_wav, write_canonical_wav
-from speech_backends import (LocalBackendManager, PARAKEET_ID, WHISPER_ID, WHISPER_GLOSSARY_ID, PreflightReceipts,
+from maintainer.speech_backends import (LocalBackendManager, PARAKEET_ID, WHISPER_ID, WHISPER_GLOSSARY_ID, PreflightReceipts,
                              WHISPER_REPO, _candidate_runtime_identity, _package_versions, _safe_snapshot_digest,
                              candidate_manifest, evaluator_hash, resolve_snapshot)
 from runtime_source_manifest import RUNTIME_SOURCE_SCHEMA, runtime_source_digest
@@ -54,7 +54,7 @@ class SpeechBackendTests(unittest.TestCase):
                        "runtime_source_digest": runtime_source_digest(), "evaluator_id": "sotto-paired-v1",
                        "evaluator_hash": evaluator_hash()}
             store = PreflightReceipts(root); store.save(WHISPER_ID, receipt)
-            with patch("speech_backends.resolve_snapshot", return_value=(revision, snapshot)), \
+            with patch("maintainer.speech_backends.resolve_snapshot", return_value=(revision, snapshot)), \
                  patch.object(store, "_current_runtime_identity", return_value=identity):
                 self.assertTrue(store.valid_manifest(manifest))
                 for mutate in (lambda value: value.__setitem__("schema", 2),
@@ -135,11 +135,11 @@ class SpeechBackendTests(unittest.TestCase):
                 def transcribe(self, manifest, samples):
                     seen.append(manifest); return "", {}
             manager = Manager(root)
-            with patch("speech_backends.resolve_snapshot", side_effect=FileNotFoundError("missing")), \
+            with patch("maintainer.speech_backends.resolve_snapshot", side_effect=FileNotFoundError("missing")), \
                  patch.dict(os.environ, {"HF_HUB_OFFLINE": "1"}, clear=False), \
                  patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **_: self.fail("download"))}):
                 with self.assertRaises(RuntimeError): manager.preflight(WHISPER_ID, np.zeros(8), hf_home=root)
-            with patch("speech_backends.resolve_snapshot", side_effect=[FileNotFoundError("missing"),("rev",snapshot)]), \
+            with patch("maintainer.speech_backends.resolve_snapshot", side_effect=[FileNotFoundError("missing"),("rev",snapshot)]), \
                  patch.dict(os.environ, {"HF_HUB_OFFLINE": "0", "SOTTO_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0"}, clear=False), \
                  patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **_: str(snapshot))}):
                 manager.preflight(WHISPER_ID, np.zeros(8), hf_home=root)
@@ -148,7 +148,7 @@ class SpeechBackendTests(unittest.TestCase):
     def test_hf_blob_symlink_snapshot_layout_is_confined(self):
         """The real Hub cache stores snapshot files as blob links; accept
         exactly that confinement, reject any escape, bind target bytes."""
-        from speech_backends import _strict_snapshot
+        from maintainer.speech_backends import _strict_snapshot
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); model=root/"models--x--y"; blobs=model/"blobs"; snap=model/"snapshots"/"rev"
             blobs.mkdir(parents=True); snap.mkdir(parents=True)
@@ -174,8 +174,8 @@ class SpeechBackendTests(unittest.TestCase):
             manifest=candidate_manifest(WHISPER_ID,revision="rev",runtime_identity=runtime)
             receipts=PreflightReceipts(root)
             receipts.save(WHISPER_ID,self._schema3_receipt(manifest,snap,runtime))
-            with patch("speech_backends._safe_snapshot_digest",wraps=_safe_snapshot_digest) as digest, \
-                 patch("speech_backends.resolve_snapshot",return_value=("rev",snap)), \
+            with patch("maintainer.speech_backends._safe_snapshot_digest",wraps=_safe_snapshot_digest) as digest, \
+                 patch("maintainer.speech_backends.resolve_snapshot",return_value=("rev",snap)), \
                  patch.object(receipts,"_current_runtime_identity",return_value=runtime):
                 self.assertTrue(receipts.valid_manifest(manifest)); self.assertTrue(receipts.valid_manifest(manifest))
                 self.assertEqual(digest.call_count,1)
@@ -191,7 +191,7 @@ class SpeechBackendTests(unittest.TestCase):
             class Manager(LocalBackendManager):
                 def transcribe(self,*_args,**_kwargs): self.fail('must not warm/download offline')
             for flag in ('SOTTO_OFFLINE','HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE'):
-                with self.subTest(flag=flag), patch('speech_backends.resolve_snapshot',side_effect=FileNotFoundError('missing')), \
+                with self.subTest(flag=flag), patch('maintainer.speech_backends.resolve_snapshot',side_effect=FileNotFoundError('missing')), \
                      patch.dict(os.environ,{'SOTTO_OFFLINE':'0','HF_HUB_OFFLINE':'0','TRANSFORMERS_OFFLINE':'0',flag:'true'},clear=False), \
                      patch.dict(sys.modules,{'huggingface_hub':types.SimpleNamespace(snapshot_download=lambda **_: self.fail('download'))}):
                     with self.assertRaisesRegex(RuntimeError,'offline preflight'):
@@ -203,8 +203,8 @@ class SpeechBackendTests(unittest.TestCase):
             runtime={"runtime":"cache"}; manifest = candidate_manifest(WHISPER_ID, revision="rev", runtime_identity=runtime)
             receipt = self._schema3_receipt(manifest, snap, runtime)
             receipts = PreflightReceipts(root); receipts.save(WHISPER_ID, receipt)
-            with patch("speech_backends._safe_snapshot_digest", wraps=_safe_snapshot_digest) as digest, \
-                 patch("speech_backends.resolve_snapshot", return_value=("rev",snap)), \
+            with patch("maintainer.speech_backends._safe_snapshot_digest", wraps=_safe_snapshot_digest) as digest, \
+                 patch("maintainer.speech_backends.resolve_snapshot", return_value=("rev",snap)), \
                  patch.object(receipts,"_current_runtime_identity",return_value=runtime):
                 self.assertTrue(receipts.valid_manifest(manifest)); self.assertTrue(receipts.valid_manifest(manifest))
                 self.assertEqual(digest.call_count, 1)
@@ -219,8 +219,8 @@ class SpeechBackendTests(unittest.TestCase):
                 snap = root / revision; snap.mkdir(); (snap / "model").write_bytes(revision.encode())
                 manifest = candidate_manifest(stable, revision=revision,runtime_identity=runtime); manifests.append((manifest, snap))
                 receipts.save(stable, self._schema3_receipt(manifest,snap,runtime))
-            with patch("speech_backends._safe_snapshot_digest", wraps=_safe_snapshot_digest) as digest, \
-                 patch("speech_backends.resolve_snapshot", side_effect=lambda _repo,revision: (revision,next(path for item,path in manifests if item["revision"] == revision))), \
+            with patch("maintainer.speech_backends._safe_snapshot_digest", wraps=_safe_snapshot_digest) as digest, \
+                 patch("maintainer.speech_backends.resolve_snapshot", side_effect=lambda _repo,revision: (revision,next(path for item,path in manifests if item["revision"] == revision))), \
                  patch.object(receipts,"_current_runtime_identity",return_value=runtime):
                 for manifest, _ in manifests:
                     self.assertTrue(receipts.valid_manifest(manifest)); self.assertTrue(receipts.valid_manifest(manifest))
@@ -239,7 +239,7 @@ class SpeechBackendTests(unittest.TestCase):
             glossary = candidate_manifest(WHISPER_GLOSSARY_ID, revision="rev", glossary_terms=("sotto",),runtime_identity=runtime)
             receipt_store.save(WHISPER_GLOSSARY_ID, self._schema3_receipt(glossary,snap,runtime))
             frozen = {**glossary, "development_dependency_digests": ["private"], "generation_id": "g"}
-            with patch("speech_backends.resolve_snapshot",return_value=("rev",snap)), patch.object(receipt_store,"_current_runtime_identity",return_value=runtime):
+            with patch("maintainer.speech_backends.resolve_snapshot",return_value=("rev",snap)), patch.object(receipt_store,"_current_runtime_identity",return_value=runtime):
                 self.assertTrue(receipt_store.valid_manifest(promoted))
                 self.assertFalse(receipt_store.valid_manifest({**promoted, "revision": "other"}))
                 self.assertTrue(receipt_store.valid_manifest(frozen))
@@ -256,7 +256,7 @@ class SpeechBackendTests(unittest.TestCase):
             receipts=PreflightReceipts(root)
             receipts.save(WHISPER_ID,self._schema3_receipt(manifest,snapshot,identity))
             current=identity
-            with patch("speech_backends.resolve_snapshot",return_value=('rev',snapshot)), patch.object(receipts,'_current_runtime_identity',side_effect=lambda _stable: current):
+            with patch("maintainer.speech_backends.resolve_snapshot",return_value=('rev',snapshot)), patch.object(receipts,'_current_runtime_identity',side_effect=lambda _stable: current):
                 self.assertTrue(receipts.valid_manifest(manifest))
                 for mutate in (
                     lambda value: value['python'].__setitem__('version','rotated-python'),

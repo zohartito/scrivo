@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from history import _atomic_jsonl
-from silver_experiment import SilverExperiment
-from silver_store import SilverStore
+from maintainer.silver_experiment import SilverExperiment
+from maintainer.silver_store import SilverStore
 from storage_lock import advisory_lock, ensure_private_directory, ensure_private_file
 
 
@@ -94,9 +94,10 @@ class DeploymentController:
         # Route authority covers every local semantic component that can alter
         # cohort admission, evaluation, receipt validation, or runtime
         # rollback.  A code update consequently fails old signed routes closed.
-        code_hash=hashlib.sha256(b"".join(Path(__file__).with_name(name).read_bytes() for name in
-            ("deployment_controller.py", "silver_experiment.py", "adaptive_runtime.py", "adaptive_worker.py",
-             "silver_store.py", "evaluation.py", "audio_codec.py", "speech_backends.py", "teacher_consensus.py"))).hexdigest()
+        code_hash=hashlib.sha256(b"".join((Path(__file__).parent.parent / name).read_bytes() for name in
+            ("maintainer/deployment_controller.py", "maintainer/silver_experiment.py", "maintainer/adaptive_runtime.py",
+             "maintainer/adaptive_worker.py", "maintainer/silver_store.py", "evaluation.py", "audio_codec.py",
+             "maintainer/speech_backends.py", "maintainer/teacher_consensus.py"))).hexdigest()
         horizon=self.silver.horizon_for_cohort(cohort_id) or {}
         body={"schema":1,"kind":"provisional_silver","candidate":candidate,"cohort_id":cohort_id,
               "identity_hash":outcome.get("identity_hash"),"winner":outcome.get("winner"),

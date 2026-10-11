@@ -10,14 +10,14 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-import teacher_provision
-import teacher_consensus
-from teacher_backends import (GRANITE, OfflineTeacherRunner, QWEN, TeacherPreempted,
+from maintainer import teacher_provision
+from maintainer import teacher_consensus
+from maintainer.teacher_backends import (GRANITE, OfflineTeacherRunner, QWEN, TeacherPreempted,
                               receipt_identity, runtime_identity, sha256_file,
                               snapshot_digest, snapshot_stat_manifest, TeacherFamily,
                               validate_teacher_receipts_read_only, _import_surface,
                               _runtime_markers_current)
-from teacher_consensus import policy_hash
+from maintainer.teacher_consensus import policy_hash
 
 
 class OfflineTeacherRunnerTests(unittest.TestCase):
@@ -77,7 +77,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
                         GRANITE.stable_id: self._receipt(GRANITE, granite_snapshot, granite_adapter, identity)}
             self.assertEqual(len(receipt_identity(receipts[QWEN.stable_id])), 64)
             runner = OfflineTeacherRunner(receipts)
-            with mock.patch("teacher_backends.runtime_identity", return_value=identity):
+            with mock.patch("maintainer.teacher_backends.runtime_identity", return_value=identity):
                 runner.validate()  # warm the cheap marker/content-digest cache
                 replacement = qwen_blob.with_name("replacement"); replacement.write_bytes(b"rotated teacher weights")
                 os.replace(replacement, qwen_blob)
@@ -88,7 +88,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); snapshot, _ = self._snapshot(root, QWEN); adapter = root / "adapter.py"; adapter.write_text("# adapter\n")
             identity = {"python": "fixed", "executable": "fixed", "packages": {name: "1" for name in QWEN.critical_packages}}
-            with mock.patch("teacher_provision.runtime_identity", return_value=identity) as probe:
+            with mock.patch("maintainer.teacher_provision.runtime_identity", return_value=identity) as probe:
                 receipt = teacher_provision._receipt(QWEN, Path(sys.executable), snapshot, adapter)
             self.assertEqual(probe.call_count, 1)
             self.assertEqual(receipt["interpreter_identity"], identity)
@@ -130,7 +130,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
             seen.append(kwargs['env'])
             payload={"python":"x","executable":"x","prefix":"x","base_prefix":"x","sys_path":[str(Path.cwd())],"import_roots":[{"root":str(Path.cwd()),"marker":[0,0,0,0,0],"entries":[]}],"distributions":[{"name":"numpy","version":"x","root":str(Path.cwd()),"files":[]}]}
             return subprocess.CompletedProcess(args[0],0,stdout=json.dumps(payload),stderr='')
-        with mock.patch('teacher_backends.subprocess.run',side_effect=run), mock.patch('teacher_backends._import_surfaces',return_value=[]):
+        with mock.patch('maintainer.teacher_backends.subprocess.run',side_effect=run), mock.patch('maintainer.teacher_backends._import_surfaces',return_value=[]):
             runtime_identity(Path(sys.executable),('numpy',))
         receipt={'interpreter':sys.executable,'adapter':str(Path(__file__)),'adapter_hash':sha256_file(Path(__file__)),'snapshot_path':str(Path(__file__).parent)}
         class Sink:
@@ -157,7 +157,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
             blob=blobs/"weights"; blob.write_bytes(b"weights"); (snapshot/"weights").symlink_to(Path("..")/".."/"blobs"/"weights")
             adapter=root/"adapter.py"; adapter.write_text("# adapter\n")
             wrapper=root/"teacher-python"; wrapper.write_text(f"#!/bin/sh\nif [ \"$1\" = \"-I\" ] && [ \"$2\" = \"-S\" ] && [ \"$3\" = \"-B\" ] && [ \"$4\" = \"-c\" ]; then exec {sys.executable} \"$@\"; fi\nprintf 'fixed inference\\n'\n") ; os.chmod(wrapper,0o700)
-            with mock.patch("teacher_backends.REQUIRED_TEACHERS",(family,)):
+            with mock.patch("maintainer.teacher_backends.REQUIRED_TEACHERS",(family,)):
                 receipt=teacher_provision._receipt(family,wrapper,snapshot,adapter)
                 self.assertEqual(receipt["interpreter_identity"]["schema"],4)
                 self.assertTrue(validate_teacher_receipts_read_only({family.stable_id:receipt}))
@@ -165,7 +165,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
                 self.assertEqual(runner.transcribe(family,root/"audio.wav","opaque"),"fixed inference")
                 # The first validate above populated the runner cache; an
                 # unchanged second pass is marker-only and must not reprobe.
-                with mock.patch("teacher_backends.runtime_identity",side_effect=AssertionError("unexpected full probe")):
+                with mock.patch("maintainer.teacher_backends.runtime_identity",side_effect=AssertionError("unexpected full probe")):
                     runner.validate(); runner.validate()
                 wrapper.write_text(f"#!/bin/sh\nif [ \"$1\" = \"-I\" ] && [ \"$2\" = \"-S\" ] && [ \"$3\" = \"-B\" ] && [ \"$4\" = \"-c\" ]; then exec {sys.executable} \"$@\"; fi\nprintf 'rotated inference\\n'\n"); os.chmod(wrapper,0o700)
                 with self.assertRaisesRegex(RuntimeError,"runtime changed"):
@@ -178,7 +178,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
             expected=_import_surface(surface,with_hash=True)
             # Minimal surrounding identity lets this test exercise the exact
             # marker projection without a model/runtime dependency.
-            from teacher_backends import _launcher_identity
+            from maintainer.teacher_backends import _launcher_identity
             identity={"schema":4,"launcher":_launcher_identity(Path(sys.executable)),"closure":[],"import_surface":[expected]}
             # Bind the executable hash marker tuple correctly for the helper.
             self.assertTrue(_runtime_markers_current(identity))
@@ -208,7 +208,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
             dist=site/"fixturepkg-1.0.dist-info"; dist.mkdir()
             (dist/"METADATA").write_text("Metadata-Version: 2.1\nName: fixturepkg\nVersion: 1.0\n")
             (dist/"RECORD").write_text("fixturepkg.py,,\nfixturepkg-1.0.dist-info/METADATA,,\nfixturepkg-1.0.dist-info/RECORD,,\n")
-            with mock.patch("teacher_backends.REQUIRED_TEACHERS",(family,)):
+            with mock.patch("maintainer.teacher_backends.REQUIRED_TEACHERS",(family,)):
                 receipt=teacher_provision._receipt(family,interpreter,snapshot,adapter)
                 identity=receipt["interpreter_identity"]
                 self.assertEqual(identity["schema"],4)
@@ -236,11 +236,11 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
     def test_real_adapters_verify_import_root_trees_before_insertion(self):
         """Both pinned adapters re-verify the frozen trees in-child and refuse
         a changed root (exit 3) before inserting or importing anything."""
-        import sealed_release as release
+        from maintainer import sealed_release as release
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); site=root/"site"; site.mkdir(); module=site/"module.py"
             for adapter in ("qwen3_adapter.py","granite_adapter.py"):
-                path=Path(__file__).parents[1]/"teachers"/adapter
+                path=Path(__file__).parents[1]/"maintainer"/"teachers"/adapter
                 argv=[sys.executable,"-I","-S","-B",str(path),"--audio","x","--identity","x","--snapshot",str(root),"--decode","{}"]
                 module.write_text("v1\n")
                 payload=json.dumps({"expected_import_roots":[release._sealed_import_root(site)]})
@@ -259,7 +259,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
             root=Path(directory); surface=root/"surface"; target=root/"target"; surface.mkdir(); target.mkdir()
             leaf=target/"module.py"; leaf.write_text("v1\n"); (surface/"linked").symlink_to(target,target_is_directory=True)
             expected=_import_surface(surface,with_hash=True)
-            from teacher_backends import _launcher_identity
+            from maintainer.teacher_backends import _launcher_identity
             identity={"schema":4,"launcher":_launcher_identity(Path(sys.executable)),"closure":[],"import_surface":[expected]}
             self.assertTrue(_runtime_markers_current(identity))
             (target/"added.py").write_text("added\n"); self.assertFalse(_runtime_markers_current(identity)); (target/"added.py").unlink()

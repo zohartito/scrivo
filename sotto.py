@@ -924,7 +924,7 @@ def adaptive_status_text(snapshots, *, base_dir: Path | None = None) -> str:
     else:
         stage = f"collecting development {dev}/20"
     try:
-        from silver_store import read_only_status
+        from maintainer.silver_store import read_only_status
         silver=read_only_status(root)
         deploy=_read_only_last_jsonl(root / "adaptive-learning" / "silver" / "deployment.jsonl")
         if not isinstance(deploy,dict) or deploy.get("schema") != 1 or not isinstance(deploy.get("tier"),str):
@@ -1243,7 +1243,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     dependency_guard = AdaptiveLearning(store.base_dir)
     adaptive_runtime = None
     if adaptive:
-        from adaptive_runtime import AdaptiveRuntime
+        from maintainer.adaptive_runtime import AdaptiveRuntime
         adaptive_runtime = AdaptiveRuntime(history=store, learning=learning_store,
                                            coordinator=coordinator)
         adaptive_runtime.register_retained_history()
@@ -1955,7 +1955,7 @@ def main() -> None:
         return
 
     if args.command in {"learning-preflight", "learning-review-list", "learning-evaluate", "learning-rollback"}:
-        from adaptive_runtime import AdaptiveRuntime
+        from maintainer.adaptive_runtime import AdaptiveRuntime
         runtime = AdaptiveRuntime()
         if args.command == "learning-preflight":
             for result in runtime.preflight():

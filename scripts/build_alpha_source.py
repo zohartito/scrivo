@@ -145,7 +145,7 @@ PUBLIC_FILES = sorted(set(RUNTIME_SOURCE_FILES) | set(PUBLIC_TEST_FILES) | set(W
     'scripts/rollout.sh', 'benchmark.py', 'docs/alpha-release-notes.md',
     'docs/alpha-validation.md', 'docs/advanced-development.md',
     'docs/speech-learning.md', 'docs/english-adaptive-research.md',
-    'teachers/requirements-qwen.txt', 'teachers/requirements-granite.txt',
+    'maintainer/teachers/requirements-qwen.txt', 'maintainer/teachers/requirements-granite.txt',
     '.gitignore', '.github/workflows/secret-scan.yml',
     '.github/workflows/benchmark-gate.yml', '.github/workflows/claude-pr-review.yml',
     '.github/workflows/tests.yml',

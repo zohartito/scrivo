@@ -25,16 +25,16 @@ from comparator_spool import ComparatorSpool
 from evaluation import evaluate_sample, tokenize
 from history import HistoryStore
 from learning import LearningCoordinator
-from inference_scheduler import InferenceScheduler
-from silver_experiment import SilverExperiment
-from silver_store import SilverStore
-from deployment_controller import DeploymentController
-from speech_backends import (LocalBackendManager, PARAKEET_ID, PreflightReceipts,
+from maintainer.inference_scheduler import InferenceScheduler
+from maintainer.silver_experiment import SilverExperiment
+from maintainer.silver_store import SilverStore
+from maintainer.deployment_controller import DeploymentController
+from maintainer.speech_backends import (LocalBackendManager, PARAKEET_ID, PreflightReceipts,
                              WHISPER_GLOSSARY_ID, WHISPER_ID, validate_preflight_receipt_read_only)
-from teacher_backends import (OfflineTeacherRunner, REQUIRED_TEACHERS, TeacherPreempted, family_hash,
+from maintainer.teacher_backends import (OfflineTeacherRunner, REQUIRED_TEACHERS, TeacherPreempted, family_hash,
                               load_receipts, receipt_identity, validate_disjoint_lineage,
                               validate_teacher_receipts_read_only)
-from teacher_consensus import exact_unanimous, policy_hash
+from maintainer.teacher_consensus import exact_unanimous, policy_hash
 from storage_lock import advisory_lock
 
 
@@ -97,7 +97,7 @@ class AdaptiveWorker:
                     # finish each opaque target before touching mirrors or
                     # acknowledging the exact batch version.  A malformed or
                     # interrupted target remains pending for a later retry.
-                    from silver_store import _valid_revoke_batch
+                    from maintainer.silver_store import _valid_revoke_batch
                     if not _valid_revoke_batch(pending):
                         return 0
                     coordinator=LearningCoordinator(self.history,base_dir=self.base_dir)
@@ -268,7 +268,7 @@ class AdaptiveWorker:
         except (FileNotFoundError,OSError,RuntimeError,ValueError): return None
         post=self._receipt_manifest(WHISPER_ID)
         if post is None or self.silver.manifest_hash(post) != self.silver.manifest_hash(baseline) or post.get('snapshot_digest') != baseline.get('snapshot_digest'): return None
-        from adaptive_runtime import AdaptiveRuntime
+        from maintainer.adaptive_runtime import AdaptiveRuntime
         coverage,hallucination=AdaptiveRuntime._runtime_safety(text,metadata,identity.sample_count/16_000,prepared.asr_samples)
         return {'success':True,'fallback':False,'latency':latency,'coverage_ok':coverage,'hallucination_ok':hallucination,'identity_valid':True}
 
@@ -562,7 +562,7 @@ class AdaptiveWorker:
         # rather than starting a subprocess that cannot be leased/recovered.
         human_state: dict[str, Any]
         try:
-            from adaptive_runtime import AdaptiveRuntime
+            from maintainer.adaptive_runtime import AdaptiveRuntime
             human=AdaptiveRuntime(self.base_dir)
             human_state=human.reconcile()
             if self.stop.is_set():
@@ -646,7 +646,7 @@ def sealed_readiness_status(base_dir: Path | str) -> dict[str, Any]:
     except (OSError,RuntimeError,TypeError,ValueError): teacher_hash=None
     teachers={"required":len(REQUIRED_TEACHERS),"present":len(REQUIRED_TEACHERS) if teacher_hash else 0,"lineage_valid":bool(teacher_hash)}
     if not teachers["lineage_valid"]: blocked.append("teacher_receipts")
-    from silver_store import read_only_status
+    from maintainer.silver_store import read_only_status
     silver=read_only_status(base)
     if silver.get("state") != "ok":
         blocked.append("silver_store")
@@ -656,9 +656,9 @@ def sealed_readiness_status(base_dir: Path | str) -> dict[str, Any]:
     db=None
     try:
         path=base/"adaptive-learning"/"silver"/"silver.sqlite3"; db=sqlite3.connect(f"file:{path}?mode=ro",uri=True); db.execute("PRAGMA query_only=ON")
-        from calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
-        from teacher_consensus import policy_hash as current_policy_hash
-        from teacher_backends import family_hash as current_family_hash
+        from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
+        from maintainer.teacher_consensus import policy_hash as current_policy_hash
+        from maintainer.teacher_backends import family_hash as current_family_hash
         row=db.execute("SELECT holdout_key,source_hash,protocol_hash,policy_hash,receipt_hash,state,result FROM calibration_universes ORDER BY created_ts DESC LIMIT 1").fetchone()
         if row is not None:
             holdout,source_hash,protocol_hash,policy_hash,receipt_hash,state,result_raw=row

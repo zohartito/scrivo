@@ -14,7 +14,7 @@ from adaptive_learning import AdaptiveLearning
 
 
 def manifest(stable_id: str, *, dependencies=()) -> dict:
-    from speech_backends import evaluator_hash
+    from maintainer.speech_backends import evaluator_hash
     return {
         "stable_id": stable_id, "backend": "local", "repo": "repo", "revision": "abc",
         "package_versions": {"x": "1"}, "decode_settings": {"beam": 1}, "language": "en",

@@ -24,12 +24,12 @@ from adaptive_learning import AdaptiveLearning
 from audio_codec import PreparedAudio, read_canonical_wav, prepare_canonical, write_canonical_wav
 from comparator_spool import ComparatorSpool
 from history import HistoryStore
-from inference_scheduler import InferenceScheduler
+from maintainer.inference_scheduler import InferenceScheduler
 from learning import LearningCoordinator, LearningStore, adaptive_review_eligible_entry
-from deployment_controller import DeploymentController
-from silver_store import SilverStore
-from silver_experiment import SilverExperiment
-from speech_backends import (LocalBackendManager, PARAKEET_ID, PreflightReceipts,
+from maintainer.deployment_controller import DeploymentController
+from maintainer.silver_store import SilverStore
+from maintainer.silver_experiment import SilverExperiment
+from maintainer.speech_backends import (LocalBackendManager, PARAKEET_ID, PreflightReceipts,
                              WHISPER_GLOSSARY_ID, WHISPER_ID, candidate_manifest,
                              evaluator_hash)
 from speech_config import _clean_terms

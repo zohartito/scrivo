@@ -24,15 +24,15 @@ from learning import LearningCoordinator, LearningStore
 if sys.platform != "darwin":
     raise unittest.SkipTest("adaptive lane is macOS-only in v1 (fcntl)")
 
-from adaptive_runtime import AdaptiveRuntime
-from deployment_controller import DeploymentController
-from silver_store import SilverStore
-from speech_backends import (PARAKEET_ID, WHISPER_ID, PreflightReceipts,
+from maintainer.adaptive_runtime import AdaptiveRuntime
+from maintainer.deployment_controller import DeploymentController
+from maintainer.silver_store import SilverStore
+from maintainer.speech_backends import (PARAKEET_ID, WHISPER_ID, PreflightReceipts,
                              _package_versions, _safe_snapshot_digest,
                              candidate_manifest, evaluator_hash)
 from runtime_source_manifest import RUNTIME_SOURCE_SCHEMA, runtime_source_digest
-from calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
-from teacher_consensus import policy_hash
+from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
+from maintainer.teacher_consensus import policy_hash
 from speech_config import resolve_speech_config
 import sotto
 
@@ -558,12 +558,12 @@ class SpeechRuntimeTests(unittest.TestCase):
         state.write_text(json.dumps({"captures":{},"champions":{"current":None,"baseline":{"stable_id":"base"}},"generations":{}}))
         deploy.write_text(json.dumps({"schema":1,"tier":"provisional_silver","canary":{"stage":"five_percent"}})+"\n")
         before={path:(path.read_bytes(),path.stat().st_mtime_ns) for path in (state,deploy)}
-        with patch("silver_store.read_only_status",return_value={"state":"ok","accepted":2,"abstained":1,"jobs":{"pending":3},"worker":{"state":"idle"}}):
+        with patch("maintainer.silver_store.read_only_status",return_value={"state":"ok","accepted":2,"abstained":1,"jobs":{"pending":3},"worker":{"state":"idle"}}):
             value=sotto.adaptive_status_text([],base_dir=root)
         self.assertIn("deployment=provisional_silver",value); self.assertIn("silver=2 accepted/1 abstained",value)
         self.assertEqual(before,{path:(path.read_bytes(),path.stat().st_mtime_ns) for path in (state,deploy)})
         deploy.write_text("not-json\n")
-        with patch("silver_store.read_only_status",return_value={"state":"ok"}):
+        with patch("maintainer.silver_store.read_only_status",return_value={"state":"ok"}):
             self.assertIn("unavailable (fail closed)",sotto.adaptive_status_text([],base_dir=root))
         deploy.unlink()
         self.assertIn("unavailable (fail closed)",sotto.adaptive_status_text([],base_dir=root))

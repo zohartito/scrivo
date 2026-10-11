@@ -18,14 +18,14 @@ if sys.platform != "darwin":
     raise unittest.SkipTest("adaptive lane is macOS-only in v1 (fcntl)")
 
 from adaptive_learning import AdaptiveLearning
-from adaptive_runtime import AdaptiveRuntime
-from adaptive_worker import AdaptiveWorker
+from maintainer.adaptive_runtime import AdaptiveRuntime
+from maintainer.adaptive_worker import AdaptiveWorker
 from audio_codec import encode_canonical, prepare_canonical, read_canonical_wav, write_canonical_wav
-from deployment_controller import DeploymentController
+from maintainer.deployment_controller import DeploymentController
 from history import HistoryStore
 from learning import LearningCoordinator, LearningStore
-from speech_backends import WHISPER_ID, PreflightReceipts, _package_versions, _safe_snapshot_digest, candidate_manifest, evaluator_hash
-from speech_backends import WHISPER_GLOSSARY_ID
+from maintainer.speech_backends import WHISPER_ID, PreflightReceipts, _package_versions, _safe_snapshot_digest, candidate_manifest, evaluator_hash
+from maintainer.speech_backends import WHISPER_GLOSSARY_ID
 from runtime_source_manifest import RUNTIME_SOURCE_SCHEMA, runtime_source_digest
 
 
@@ -752,7 +752,7 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
             history, learning = HistoryStore(directory), LearningStore(directory); coordinator = LearningCoordinator(history, learning)
             backend = Backend(); runtime = AdaptiveRuntime(directory, history=history, learning=learning, coordinator=coordinator,
                                                            scheduler=Scheduler(), backends=backend)
-            from speech_backends import evaluator_hash
+            from maintainer.speech_backends import evaluator_hash
             champion = candidate_manifest(WHISPER_ID, revision="base")
             challenger = {**candidate_manifest(WHISPER_ID, revision="chall"), "stable_id": "challenger"}
             with strict_receipts(Path(directory),[champion,challenger]) as (_receipts,snapshots):
@@ -854,7 +854,7 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
     def test_reconcile_resumes_closed_or_evaluating_but_not_pending_open(self):
         with tempfile.TemporaryDirectory() as directory:
             for status in ("pool_closed", "evaluating", "pool_open"):
-                subdir = Path(directory) / status; runtime = AdaptiveRuntime(subdir); from speech_backends import evaluator_hash
+                subdir = Path(directory) / status; runtime = AdaptiveRuntime(subdir); from maintainer.speech_backends import evaluator_hash
                 champion = candidate_manifest(WHISPER_ID, revision="base"); ident = "g-" + status
                 runtime.adaptive.create_generation(generation_id=ident, champion=champion, evaluator_hash=evaluator_hash())
                 runtime.adaptive._mutate(lambda state, ident=ident, status=status: state["generations"][ident].update({"status": status}))
@@ -924,7 +924,7 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
 
     def test_nonadaptive_delete_clear_and_learning_revoke_invalidate_persisted_adaptive_state(self):
         import sotto
-        from speech_backends import evaluator_hash
+        from maintainer.speech_backends import evaluator_hash
         with tempfile.TemporaryDirectory() as directory:
             def seeded(ident: str):
                 guard = AdaptiveLearning(directory)
