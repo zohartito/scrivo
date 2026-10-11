@@ -27,6 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from gestures import HANDS_FREE_MAX_S
 from sotto_log import log
 
 if TYPE_CHECKING:
@@ -50,6 +51,9 @@ DRAIN_POLL_S = 0.1               # how often a Quit/Restart drain re-checks the 
 # KeepAlive {SuccessfulExit: false} (the login item, the sealed LaunchAgent)
 # then starts Sotto again instead of leaving the user without it.
 RESTART_FAILED_EXIT = 75         # EX_TEMPFAIL
+# An installed update restarts once dictation is done: the longest recording
+# (the hands-free watchdog) plus time to transcribe and paste it, then anyway.
+UPDATE_DRAIN_DEADLINE_S = HANDS_FREE_MAX_S + 120.0
 RESTART_RELEASE_WAIT_S = 2.0     # bounded wait for the async mic teardown before exec
 
 

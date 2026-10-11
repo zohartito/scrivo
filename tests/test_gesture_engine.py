@@ -13,6 +13,7 @@ import threading
 import unittest
 from unittest import mock
 
+import gestures
 import sotto
 
 
@@ -44,8 +45,8 @@ class ManualTimers:
 class EngineHarness(unittest.TestCase):
     def setUp(self):
         self.timers = ManualTimers()
-        for patcher in (mock.patch.object(sotto.threading, "Timer", self.timers),
-                        mock.patch.object(sotto, "log", lambda msg: None)):
+        for patcher in (mock.patch.object(gestures.threading, "Timer", self.timers),
+                        mock.patch.object(gestures, "log", lambda msg: None)):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.events = []
@@ -173,7 +174,7 @@ class OrderedActionTests(EngineHarness):
         tap_thread = threading.Thread(target=engine.pressed, daemon=True)
         tap_thread.start()
         self.assertTrue(start_entered.wait(5))
-        with mock.patch.object(sotto, "HOLD_THRESHOLD_S", 0.0):
+        with mock.patch.object(gestures, "HOLD_THRESHOLD_S", 0.0):
             engine.released()                # the resync poller's synthesized release
         self.assertEqual(engine.snapshot(), (False, False))   # decided at once ...
         self.assertEqual(order, [], "finish ran while start was still in flight")
@@ -244,6 +245,87 @@ class EpochBoundFinishTests(EngineHarness):
         self.assertTrue(self.engine.force_finish(if_epoch=self.engine.epoch()))
         self.assertEqual(self.engine.snapshot(), (False, False))
         self.assertEqual(self.events, ["start", "finish"])
+
+
+# -- characterization: the decisions pinned before gestures.py -----------------
+
+class GestureDecisionTests(EngineHarness):
+    def test_a_lone_tap_waits_out_the_double_tap_window_then_is_discarded(self):
+        self.engine.pressed(); self.engine.released()
+        self.assertEqual(self.engine.snapshot(), (True, False))   # recording until the verdict
+        self.assertEqual(self.events, ["start"])
+        self.timers.only(sotto.DOUBLE_TAP_WINDOW_S)()
+        self.assertEqual(self.events, ["start", "discard"])
+        self.assertEqual(self.engine.snapshot(), (False, False))
+
+    def test_a_held_press_is_push_to_talk(self):
+        with mock.patch.object(gestures, "HOLD_THRESHOLD_S", 0.0):
+            self.engine.pressed(); self.engine.released()
+        self.assertEqual(self.events, ["start", "finish"])
+        self.assertEqual(self.engine.snapshot(), (False, False))
+        self.assertEqual(self.timers.armed, [])                   # no tap verdict pending
+
+    def test_a_chord_drops_push_to_talk_but_not_hands_free(self):
+        self.engine.pressed()
+        self.engine.chorded()
+        self.assertEqual(self.events, ["start", "discard"])
+        self.assertEqual(self.engine.snapshot(), (False, False))
+        self.events.clear()
+        self.arm_hands_free()
+        self.engine.chorded()                                     # the trigger is no longer held
+        self.assertEqual(self.events, ["start"])
+        self.assertEqual(self.engine.snapshot(), (True, True))
+
+    def test_a_menu_start_is_refused_while_recording_and_arms_hands_free_otherwise(self):
+        hands_free = []
+        engine = sotto.GestureEngine(lambda: self.events.append("start"),
+                                     lambda: self.events.append("finish"),
+                                     lambda: self.events.append("discard"),
+                                     on_hands_free=lambda: hands_free.append(True))
+        engine.pressed()
+        self.assertFalse(engine.force_start())
+        engine.force_reset()
+        self.assertEqual(self.events, ["start", "discard"])
+        self.assertTrue(engine.force_start())
+        self.assertEqual(self.events, ["start", "discard", "start"])
+        self.assertEqual(hands_free, [True])
+        self.assertEqual(engine.snapshot(), (True, True))
+
+    def test_force_finish_and_force_reset_report_and_end_only_a_live_recording(self):
+        self.assertFalse(self.engine.force_finish())
+        self.engine.force_reset()
+        self.assertEqual(self.events, [])
+        self.engine.pressed()
+        self.assertTrue(self.engine.force_finish())
+        self.assertEqual(self.events, ["start", "finish"])
+
+    def test_the_epoch_moves_on_every_press_release_verdict_and_forced_end(self):
+        epochs = [self.engine.epoch()]
+        self.engine.pressed(); epochs.append(self.engine.epoch())
+        self.engine.released(); epochs.append(self.engine.epoch())   # a tap: its verdict timer
+        self.engine.force_finish(); epochs.append(self.engine.epoch())
+        self.engine.force_reset(); epochs.append(self.engine.epoch())
+        self.assertEqual(epochs, sorted(set(epochs)))
+
+    def test_a_callback_that_raises_is_logged_and_leaves_the_gesture_idle(self):
+        logs = []
+
+        def failing_start():
+            raise RuntimeError("mic busy")
+        engine = sotto.GestureEngine(failing_start, lambda: self.events.append("finish"),
+                                     lambda: self.events.append("discard"))
+        with mock.patch.object(gestures, "log", logs.append):
+            engine.pressed()
+        self.assertEqual(engine.snapshot(), (False, False))
+        self.assertEqual(logs, ["! gesture callback failed: mic busy"])
+        engine.released()                                        # nothing left to finish
+        self.assertEqual(self.events, [])
+
+    def test_arming_hands_free_logs_the_hint(self):
+        logs = []
+        with mock.patch.object(gestures, "log", logs.append):
+            self.arm_hands_free()
+        self.assertEqual(logs, ["● hands-free (tap again to stop)"])
 
 
 if __name__ == "__main__":

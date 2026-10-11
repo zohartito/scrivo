@@ -10,10 +10,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import gestures
 import sotto
 
-sotto.HOLD_THRESHOLD_S = 0.08
-sotto.DOUBLE_TAP_WINDOW_S = 0.12
+gestures.HOLD_THRESHOLD_S = 0.08  # the engine reads its timing from gestures.py
+gestures.DOUBLE_TAP_WINDOW_S = 0.12
 HOLD = 0.10          # a press this long counts as push-to-talk
 TAP = 0.02           # a press this short is a tap
 GAP = 0.04           # gap between the taps of a double-tap
