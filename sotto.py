@@ -2817,6 +2817,82 @@ def unreadable_store_alert(store, learning_store) -> tuple[str, str] | None:
     return None
 
 
+# A live capture Sotto stopped before transcribing (N9, N9b): its audio is
+# kept in History under this text so Retry can transcribe it.
+NOT_TRANSCRIBED_TEXT = "[not transcribed: Sotto stopped]"
+
+
+def append_untranscribed_capture(coordinator, *, raw, native_rate, captured_ts, model, speech_config,
+                                 glossary_terms, queue_wait_s, error: str) -> dict:
+    """Append the ``live_suspect`` row NOT_TRANSCRIBED_TEXT for a capture that
+    was never transcribed, with its canonical and raw audio, for Retry. The
+    N9 teardown keep and the N9b spool recovery share it.
+
+    Side effects: one History append (raises what the append raises)."""
+    from audio_codec import prepare_canonical
+    prepared = prepare_canonical(prepare_for_whisper(raw, native_rate))
+    seconds = len(prepared.asr_samples) / SAMPLE_RATE
+    _, attempt_metadata = _transcription_kwargs(speech_config, glossary_terms, seconds)
+    attempt_metadata.update({
+        "vad": {"available": None, "speech_fraction": None, "span_count": None},
+        "preprocessing": {"resampled_normalized": True, "vad_trimmed": False,
+                          "silence_collapsed": False, "outcome": "suspect", "error": error},
+        "latency": {"queue_wait_seconds": queue_wait_s, "asr_seconds": 0.0},
+    })
+    return coordinator.append_live(
+        NOT_TRANSCRIBED_TEXT, prepared, seconds, model, ts=captured_ts,
+        raw_samples=raw, raw_sample_rate=native_rate, provenance="live_suspect",
+        adaptive=False, **attempt_metadata)
+
+
+def recover_capture_spool(spool, store, coordinator, *, model, speech_config, glossary_terms, log) -> int:
+    """At launch, before the UI: every capture a stopped Sotto left in the
+    spool (N9b: a crash, SIGKILL or a logout that skipped the drain) becomes
+    a NOT_TRANSCRIBED_TEXT History row with its audio, exactly as the N9
+    teardown keep would have saved it; its file goes only once that row is
+    saved. A capture whose row was saved just before the stop (same key-up
+    time) is not added twice. While History cannot be written (read-only,
+    F16b/N21) nothing is touched. Returns how many captures still wait.
+
+    Side effects: History appends; unlinks recovered and partial spool files; logs."""
+    waiting = spool.leftovers()
+    if isinstance(coordinator, UnsavedHistory):
+        if waiting:
+            log(f"! {len(waiting)} recording(s) from when Sotto last stopped wait in {spool.directory} "
+                "until History can be read again")
+        return len(waiting)
+    spool.discard_partial()
+    saved_ms = {round(row["ts"] * 1000) for row in store.entries(limit=sys.maxsize)
+                if isinstance(row.get("ts"), (int, float))}
+    recovered, left = 0, 0
+    for item in waiting:
+        if item.captured_ms in saved_ms:
+            spool.remove(item)
+            continue
+        try:
+            raw, rate = spool.load(item)
+            append_untranscribed_capture(
+                coordinator, raw=raw, native_rate=float(rate), captured_ts=item.captured_ts,
+                model=model, speech_config=speech_config, glossary_terms=glossary_terms, queue_wait_s=None,
+                error="Sotto stopped before transcribing; recovered from the capture spool at the next launch")
+        except Exception as exc:
+            left += 1
+            log(f"! a recording from when Sotto last stopped could not be added to History "
+                f"({type(exc).__name__}: {str(exc)[:120]}); it stays in {spool.directory}")
+            continue
+        spool.remove(item)
+        recovered += 1
+    if recovered:
+        log(f"○ {recovered} recording(s) Sotto stopped before transcribing are in History for Retry")
+    return left
+
+
+def spool_waiting_note(waiting: int) -> str:
+    """The sentence the unreadable-History alert adds while recordings wait (N9b)."""
+    return (f"\n\n{waiting} recording(s) from when Sotto last stopped are kept on disk and will be "
+            "added to History once it can be read again." if waiting else "")
+
+
 def _read_only_json(path: Path) -> dict | None:
     """Read a strict regular JSON record without constructing any store."""
     try:
@@ -3191,6 +3267,17 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     elif learning_store.unreadable is not None:
         log(f"! Learning set unreadable ({learning_store.unreadable}): "
             f"{learning_unreadable_message(learning_store)}")
+    # N9b: each finished capture waits on disk until its History row exists;
+    # what a crash, SIGKILL or logout left there becomes rows before the UI.
+    from history import CaptureSpool
+    spool = CaptureSpool(store.base_dir, log=log)
+    spool_waiting = 0
+    if spool.claim():
+        spool_waiting = recover_capture_spool(spool, store, coordinator, model=model,
+                                              speech_config=current_speech_config(),
+                                              glossary_terms=glossary_terms, log=log)
+    else:
+        log("! another Sotto is using this data folder — captures stay in memory only until History has them")
     seed_totals(store)
     # Always available, no-model dependency guard: an earlier adaptive session
     # must remain revocation-safe even when this launch is non-adaptive.
@@ -3227,7 +3314,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
                                                  pending_deliveries)
     unreadable_alert = unreadable_store_alert(store, learning_store)
     if status_ui is not None and unreadable_alert is not None:
-        ui_call(status_ui.show_error, *unreadable_alert)
+        ui_call(status_ui.show_error, unreadable_alert[0], unreadable_alert[1] + spool_waiting_note(spool_waiting))
 
     def refresh_history() -> None:
         if status_ui is not None:
@@ -3361,9 +3448,13 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             return
         if status_ui:
             ui_call(status_ui.show_transcribing)
+        capture_id = uuid.uuid4().hex
+        # On disk until its History row exists (N9b); the write runs on the
+        # spool's own thread, never on the event tap.
+        spool.submit(capture_id, raw, capture.native_rate, captured_ts)
         # Shutdown may come while the audio is in hand: keep it in History (N9).
         shutdown.enqueue(jobs, ("live", raw, capture.native_rate, captured_ts,
-                                released_at, uuid.uuid4().hex, current_speech_config(), stream),
+                                released_at, capture_id, current_speech_config(), stream),
                          keep=worker.keep_untranscribed)
 
     def on_discard() -> None:
@@ -3489,7 +3580,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         status_ui=status_ui, ui_call=ui_call, deliver_call=deliver_call,
         inject_when_clear=inject_when_clear,
         undo_when_clear=undo_when_clear, copy_text=_copy_text, record_totals=record_totals,
-        model_activity=model_activity, glossary_terms=glossary_terms)
+        model_activity=model_activity, glossary_terms=glossary_terms, spool=spool)
     transcription_thread = threading.Thread(target=worker.run, daemon=True)
     transcription_thread.start()
 

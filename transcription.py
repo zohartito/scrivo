@@ -22,17 +22,17 @@ import time
 
 
 from pipeline import screen
-from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper, _transcription_kwargs,
-                   adaptive_live_transcribe_prepared, asr_skip_reason, collapse_silence,
-                   discard_staged_adaptive_live_audio, finalize_primary_live_delivery,
-                   prepare_for_whisper, transcribe_canonical_samples, transcribe_prepared,
-                   warm_speech_runtime)
+from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
+                   _transcription_kwargs, adaptive_live_transcribe_prepared, append_untranscribed_capture,
+                   asr_skip_reason, collapse_silence, discard_staged_adaptive_live_audio,
+                   finalize_primary_live_delivery, prepare_for_whisper, transcribe_canonical_samples,
+                   transcribe_prepared, warm_speech_runtime)
 
 # A live capture whose speech model failed (F4): the audio is kept under this
 # text so Retry can transcribe it again.
 TRANSCRIPTION_FAILED_TEXT = "[transcription failed]"
-# A live capture Sotto stopped before transcribing (N9): kept the same way.
-NOT_TRANSCRIBED_TEXT = "[not transcribed: Sotto stopped]"
+# A live capture Sotto stopped before transcribing (N9) is kept the same way,
+# under sotto.NOT_TRANSCRIBED_TEXT (shared with the N9b spool recovery).
 # How long the teardown's keep waits for a History append of the same capture
 # that is already under way, before leaving that capture to it.
 APPEND_WAIT_S = 1.0
@@ -46,7 +46,7 @@ class TranscriptionWorker:
                  current_speech_config, coordinator, refresh_history, adaptive_runtime,
                  adaptive: bool, use_nemotron: bool, status_ui, ui_call, deliver_call,
                  inject_when_clear, undo_when_clear, copy_text, record_totals, model_activity: dict,
-                 glossary_terms: tuple[str, ...]) -> None:
+                 glossary_terms: tuple[str, ...], spool=None) -> None:
         self.shutdown = shutdown
         self.jobs = jobs
         self.log = log
@@ -70,6 +70,9 @@ class TranscriptionWorker:
         self.record_totals = record_totals
         self.model_activity = model_activity
         self.glossary_terms = glossary_terms
+        # history.CaptureSpool holding each live capture's audio on disk until
+        # its row exists or its fate is decided (N9b); None keeps RAM only.
+        self.spool = spool
         self.vad_warnings: set[str] = set()
         # Comparator publication state of the job in flight. The job methods
         # set it as they go; run()'s cleanup reads it after they return or raise.
@@ -99,8 +102,9 @@ class TranscriptionWorker:
     def run(self) -> None:
         """The worker loop. Blocks until shutdown is requested.
 
-        Side effects: dispatches every job (History appends, deliveries, UI)
-        and hides the transcribing indicator after each non-stream job."""
+        Side effects: dispatches every job (History appends, deliveries, UI),
+        hides the transcribing indicator after each non-stream job, and
+        deletes a handled live capture's spooled audio (N9b)."""
         while not self.shutdown.requested():
             try:
                 job = self.jobs.get(timeout=0.05)
@@ -141,6 +145,8 @@ class TranscriptionWorker:
                     self.ui_call(self.status_ui.hide_if_transcribing)
                 if job[0] == "live" and self.shutdown.requested():
                     self.abandoned.append(job)  # kept by the teardown unless saved here
+                elif job[0] == "live":
+                    self._release_spool(job[5])  # handled: saved, delivered, or the user told (N9b)
                 self.current_job = None
                 self.jobs.task_done()
 
@@ -231,6 +237,7 @@ class TranscriptionWorker:
             self.log("○ sub-0.2s capture dropped (key-tap artifact)")
             with self._settle_cond:
                 self._settled.add(capture_id)
+            self._release_spool(capture_id)
             return
         skip = asr_skip_reason(samples)
         if skip:
@@ -539,7 +546,8 @@ class TranscriptionWorker:
         here; if it is still running, it is left to that append, never saved
         a second time.
 
-        Side effects: may wait; appends that row with the raw audio; logs.
+        Side effects: may wait; appends that row with the raw audio; deletes
+        the capture's spooled audio once the row is saved (N9b); logs.
         Never raises. Nothing when this capture was already saved or kept."""
         _, raw, native_rate, captured_ts, queued_at, capture_id, job_config, _stream = job
         with self._settle_cond:
@@ -551,28 +559,23 @@ class TranscriptionWorker:
             return
         saved = False
         try:
-            from audio_codec import prepare_canonical
-            prepared = prepare_canonical(prepare_for_whisper(raw, native_rate))
-            seconds = len(prepared.asr_samples) / SAMPLE_RATE
-            _, attempt_metadata = _transcription_kwargs(job_config, self.glossary_terms, seconds)
-            attempt_metadata.update({
-                "vad": {"available": None, "speech_fraction": None, "span_count": None},
-                "preprocessing": {"resampled_normalized": True, "vad_trimmed": False,
-                                  "silence_collapsed": False, "outcome": "suspect",
-                                  "error": "not transcribed before Sotto stopped"},
-                "latency": {"queue_wait_seconds": round(time.monotonic() - queued_at, 4),
-                            "asr_seconds": 0.0},
-            })
-            self.coordinator.append_live(
-                NOT_TRANSCRIBED_TEXT, prepared, seconds, self.model, ts=captured_ts,
-                raw_samples=raw, raw_sample_rate=native_rate, provenance="live_suspect",
-                adaptive=False, **attempt_metadata)
+            row = append_untranscribed_capture(
+                self.coordinator, raw=raw, native_rate=native_rate, captured_ts=captured_ts, model=self.model,
+                speech_config=job_config, glossary_terms=self.glossary_terms,
+                queue_wait_s=round(time.monotonic() - queued_at, 4),
+                error="not transcribed before Sotto stopped")
             saved = True
         except Exception as exc:
             self.log(f"! untranscribed capture not saved ({type(exc).__name__}: {str(exc)[:160]})")
             return
         finally:
             self._end_saving(capture_id, saved)
+        if row.get("saved") is False:
+            # Read-only History (F16b) kept nothing: the spool keeps the audio
+            # for the next launch that can write History (N9b).
+            self.log("! untranscribed capture not saved (History is read-only)")
+            return
+        self._release_spool(capture_id)
         self.log(f"○ {len(raw) / max(native_rate, 1.0):.1f}s capture not transcribed before "
                  "stopping — kept in History for Retry")
 
@@ -610,9 +613,16 @@ class TranscriptionWorker:
         try:
             self._live_row = self.coordinator.append_live(*args, **kwargs)
             saved = True
-            return self._live_row
         finally:
             self._end_saving(capture_id, saved)
+        if self._in_history():
+            self._release_spool(capture_id)  # the row holds the audio now (N9b)
+        return self._live_row
+
+    def _release_spool(self, capture_id) -> None:
+        """Side effects: deletes this capture's spooled audio (N9b), if any."""
+        if self.spool is not None:
+            self.spool.release(capture_id)
 
     def _history_append_failed(self, exc: Exception, deliver=None) -> None:
         """History could not take the live row (F16a): disk full, a locked or
