@@ -88,7 +88,9 @@ class ReexportTests(unittest.TestCase):
 
 class NoCycleTests(unittest.TestCase):
     def test_no_split_module_imports_sotto(self):
-        for module_name in MOVED:
+        # app_controller.py holds what were run()'s menu closures; run()
+        # injects every sotto helper it needs.
+        for module_name in (*MOVED, "app_controller"):
             tree = ast.parse((ROOT / f"{module_name}.py").read_text(encoding="utf-8"))
             imported = set()
             for node in ast.walk(tree):

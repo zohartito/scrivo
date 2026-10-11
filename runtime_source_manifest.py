@@ -45,6 +45,7 @@ RUNTIME_SOURCE_FILES = (
     "lifecycle.py",
     "gestures.py",
     "capture.py",
+    "app_controller.py",
     "launchd_templates.py",
     "audio_codec.py",
     "comparator_spool.py",
