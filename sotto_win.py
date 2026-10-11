@@ -53,7 +53,7 @@ from offline_runtime import offline_requested
 from sotto_paths import DATA_DIR, MODEL_CACHE_DIR
 from speech_config import (SpeechConfig, automatic_languages, get_profile, load_glossary,
                            load_language_mode, normalize_language, save_language_mode,
-                           with_language)
+                           transcription_kwargs, with_language)
 import win_asr
 import win_capture
 import win_hotkey
@@ -953,7 +953,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             if shutdown.requested():
                 return
             text = sotto.DEAD_ROUTE_TEXT
-            _, attempt_metadata = sotto._transcription_kwargs(job_config, glossary_terms, seconds)
+            _, attempt_metadata = transcription_kwargs(job_config, glossary_terms, seconds)
             attempt_metadata.update({
                 "vad": {"available": False, "speech_fraction": 0.0, "span_count": 0},
                 "preprocessing": {"resampled_normalized": True, "vad_trimmed": False,
@@ -963,7 +963,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             })
             log(f"! not pasted ({skip})")
             try:
-                sotto.finalize_primary_live_delivery(
+                pipeline.finalize_primary_live_delivery(
                     append=lambda: append_live(
                         capture_id, text, prepared, seconds, model_repo, ts=captured_ts, raw_samples=raw,
                         raw_sample_rate=native_rate, provenance="live_suspect",
@@ -1051,7 +1051,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         deliver = None if reason or not (text or voice_action) else lambda: deliveries.put(
             (SCRATCH if voice_action == "scratch" else text, prefs, copy_only, time.monotonic()))
         try:
-            appended = sotto.finalize_primary_live_delivery(
+            appended = pipeline.finalize_primary_live_delivery(
                 append=lambda: append_live(
                     capture_id, text, prepared, prepared_seconds, model_repo, ts=captured_ts,
                     raw_samples=raw, raw_sample_rate=native_rate,
@@ -1092,7 +1092,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         if shutdown.requested():
             return
         prepared_seconds = len(prepared.asr_samples) / sotto.SAMPLE_RATE
-        _, attempt_metadata = sotto._transcription_kwargs(job_config, glossary_terms,
+        _, attempt_metadata = transcription_kwargs(job_config, glossary_terms,
                                                          prepared_seconds)
         preprocessing.update({"outcome": "suspect", "transcription_error": type(exc).__name__})
         attempt_metadata.update({
@@ -1100,7 +1100,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             "latency": {"queue_wait_seconds": round(started - queued_at, 4),
                         "asr_seconds": round(time.monotonic() - started, 4)}})
         try:
-            row = sotto.finalize_primary_live_delivery(
+            row = pipeline.finalize_primary_live_delivery(
                 append=lambda: append_live(
                     capture_id, TRANSCRIPTION_FAILED_TEXT, prepared, prepared_seconds, model_repo,
                     ts=captured_ts, raw_samples=raw, raw_sample_rate=native_rate,
@@ -1151,7 +1151,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         # Retry uses the immutable canonical decode from its snapshot; it
         # must never re-trim or re-collapse persisted inference input.
         if sotto.asr_skip_reason(snapshot.samples):
-            _, attempt_metadata = sotto._transcription_kwargs(job_config, glossary_terms,
+            _, attempt_metadata = transcription_kwargs(job_config, glossary_terms,
                                                              prepared_seconds)
             attempt_metadata.update({
                 "vad": {"available": None, "speech_fraction": None, "span_count": None},

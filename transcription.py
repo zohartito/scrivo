@@ -21,11 +21,12 @@ import threading
 import time
 
 
-from pipeline import screen
+from pipeline import finalize_primary_live_delivery, screen
+from speech_config import transcription_kwargs
 from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
-                   _transcription_kwargs, adaptive_live_transcribe_prepared, append_untranscribed_capture,
+                   adaptive_live_transcribe_prepared, append_untranscribed_capture,
                    asr_skip_reason, collapse_silence, discard_staged_adaptive_live_audio,
-                   finalize_primary_live_delivery, prepare_for_whisper, transcribe_canonical_samples,
+                   prepare_for_whisper, transcribe_canonical_samples,
                    transcribe_prepared, warm_speech_runtime)
 
 # A live capture whose speech model failed (F4): the audio is kept under this
@@ -249,7 +250,7 @@ class TranscriptionWorker:
             if self.shutdown.requested():
                 return
             text = DEAD_ROUTE_TEXT
-            _, attempt_metadata = _transcription_kwargs(
+            _, attempt_metadata = transcription_kwargs(
                 job_config, self.glossary_terms, seconds)
             attempt_metadata.update({
                 "vad": {"available": False, "speech_fraction": 0.0,
@@ -506,7 +507,7 @@ class TranscriptionWorker:
                 from audio_codec import prepare_canonical
                 prepared = prepare_canonical(prepare_for_whisper(raw, native_rate))
             seconds = len(prepared.asr_samples) / SAMPLE_RATE
-            _, attempt_metadata = _transcription_kwargs(job_config, self.glossary_terms, seconds)
+            _, attempt_metadata = transcription_kwargs(job_config, self.glossary_terms, seconds)
             attempt_metadata.update({
                 "vad": vad_metadata or {"available": None, "speech_fraction": None, "span_count": None},
                 "preprocessing": {**preprocessing, "outcome": "suspect", "error": error},
@@ -668,7 +669,7 @@ class TranscriptionWorker:
         # it must never re-trim or re-collapse persisted inference input.
         if asr_skip_reason(snapshot.samples):
             text = DEAD_ROUTE_TEXT
-            _, attempt_metadata = _transcription_kwargs(
+            _, attempt_metadata = transcription_kwargs(
                 job_config, self.glossary_terms, prepared_seconds)
             attempt_metadata.update({
                 "vad": {"available": None, "speech_fraction": None,

@@ -32,12 +32,15 @@ MOVED = {
         "launched_as_sealed_job", "main_thread_dispatch", "relaunch_app_after_exit",
         "shutdown_signal_handlers", "wait_until_idle", "UPDATE_DRAIN_DEADLINE_S"),
     "gestures": ("DOUBLE_TAP_WINDOW_S", "HANDS_FREE_MAX_S", "HOLD_THRESHOLD_S", "GestureEngine"),
+    # Shared with Windows (restructure step 7), which no longer reaches into sotto for it.
+    "pipeline": ("finalize_primary_live_delivery",),
 }
 NOT_REEXPORTED = {
     "sotto_log": ("_app_log", "_app_log_lock", "_point_output_at", "_rotate_if_large"),
     "delivery": ("_pending_restore", "_restore_generation", "_secure_input_probe", "_restore_clipboard"),
     "lifecycle": (),
     "gestures": (),
+    "pipeline": (),
 }
 
 
@@ -60,6 +63,14 @@ class ReexportTests(unittest.TestCase):
                 with self.subTest(module=module_name, name=name):
                     self.assertNotIn(name, defined)
                     self.assertTrue(hasattr(importlib.import_module(module_name), name))
+
+    def test_the_decode_options_live_in_speech_config(self):
+        # Shared with Windows (restructure step 7); sotto keeps its old private name.
+        import speech_config
+        self.assertIs(sotto._transcription_kwargs, speech_config.transcription_kwargs)
+        sotto_tree = ast.parse((ROOT / "sotto.py").read_text(encoding="utf-8"))
+        self.assertNotIn("_transcription_kwargs", {node.name for node in sotto_tree.body
+                                                   if isinstance(node, ast.FunctionDef)})
 
     def test_rebound_module_state_is_not_reexported(self):
         for module_name, names in NOT_REEXPORTED.items():

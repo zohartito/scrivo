@@ -8,7 +8,9 @@ through sotto's re-exports):
 
 `screen()` composes the steps; the pieces stay importable on their own. Pure
 apart from reading the user's dictionary and cleanup settings and an optional
-log callback. Platform modules import from here; nothing here imports them.
+log callback. `finalize_primary_live_delivery()` then orders what follows: the
+History row first, delivery only after it. Platform modules import from here;
+nothing here imports them.
 """
 from __future__ import annotations
 
@@ -175,3 +177,30 @@ def screen(text: str, *, seconds: float, speech_fraction: float, language: str |
         text = apply_personal_dictionary(text, receipts, log)
         text, voice_action = apply_voice_cleanup(text, receipts, language)
     return Screened(text, held, voice_action, receipts)
+
+
+def finalize_primary_live_delivery(*, append, adaptive_runtime, appended_publication: dict | None,
+                                  shutdown, inject) -> object | None:
+    """Persist and authorize a primary result before any cursor side effect.
+
+    The caller supplies the already-prepared History append closure.  This
+    narrow seam makes the order testable without a macOS event loop: append,
+    adaptive registration, exact comparator publication acknowledgement, then
+    (only while still live) cursor scheduling. Windows passes no adaptive
+    runtime, so for it this is: append, then deliver unless stopping.
+    """
+    row=append()
+    if adaptive_runtime is not None and row is not None and not shutdown.requested():
+        try:
+            adaptive_runtime.register_live(row)
+            if (appended_publication is not None
+                    and not adaptive_runtime.acknowledge_comparator_publication(appended_publication)):
+                raise RuntimeError("comparator publication unavailable")
+        except Exception:
+            if appended_publication is not None:
+                adaptive_runtime.cancel_comparator_publication(appended_publication)
+                adaptive_runtime.fail_comparator_publication(appended_publication)
+            raise
+    if row is not None and inject is not None and not shutdown.requested():
+        inject()
+    return row
