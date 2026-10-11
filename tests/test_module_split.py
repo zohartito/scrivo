@@ -32,6 +32,10 @@ MOVED = {
         "launched_as_sealed_job", "main_thread_dispatch", "relaunch_app_after_exit",
         "shutdown_signal_handlers", "wait_until_idle", "UPDATE_DRAIN_DEADLINE_S"),
     "gestures": ("DOUBLE_TAP_WINDOW_S", "HANDS_FREE_MAX_S", "HOLD_THRESHOLD_S", "GestureEngine"),
+    "capture": (
+        "HEADPHONE_OUTPUT_TERMINALS", "HEADSET_INPUT_TERMINALS", "HEADSET_NAME_HINTS", "IDLE_STOP_S",
+        "PREROLL_S", "RING_S", "SAMPLE_RATE", "SILENCE_RESTART_AFTER_S", "CaptureService",
+        "doctor_input_probe", "join_capture_blocks"),
     # Shared with Windows (restructure step 7), which no longer reaches into sotto for it.
     "pipeline": ("finalize_primary_live_delivery",),
 }
@@ -40,6 +44,9 @@ NOT_REEXPORTED = {
     "delivery": ("_pending_restore", "_restore_generation", "_secure_input_probe", "_restore_clipboard"),
     "lifecycle": (),
     "gestures": (),
+    # Private CoreAudio helpers CaptureService reads from capture: without a
+    # sotto copy, a patch aimed at sotto fails loudly instead of missing.
+    "capture": ("_audio_devices", "_builtin_input_device", "_pin_input_to_builtin", "_select_input_device"),
     "pipeline": (),
 }
 
