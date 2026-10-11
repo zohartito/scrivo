@@ -5,16 +5,14 @@ no model, no mic, no threads: background work runs inline and is recorded
 as a "thread" event) and checks everything it does: History and learning
 calls, deliveries, queued jobs, UI calls and log lines.
 
-The expected values are the behaviour of the actions as closures inside
-sotto.run() (extracted from its source below); the AppController they move
-into must reproduce them exactly.
+The expected values were recorded from the actions as closures inside
+sotto.run(), before they moved into AppController; the class reproduces
+them exactly.
 """
 from __future__ import annotations
 
-import ast
 import queue
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -24,6 +22,7 @@ if sys.platform != "darwin":
 
 import dictionary
 import sotto
+from app_controller import AppController
 
 CONFIG = "speech-config"
 
@@ -190,72 +189,21 @@ class Adaptive:
 ROW = {"id": "row1", "text": "hello there", "ts": 1_760_000_000.0}
 
 
-# -- the closures in sotto.run(), compiled against the World ------------------
+# -- the controller, built over the World --------------------------------------
 
-CLOSURES = {
-    "refresh_history": "refresh_history", "copy_text": "_copy_text", "copy": "action_copy",
-    "retry": "action_retry", "save": "action_save", "delete": "action_delete", "clear": "action_clear",
-    "correct": "action_correct", "add_rules": "action_add_rules", "enroll": "action_enroll",
-    "revoke": "action_revoke", "correct_as_is": "action_correct_as_is", "no_speech": "action_no_speech",
-    "skip_learning_review": "action_skip_learning_review",
-}
-
-
-def _run_definitions():
-    source = Path(sotto.__file__).read_text(encoding="utf-8")
-    run = next(node for node in ast.parse(source).body
-               if isinstance(node, ast.FunctionDef) and node.name == "run")
-    found = {}
-
-    def visit(body):
-        for node in body:
-            if isinstance(node, ast.FunctionDef):
-                found.setdefault(node.name, node)
-            elif isinstance(node, (ast.If, ast.With, ast.Try)):
-                visit(node.body)
-                visit(getattr(node, "orelse", []))
-    visit(run.body)
-    return found
-
-
-def build(world: World):
-    """The actions as run() defines them, closed over the World's fakes."""
-    class SyncThread:
-        def __init__(self, target, daemon):
-            assert daemon
-            self.target = target
-
-        def start(self):
-            world.start_thread(self.target)
-
-    class Pasteboard:
-        def clearContents(self):
-            pass
-
-        def setString_forType_(self, text, kind):
-            assert kind == "public.utf8-plain-text"
-            world.set_clipboard(text)
-    namespace = {
-        "shutdown": world.shutdown, "lifecycle": world.lifecycle, "jobs": world.jobs,
-        "store": world.store, "coordinator": world.coordinator, "dependency_guard": world.dependency_guard,
-        "adaptive_runtime": world.adaptive_runtime, "status_ui": world.status_ui,
-        "ui_call": world.ui_call, "deliver_call": world.deliver_call,
-        "pending_deliveries": world.pending, "current_speech_config": world.current_speech_config,
-        "log": world.log, "HISTORY_KEEP": sotto.HISTORY_KEEP,
-        "overlay_learning_state": sotto.overlay_learning_state,
-        "_active_learning_history_ids": world.active_learning_history_ids,
-        "nonadaptive_correct": world.nonadaptive_correct, "nonadaptive_delete": world.nonadaptive_delete,
-        "nonadaptive_clear": world.nonadaptive_clear,
-        "nonadaptive_revoke_learning": world.nonadaptive_revoke_learning,
-        "save_audio_copy": world.save_audio_copy, "Path": Path, "time": sotto.time, "uuid": sotto.uuid,
-        "threading": types.SimpleNamespace(Thread=SyncThread),
-        "NSPasteboard": types.SimpleNamespace(generalPasteboard=Pasteboard),
-        "NSPasteboardTypeString": "public.utf8-plain-text",
-    }
-    definitions = _run_definitions()
-    module = ast.Module(body=[definitions[name] for name in CLOSURES.values()], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
-    return types.SimpleNamespace(**{method: namespace[name] for method, name in CLOSURES.items()})
+def build(world: World) -> AppController:
+    """An AppController whose collaborators are the World's fakes."""
+    return AppController(
+        shutdown=world.shutdown, lifecycle=world.lifecycle, jobs=world.jobs, store=world.store,
+        coordinator=world.coordinator, dependency_guard=world.dependency_guard,
+        adaptive_runtime=world.adaptive_runtime, status_ui=world.status_ui, ui_call=world.ui_call,
+        deliver_call=world.deliver_call, pending_deliveries=world.pending, set_clipboard=world.set_clipboard,
+        current_speech_config=world.current_speech_config, log=world.log, history_keep=sotto.HISTORY_KEEP,
+        overlay_learning_state=sotto.overlay_learning_state,
+        active_learning_history_ids=world.active_learning_history_ids,
+        nonadaptive_correct=world.nonadaptive_correct, nonadaptive_delete=world.nonadaptive_delete,
+        nonadaptive_clear=world.nonadaptive_clear, nonadaptive_revoke_learning=world.nonadaptive_revoke_learning,
+        save_audio_copy=world.save_audio_copy, start_thread=world.start_thread)
 
 
 # -- History ------------------------------------------------------------------

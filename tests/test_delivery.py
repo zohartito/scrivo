@@ -19,6 +19,7 @@ import Quartz as RealQuartz
 
 import delivery
 import sotto
+from app_controller import AppController
 
 PLAIN_TEXT = "public.utf8-plain-text"
 CMD = RealQuartz.kCGEventFlagMaskCommand
@@ -818,28 +819,44 @@ class OwnAlertInFrontTests(unittest.TestCase):
 
 
 class RetryCopyCountedTests(unittest.TestCase):
+    def copy_controller(self, deliveries, *, deliver_call=None, rows=None):
+        """The AppController the menu's Copy and the worker's Retry copy go
+        through, writing the clipboard with the real set_clipboard_text."""
+        self.shutdown = sotto.ShutdownBoundary()
+        return AppController(
+            shutdown=self.shutdown, lifecycle=None, jobs=None,
+            store=types.SimpleNamespace(get=(rows or {}).get), coordinator=None, dependency_guard=None,
+            adaptive_runtime=None, status_ui=None, ui_call=None, deliver_call=deliver_call,
+            pending_deliveries=deliveries, set_clipboard=sotto.set_clipboard_text,
+            current_speech_config=None, log=None, history_keep=0, overlay_learning_state=None,
+            active_learning_history_ids=None, nonadaptive_correct=None, nonadaptive_delete=None,
+            nonadaptive_clear=None, nonadaptive_revoke_learning=None, save_audio_copy=None,
+            start_thread=lambda work: work())
+
     def test_n19_the_retry_copy_finishes_its_pending_delivery(self):
+        world = patch_insertion(self)
         deliveries = sotto.PendingDeliveries()
-        pasteboard = FakePasteboard("ORIGINAL user clipboard")
-        namespace = {"shutdown": types.SimpleNamespace(requested=lambda: False),
-                     "NSPasteboard": pasteboard, "NSPasteboardTypeString": PLAIN_TEXT,
-                     "pending_deliveries": deliveries}
-        copy_text = run_closures(["_copy_text"], namespace)["_copy_text"]
+        copy_text = self.copy_controller(deliveries).copy_text
         deliveries.add()                                       # what deliver_call did
         copy_text("retried text")
-        self.assertEqual((pasteboard.text(), deliveries.count()), ("retried text", 0))
-        namespace["shutdown"] = types.SimpleNamespace(requested=lambda: True)
+        self.assertEqual((world.pasteboard.text(), deliveries.count()), ("retried text", 0))
+        self.shutdown.request()
         deliveries.add()
         copy_text("late")                                      # skipped after shutdown, still finished
-        self.assertEqual((pasteboard.text(), deliveries.count()), ("retried text", 0))
+        self.assertEqual((world.pasteboard.text(), deliveries.count()), ("retried text", 0))
 
     def test_n19_every_copy_is_scheduled_as_a_counted_delivery(self):
-        tree = ast.parse(open(sotto.__file__, encoding="utf-8").read())
-        run = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run")
-        schedulers = [node.func.id for node in ast.walk(run) if isinstance(node, ast.Call)
-                      and isinstance(node.func, ast.Name)
-                      and any(isinstance(arg, ast.Name) and arg.id == "_copy_text" for arg in node.args)]
-        self.assertEqual(schedulers, ["deliver_call"])         # History's Copy item; Retry's is in the worker
+        # History's Copy item hands the copy to deliver_call (which counts it)
+        # and never writes the clipboard itself; Retry's copy is the worker's
+        # (tests/test_transcription_worker.py).
+        world = patch_insertion(self)
+        scheduled = []
+        controller = self.copy_controller(
+            sotto.PendingDeliveries(), deliver_call=lambda method, *args: scheduled.append((method, args)),
+            rows={"row1": {"text": "copied words"}})
+        controller.copy("row1")
+        self.assertEqual(scheduled, [(controller.copy_text, ("copied words",))])
+        self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
 
 class TransientPasteTests(unittest.TestCase):

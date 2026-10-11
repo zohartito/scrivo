@@ -67,6 +67,8 @@ from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, Ge
 from capture import (HEADPHONE_OUTPUT_TERMINALS, HEADSET_INPUT_TERMINALS, HEADSET_NAME_HINTS,  # noqa: F401
                      IDLE_STOP_S, PREROLL_S, RING_S, SAMPLE_RATE, SILENCE_RESTART_AFTER_S, CaptureService,
                      doctor_input_probe, join_capture_blocks)
+# The menu-bar actions live in app_controller.py (it imports nothing from sotto).
+from app_controller import AppController
 try:  # Keep content-free CLI/admin helpers importable on non-macOS test hosts.
     import Quartz
     from AppKit import NSPasteboard, NSPasteboardTypeString
@@ -1328,28 +1330,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     if status_ui is not None and unreadable_alert is not None:
         ui_call(status_ui.show_error, unreadable_alert[0], unreadable_alert[1] + spool_waiting_note(spool_waiting))
 
-    def refresh_history() -> None:
-        if status_ui is not None:
-            entries = store.entries(limit=HISTORY_KEEP)
-            overlaid = overlay_learning_state(entries, _active_learning_history_ids(coordinator))
-            if adaptive_runtime is not None:
-                states = {row["history_id"]: row["status"] for row in adaptive_runtime.review_list()}
-                overlaid = [dict(row, adaptive_eligible=adaptive_runtime.review_eligible_entry(row),
-                                 **({"review_state": states[row["id"]]} if row.get("id") in states else {}))
-                            for row in overlaid]
-                adaptive_state = adaptive_runtime.status()
-                active = adaptive_state.get("active_generation")
-                if active and active.get("status") in {"pool_closed", "evaluating"}:
-                    label = "adaptive: evaluating"
-                elif active:
-                    label = f"adaptive: pool {active.get('resolved', 0)}/33"
-                elif adaptive_state["development"].get("ready"):
-                    label = "adaptive: collecting challenger"
-                else:
-                    label = f"adaptive: dev {adaptive_state['development'].get('verified_nonempty', 0)}/20"
-                ui_call(status_ui.set_adaptive_stage, label)
-            ui_call(status_ui.refresh_history, overlaid)
-
     capture = CaptureService()
     capture.restart_callback = restart.request
     capture.idle_release_s = idle_release
@@ -1364,18 +1344,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     # concurrently, and results arrive in capture order.
     jobs: queue.Queue = queue.Queue()
     model_activity = {"last_finished": time.monotonic(), "rewarming": False}
-
-    def _copy_text(text: str) -> None:
-        """Retry's clipboard copy. The worker schedules it with deliver_call,
-        so it finishes its PendingDeliveries entry like a paste (N19)."""
-        try:
-            if shutdown.requested():
-                return
-            pasteboard = NSPasteboard.generalPasteboard()
-            pasteboard.clearContents()
-            pasteboard.setString_forType_(text, NSPasteboardTypeString)
-        finally:
-            pending_deliveries.finish()
 
     # Gesture callbacks mark the capture boundary. The audio engine starts and
     # stops off-thread; the ASR model stays resident independently.
@@ -1579,6 +1547,18 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         """Queue a 'scratch that' behind whatever is still waiting to paste."""
         delivery.undo()
 
+    # The menu bar's actions; the worker uses its History refresh and copy.
+    controller = AppController(
+        shutdown=shutdown, lifecycle=lifecycle, jobs=jobs, store=store, coordinator=coordinator,
+        dependency_guard=dependency_guard, adaptive_runtime=adaptive_runtime, status_ui=status_ui,
+        ui_call=ui_call, deliver_call=deliver_call, pending_deliveries=pending_deliveries,
+        set_clipboard=set_clipboard_text, current_speech_config=current_speech_config, log=log,
+        history_keep=HISTORY_KEEP, overlay_learning_state=overlay_learning_state,
+        active_learning_history_ids=_active_learning_history_ids, nonadaptive_correct=nonadaptive_correct,
+        nonadaptive_delete=nonadaptive_delete, nonadaptive_clear=nonadaptive_clear,
+        nonadaptive_revoke_learning=nonadaptive_revoke_learning, save_audio_copy=save_audio_copy)
+    refresh_history = controller.refresh_history
+
     # Built here, after inject_when_clear / undo_when_clear exist: the worker
     # holds its collaborators instead of resolving them late like the closure
     # did. Imported inside run() so transcription.py can bind sotto's helpers
@@ -1591,7 +1571,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         adaptive_runtime=adaptive_runtime, adaptive=adaptive, use_nemotron=use_nemotron,
         status_ui=status_ui, ui_call=ui_call, deliver_call=deliver_call,
         inject_when_clear=inject_when_clear,
-        undo_when_clear=undo_when_clear, copy_text=_copy_text, record_totals=record_totals,
+        undo_when_clear=undo_when_clear, copy_text=controller.copy_text, record_totals=record_totals,
         model_activity=model_activity, glossary_terms=glossary_terms, spool=spool)
     transcription_thread = threading.Thread(target=worker.run, daemon=True)
     transcription_thread.start()
@@ -1861,27 +1841,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
                 return callback(*args, **kwargs)
             return wrapped
 
-        def action_copy(entry_id: str) -> None:
-            def work() -> None:
-                try:
-                    entry = store.get(entry_id)
-                    if entry:
-                        deliver_call(_copy_text, entry["text"])  # _copy_text finishes its count
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not copy transcript", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_retry(entry_id: str) -> None:
-            """Refused while Quit, Restart, an update or an engine switch
-            drains (N18, the Mac side of F73): new work would keep it waiting."""
-            refused = lifecycle.run_if_open(
-                lambda: shutdown.enqueue(jobs, ("retry", entry_id, time.monotonic(), uuid.uuid4().hex,
-                                                current_speech_config())))
-            if refused:
-                log(f"○ Sotto is {refused} — Retry refused")
-                ui_call(status_ui.show_error, "Not retried",
-                        f"Sotto is {refused}. Retry once it is running again.")
-
         def action_set_language(mode: str) -> None:
             if adaptive or use_nemotron or use_parakeet:
                 return
@@ -1923,85 +1882,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             except Exception as exc:
                 failed(str(exc))
 
-        def action_save(entry_id: str) -> None:
-            def work() -> None:
-                try:
-                    entry = store.get(entry_id)
-                    if not entry:
-                        return
-                    target = save_audio_copy(store.audio_path(entry_id), Path.home() / "Desktop",
-                                             entry["ts"])
-                    log(f"✓ saved audio to Desktop as {target.name}")
-                except FileNotFoundError:
-                    log("! audio missing for that entry")
-                    ui_call(status_ui.show_error, "Could not save audio",
-                            "The audio file is no longer available.")
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not save audio", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_delete(entry_id: str) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    (adaptive_runtime.delete(entry_id) if adaptive_runtime is not None else
-                     nonadaptive_delete(dependency_guard, coordinator, entry_id))
-                    refresh_history()
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not delete recording", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_clear() -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    (adaptive_runtime.clear() if adaptive_runtime is not None else nonadaptive_clear(dependency_guard, coordinator))
-                    refresh_history()
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not clear history", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_correct(entry_id: str, corrected_text: str, expected_revision: int | None = None) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    entry = store.get(entry_id)
-                    before = str((entry or {}).get("text") or "")
-                    eligible = adaptive_runtime is not None and adaptive_runtime.review_eligible_entry(entry)
-                    if eligible:
-                        adaptive_runtime.review(entry_id, "corrected", reference=corrected_text, expected_revision=expected_revision)
-                    elif nonadaptive_correct(dependency_guard, coordinator, entry_id, corrected_text, expected_revision=expected_revision) is None:
-                        raise ValueError("The recording no longer exists")
-                    refresh_history()
-                    message = ("The corrected transcript and audio are retained locally for private learning."
-                               if eligible else
-                               "The corrected transcript was saved. Add it to the learning set separately if wanted.")
-                    import dictionary
-                    suggestions = dictionary.suggest(before, corrected_text,
-                                                     dictionary.load(dictionary.DICTIONARY_PATH))
-                    if suggestions:
-                        ui_call(status_ui.offer_dictionary_rules,
-                                [(rule.heard, rule.write) for rule in suggestions], message)
-                    else:
-                        ui_call(status_ui.show_info, "Correction saved", message)
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not save correction", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_add_rules(rules: list) -> None:
-            """Confirmed correction suggestions become dictionary rules."""
-            try:
-                import dictionary
-                added = dictionary.add([dictionary.Rule(heard, write) for heard, write in rules],
-                                       dictionary.DICTIONARY_PATH)
-                log(f"dictionary: added {added} rule(s)")
-                refresh_history()
-            except Exception as exc:
-                ui_call(status_ui.show_error, "Could not update the dictionary", str(exc)[:160])
-
         def action_open_dictionary() -> None:
             try:
                 import dictionary
@@ -2010,65 +1890,6 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
                 subprocess.Popen(["/usr/bin/open", "-t", str(path)])
             except Exception as exc:
                 ui_call(status_ui.show_error, "Could not open the dictionary", str(exc)[:160])
-
-        def action_enroll(entry_id: str) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    snapshot = coordinator.enroll(entry_id)
-                    if snapshot is None:
-                        raise ValueError("A current correction is required before enrollment")
-                    refresh_history()
-                    ui_call(status_ui.show_info, "Added to learning set",
-                            "The corrected audio and transcript are now retained locally.")
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not enroll sample", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_revoke(entry_id: str) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    count = (int(adaptive_runtime.revoke(entry_id)) if adaptive_runtime is not None else
-                             nonadaptive_revoke_learning(dependency_guard, coordinator, entry_id))
-                    refresh_history()
-                    ui_call(status_ui.show_info, "Removed from learning set",
-                            f"Removed {count} local learning sample(s).")
-                except Exception as exc:
-                    ui_call(status_ui.show_error, "Could not remove learning sample", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_correct_as_is(entry_id: str, expected_revision: int | None = None) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    if adaptive_runtime is None: raise ValueError("Adaptive English is not enabled")
-                    adaptive_runtime.review(entry_id, "correct_as_is", expected_revision=expected_revision); refresh_history()
-                except Exception as exc: ui_call(status_ui.show_error, "Could not review recording", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_no_speech(entry_id: str, expected_revision: int | None = None) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    if adaptive_runtime is None: raise ValueError("Adaptive English is not enabled")
-                    adaptive_runtime.review(entry_id, "no_speech", expected_revision=expected_revision); refresh_history()
-                except Exception as exc: ui_call(status_ui.show_error, "Could not review recording", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
-
-        def action_skip_learning_review(entry_id: str, reason: str, expected_revision: int | None = None) -> None:
-            def work() -> None:
-                if shutdown.requested():
-                    return
-                try:
-                    if adaptive_runtime is None: raise ValueError("Adaptive English is not enabled")
-                    adaptive_runtime.review(entry_id, "skip", reason=reason, expected_revision=expected_revision); refresh_history()
-                except Exception as exc: ui_call(status_ui.show_error, "Could not review recording", str(exc)[:160])
-            threading.Thread(target=work, daemon=True).start()
 
         def action_finish_now() -> None:
             """Menu escape hatch — always works, no gesture required."""
@@ -2333,18 +2154,18 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         status_ui.set_history_callbacks({
             "quit": action_quit,
             "restart": only_while_running(action_restart),
-            "copy": only_while_running(action_copy), "retry": only_while_running(action_retry),
-            "save": only_while_running(action_save), "delete": only_while_running(action_delete),
-            "clear": only_while_running(action_clear), "correct": only_while_running(action_correct),
-            "enroll": only_while_running(action_enroll), "revoke": only_while_running(action_revoke),
-            "correct_as_is": only_while_running(action_correct_as_is),
-            "no_speech": only_while_running(action_no_speech),
-            "skip_learning_review": only_while_running(action_skip_learning_review),
+            "copy": only_while_running(controller.copy), "retry": only_while_running(controller.retry),
+            "save": only_while_running(controller.save), "delete": only_while_running(controller.delete),
+            "clear": only_while_running(controller.clear), "correct": only_while_running(controller.correct),
+            "enroll": only_while_running(controller.enroll), "revoke": only_while_running(controller.revoke),
+            "correct_as_is": only_while_running(controller.correct_as_is),
+            "no_speech": only_while_running(controller.no_speech),
+            "skip_learning_review": only_while_running(controller.skip_learning_review),
             "finish_now": only_while_running(action_finish_now),
             "start_now": only_while_running(action_start_now),
             "set_language": only_while_running(action_set_language),
             "set_engine": only_while_running(action_set_engine),
-            "add_rules": only_while_running(action_add_rules),
+            "add_rules": only_while_running(controller.add_rules),
             "open_dictionary": only_while_running(action_open_dictionary),
             "open_settings": only_while_running(action_open_settings),
             "check_updates": only_while_running(action_check_updates),

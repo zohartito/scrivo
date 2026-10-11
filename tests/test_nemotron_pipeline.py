@@ -248,7 +248,7 @@ class PipelineTests(unittest.TestCase):
                 while not saved and time.monotonic() < deadline:
                     time.sleep(.01)
 
-            with patch("sotto.NSPasteboard", pasteboard), patch("sotto.save_audio_copy", save_audio_copy):
+            with patch("delivery.NSPasteboard", pasteboard), patch("sotto.save_audio_copy", save_audio_copy):
                 self._run_one_dictation(root, lambda **kwargs: store, drive=drive)
             board = pasteboard.generalPasteboard.return_value
             self.assertEqual(board.setString_forType_.call_args.args[0], "copy these words")

@@ -1,12 +1,15 @@
 """How the Mac app stops, restarts and refuses work while it does (round-2
 audit rows F1c, N3, N6, N8, N9, N12, N18, N27, N40, N44).
 
-The menu actions and the main-loop teardown are closures inside sotto.run();
-these tests compile the real closures against fakes (no AppKit run loop, no
-mic, no model, no clipboard, no exec) and check what they do.
+The menu actions are AppController methods (app_controller.py); the gesture
+callbacks and the main-loop teardown are closures inside sotto.run(), which
+these tests compile against fakes. Either way there is no AppKit run loop,
+no mic, no model, no clipboard and no exec, and the tests check what the
+real code does.
 """
 import ast
 import functools
+import inspect
 import os
 import queue
 import signal
@@ -23,8 +26,18 @@ if sys.platform != "darwin":
 
 import lifecycle
 import sotto
+from app_controller import AppController
 
 WAIT_S = 5.0
+
+
+def controller(**parts):
+    """An AppController over ``parts``; the collaborators a test does not
+    name are None (the action under test must not reach them)."""
+    names = [name for name, parameter in inspect.signature(AppController).parameters.items()
+             if parameter.kind is parameter.KEYWORD_ONLY and parameter.default is parameter.empty]
+    return AppController(**{name: parts.get(name) for name in names},
+                         **{name: value for name, value in parts.items() if name not in names})
 
 
 def closures(names, namespace):
@@ -262,7 +275,7 @@ class ClosedGateTests(unittest.TestCase):
             "current_speech_config": lambda: "config", "binding": {"trigger": "fn"},
             "hands_free_hint": lambda trigger: "",
         }
-        names = ["on_start", "on_hands_free", "action_start_now", "action_retry"]
+        names = ["on_start", "on_hands_free", "action_start_now"]
         if world.lifecycle is not None:
             names.append("hide_refused_start")
         closures(names, namespace)
@@ -270,6 +283,10 @@ class ClosedGateTests(unittest.TestCase):
                                      lambda: self.ui.append("discard"),
                                      on_hands_free=namespace["on_hands_free"])
         namespace["engine"] = engine
+        namespace["action_retry"] = controller(
+            shutdown=world.shutdown, lifecycle=world.lifecycle, jobs=jobs, status_ui=status_ui,
+            ui_call=namespace["ui_call"], log=self.logs.append,
+            current_speech_config=namespace["current_speech_config"]).retry
         return namespace, engine, jobs
 
     def closed_world(self):
