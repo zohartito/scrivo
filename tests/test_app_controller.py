@@ -11,7 +11,6 @@ them exactly.
 """
 from __future__ import annotations
 
-import ast
 import os
 import queue
 import subprocess
@@ -305,7 +304,8 @@ def build(world: World) -> AppController:
         language_state=world.language_state, save_language_mode=world.save_language_mode,
         parakeet_cached=world.parakeet_cached, persist_engine_and_restart=world.persist_engine_and_restart,
         run_installer=world.run_installer, triggers=sotto.TRIGGERS, trigger_labels=sotto.TRIGGER_LABELS,
-        sotto_script=Path(sotto.__file__).resolve(), start_thread=world.start_thread)
+        sotto_script=Path(sotto.__file__).resolve(), engine=world.engine, capture=world.capture,
+        on_finish=world.on_finish, start_thread=world.start_thread, wait_until_idle=world.wait_until_idle)
 
 
 # -- History ------------------------------------------------------------------
@@ -967,103 +967,53 @@ class OpenSettingsTests(unittest.TestCase):
         self.assertIn(("rebind", "fn", None), world.events)
 
 
-# -- Lifecycle: the closures in sotto.run(), compiled against the World --------
-
-LIFECYCLE_CLOSURES = {
-    "finish_now": "action_finish_now", "start_now": "action_start_now",
-    "restart_when_idle": "action_restart", "restart_now": "restart_now", "quit": "action_quit",
-    "apply_update": "action_apply_update", "check_updates": "action_check_updates",
-}
-
-
-def _run_definitions():
-    source = Path(sotto.__file__).read_text(encoding="utf-8")
-    run = next(node for node in ast.parse(source).body
-               if isinstance(node, ast.FunctionDef) and node.name == "run")
-    found = {}
-
-    def visit(body):
-        for node in body:
-            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-                found.setdefault(node.name, node)
-            elif isinstance(node, (ast.If, ast.With, ast.Try)):
-                visit(node.body)
-                visit(getattr(node, "orelse", []))
-    visit(run.body)
-    return found
-
-
-def build_lifecycle(world: World):
-    """The lifecycle actions as run() defines them, closed over the World's fakes."""
-    class SyncThread:
-        def __init__(self, target, daemon):
-            assert daemon
-            self.target = target
-
-        def start(self):
-            world.start_thread(self.target)
-    namespace = {
-        "shutdown": world.shutdown, "lifecycle": world.lifecycle, "engine": world.engine,
-        "capture": world.capture, "on_finish": world.on_finish, "end_capture_now": sotto.end_capture_now,
-        "restart": world.restart, "status_ui": world.status_ui, "ui_call": world.ui_call, "log": world.log,
-        "app_mode": sotto.app_mode, "wait_until_idle": world.wait_until_idle,
-        "UPDATE_DRAIN_DEADLINE_S": sotto.UPDATE_DRAIN_DEADLINE_S, "update_state": {"running": False},
-        "Path": Path, "sys": sys, "__file__": sotto.__file__,
-        "threading": types.SimpleNamespace(Thread=SyncThread),
-    }
-    definitions = _run_definitions()
-    module = ast.Module(body=[definitions[name] for name in LIFECYCLE_CLOSURES.values()], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
-    return types.SimpleNamespace(**{method: namespace[name] for method, name in LIFECYCLE_CLOSURES.items()})
-
-
 # -- dictation from the menu ------------------------------------------------------
 
 class FinishNowTests(unittest.TestCase):
     def test_the_gesture_recording_is_finished(self):
         world = World()
         world.recording = True
-        build_lifecycle(world).finish_now()
+        build(world).finish_now()
         self.assertEqual(world.events, [("engine.force_finish", True), ("log", "● finished via menu")])
 
     def test_an_orphan_capture_is_finished_directly(self):
         world = World()
         world.capture_active = True
-        build_lifecycle(world).finish_now()
+        build(world).finish_now()
         self.assertEqual(world.events, [("engine.force_finish", True), ("on_finish",),
                                         ("log", "● orphan capture finished via menu")])
 
     def test_nothing_recording_changes_nothing(self):
         world = World()
-        build_lifecycle(world).finish_now()
+        build(world).finish_now()
         self.assertEqual(world.events, [("engine.force_finish", True)])
 
     def test_after_shutdown_nothing_happens(self):
         world = World(stopping=True)
         world.recording = True
-        build_lifecycle(world).finish_now()
+        build(world).finish_now()
         self.assertEqual(world.events, [])
 
 
 class StartNowTests(unittest.TestCase):
     def test_hands_free_starts(self):
         world = World()
-        build_lifecycle(world).start_now()
+        build(world).start_now()
         self.assertEqual(world.events, [("engine.force_start",),
                                         ("log", "● dictation started via menu (hands-free)")])
 
     def test_a_refused_start_logs_nothing(self):
         world = World()
         world.start_ok = False
-        build_lifecycle(world).start_now()
+        build(world).start_now()
         self.assertEqual(world.events, [("engine.force_start",)])
 
     def test_refused_while_the_gate_is_closed_or_stopping(self):
         world = World(closed="updating")
-        build_lifecycle(world).start_now()
+        build(world).start_now()
         self.assertEqual(world.events, [("log", "○ Sotto is updating — dictation not started")])
         world = World(stopping=True)
-        build_lifecycle(world).start_now()
+        build(world).start_now()
         self.assertEqual(world.events, [])
 
 
@@ -1081,7 +1031,7 @@ def wait_for(predicate, timeout=5.0):
 class RestartTests(unittest.TestCase):
     def test_the_menu_restart_drains_then_restarts(self):
         world = World()
-        build_lifecycle(world).restart_when_idle()
+        build(world).restart_when_idle()
         self.assertTrue(wait_for(lambda: ("log", "● restarting Sotto") in world.events), world.events)
         # The drain runs on its own thread, so the menu's log line may land on either side.
         world.events.remove(("log", "● restart requested from the menu — after the current dictation"))
@@ -1090,16 +1040,16 @@ class RestartTests(unittest.TestCase):
 
     def test_refused_when_the_gate_is_already_closed(self):
         world = World(closed="updating")
-        build_lifecycle(world).restart_when_idle()
+        build(world).restart_when_idle()
         self.assertEqual(world.events, [("log", "○ Sotto is updating — restart not requested")])
         world = World(stopping=True)
-        build_lifecycle(world).restart_when_idle()
+        build(world).restart_when_idle()
         self.assertEqual(world.events, [("log", "○ Sotto is stopping — restart not requested")])
 
     def test_a_failed_restart_reopens_the_gate_and_says_so(self):
         world = World()
         world.restart_failure = "launchd could not restart Sotto"
-        build_lifecycle(world).restart_when_idle()
+        build(world).restart_when_idle()
         self.assertTrue(wait_for(lambda: ("log", "● restarting Sotto") in world.events), world.events)
         world.events.remove(("log", "● restart requested from the menu — after the current dictation"))
         self.assertEqual(world.events, [
@@ -1112,20 +1062,20 @@ class RestartTests(unittest.TestCase):
         world = World()
         world.restart_accepts = False
         after = []
-        build_lifecycle(world).restart_now(after_failure=lambda: after.append(True))
+        build(world).restart_now(after_failure=lambda: after.append(True))
         self.assertEqual(world.events, [("restart.request",), ("ui", "show_error", "Could not restart Sotto",
                                                                "Sotto is already shutting down")])
         self.assertEqual(after, [True])
         world = World()
         world.restart_error = OSError("Argument list too long")
-        build_lifecycle(world).restart_now()
+        build(world).restart_now()
         self.assertEqual(world.events[-1], ("ui", "show_error", "Could not restart Sotto", "Argument list too long"))
 
 
 class QuitTests(unittest.TestCase):
     def test_quit_closes_the_gate_and_stops_once_idle(self):
         world = World()
-        build_lifecycle(world).quit()
+        build(world).quit()
         self.assertEqual(world.lifecycle.closed, "quitting")
         self.assertTrue(world.shutdown.event.wait(5))
 
@@ -1146,7 +1096,7 @@ class ApplyUpdateTests(unittest.TestCase):
             return outcome
         with patch.object(updates, "apply_mac", apply_mac), \
              patch.dict(os.environ, {"SOTTO_LAUNCHER": "app" if app else "terminal"}):
-            build_lifecycle(world).apply_update()
+            build(world).apply_update()
         return calls
 
     def test_a_terminal_run_never_updates_itself(self):
@@ -1214,7 +1164,7 @@ class ApplyUpdateTests(unittest.TestCase):
 
     def test_one_update_at_a_time(self):
         world = World()
-        actions = build_lifecycle(world)
+        actions = build(world)
         started = []
 
         def apply_mac(root, python, log_path):
@@ -1241,7 +1191,7 @@ class CheckUpdatesTests(unittest.TestCase):
              patch.object(updates, "apply_mac", return_value=(False, "t", False)), \
              patch.dict(os.environ, {"SOTTO_LAUNCHER": "app" if app else "terminal"}), \
              patch("AppKit.NSWorkspace") as workspace:
-            build_lifecycle(world).check_updates()
+            build(world).check_updates()
         self.assertEqual(checked, [(SOURCE, offline)])
         return workspace
 
@@ -1285,6 +1235,41 @@ class CheckUpdatesTests(unittest.TestCase):
         self.check(world, updates.UpdateCheck("offline", "Offline mode is on."), offline=True)
         self.assertEqual(world.events[1], ("log", "update check: offline"))
         self.assertEqual(world.events[-1][:2], ("direct", "show_info"))
+
+
+# -- the menu bar ------------------------------------------------------------------
+
+class MenuCallbacksTests(unittest.TestCase):
+    ITEMS = {"quit": "quit", "restart": "restart_when_idle", "copy": "copy", "retry": "retry", "save": "save",
+             "delete": "delete", "clear": "clear", "correct": "correct", "enroll": "enroll", "revoke": "revoke",
+             "correct_as_is": "correct_as_is", "no_speech": "no_speech",
+             "skip_learning_review": "skip_learning_review", "finish_now": "finish_now",
+             "start_now": "start_now", "set_language": "set_language", "set_engine": "set_engine",
+             "add_rules": "add_rules", "open_dictionary": "open_dictionary", "open_settings": "open_settings",
+             "check_updates": "check_updates"}
+
+    def wired(self, world):
+        controller = build(world)
+        called = []
+        for item, method in self.ITEMS.items():
+            setattr(controller, method, lambda *args, _item=item, **kwargs: called.append((_item, args, kwargs)))
+        return controller.menu_callbacks(), called
+
+    def test_each_item_runs_its_action_with_its_arguments(self):
+        callbacks, called = self.wired(World())
+        self.assertEqual(set(callbacks), set(self.ITEMS))
+        for item in self.ITEMS:
+            callbacks[item]("row1", expected_revision=2)
+        self.assertEqual(called, [(item, ("row1",), {"expected_revision": 2}) for item in self.ITEMS])
+
+    def test_once_stopping_only_quit_runs(self):
+        world = World()
+        callbacks, called = self.wired(world)
+        world.shutdown.request()
+        self.assertEqual({item: callbacks[item]("row1") for item in self.ITEMS if item != "quit"},
+                         {item: None for item in self.ITEMS if item != "quit"})
+        callbacks["quit"]()
+        self.assertEqual(called, [("quit", (), {})])
 
 
 if __name__ == "__main__":
