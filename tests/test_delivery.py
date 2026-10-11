@@ -853,5 +853,63 @@ class TransientPasteTests(unittest.TestCase):
         self.assertNotIn("org.nspasteboard.TransientType", world.pasteboard.items[0].types())
 
 
+# -- characterization: the smaller delivery helpers (pinned before delivery.py) --
+
+class SetClipboardTextTests(unittest.TestCase):
+    def test_replaces_the_clipboard_with_plain_text_and_no_transient_marker(self):
+        world = patch_insertion(self)
+        before = world.pasteboard.changeCount()
+        sotto.set_clipboard_text("copied words")
+        self.assertEqual(world.pasteboard.text(), "copied words")
+        self.assertEqual(world.pasteboard.changeCount(), before + 1)
+        self.assertEqual(world.pasteboard.items[0].types(), [PLAIN_TEXT])
+        self.assertEqual(world.quartz.posted, [])             # a copy posts no key event
+
+
+class PendingDeliveriesCountTests(unittest.TestCase):
+    def test_counts_adds_and_finishes_and_never_goes_below_zero(self):
+        deliveries = sotto.PendingDeliveries()
+        self.assertEqual(deliveries.count(), 0)
+        deliveries.add()
+        deliveries.add()
+        deliveries.finish()
+        self.assertEqual(deliveries.count(), 1)
+        deliveries.finish()
+        deliveries.finish()                                   # an extra finish clamps at zero
+        self.assertEqual(deliveries.count(), 0)
+        deliveries.add()
+        self.assertEqual(deliveries.count(), 1)
+
+
+class FrontmostPidTests(unittest.TestCase):
+    def frontmost(self, application):
+        workspace = types.SimpleNamespace(frontmostApplication=application)
+        fake = types.SimpleNamespace(NSWorkspace=types.SimpleNamespace(sharedWorkspace=lambda: workspace))
+        with patch.dict(sys.modules, {"AppKit": fake}):
+            return sotto.frontmost_pid()
+
+    def test_reports_the_frontmost_apps_pid_or_none(self):
+        app = types.SimpleNamespace(processIdentifier=lambda: 4242)
+        self.assertEqual(self.frontmost(lambda: app), 4242)
+        self.assertIsNone(self.frontmost(lambda: None))      # nothing frontmost
+
+    def test_an_unavailable_workspace_is_unknown_not_an_error(self):
+        def broken():
+            raise RuntimeError("no window server")
+        self.assertIsNone(self.frontmost(broken))
+
+
+class DeliveryPollTests(unittest.TestCase):
+    def test_a_held_key_rechecks_every_delivery_poll_interval_on_the_main_thread(self):
+        world = DeliveryQueueHarness(held_until=1.0)
+        world.queue.paste("result-1 ")
+        self.assertEqual([fire_at for fire_at, _seq, _fn in world.timers.pending], [sotto.DELIVERY_POLL_S])
+        self.assertEqual(world.logs, ["  paste deferred — a key is still held"])
+        world.timers.advance_to(sotto.DELIVERY_POLL_S)
+        self.assertEqual(len(world.timers.pending), 1)        # one poll armed at a time
+        world.timers.advance_to(2.0)
+        self.assertEqual([text for text, _t, _held in world.delivered], ["result-1 "])
+
+
 if __name__ == "__main__":
     unittest.main()

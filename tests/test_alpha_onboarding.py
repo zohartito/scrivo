@@ -517,6 +517,21 @@ class AppLogRotationTests(unittest.TestCase):
             self.assertEqual(path.with_suffix(".log.1").read_text(), "x" * 150)
             self.assertFalse(path.exists())             # the reopen creates the fresh file
 
+    def test_routing_rotates_a_large_log_points_output_at_it_and_records_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            pointed = []
+            with patch.object(sotto, "_point_output_at", pointed.append), \
+                    patch.dict(sotto._app_log, {"path": None, "max_bytes": 0}):
+                path = sotto.route_app_logs(data, max_bytes=100)
+                self.assertEqual(dict(sotto._app_log), {"path": path, "max_bytes": 100})
+                self.assertEqual(path, data / "logs" / "sotto.log")
+                self.assertEqual(os.stat(data / "logs").st_mode & 0o777, 0o700)
+                path.write_text("x" * 150)                    # an oversized log from the last run
+                sotto.route_app_logs(data, max_bytes=100)
+            self.assertEqual(pointed, [path, path])
+            self.assertEqual(path.with_suffix(".log.1").read_text(), "x" * 150)
+
     def test_nothing_happens_when_logs_are_not_routed(self):
         with patch.object(sotto, "_point_output_at") as reopen, \
                 patch.dict(sotto._app_log, {"path": None, "max_bytes": 100}):
