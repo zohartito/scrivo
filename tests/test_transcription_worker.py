@@ -954,7 +954,13 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
             return {"id": f"row{len(calls)}", "text": text, "provenance": kw.get("provenance")}
         h = Harness(says("Please call me back at four"), append=append)
         job = h.live_job(speech(2.0))
-        threading.Thread(target=h.run_jobs, args=(job,), daemon=True).start()
+        runner = threading.Thread(target=h.run_jobs, args=(job,), daemon=True)
+        runner.start()
+        # Cleanups run last-in first-out: release the blocked append, then wait
+        # for run_jobs, so its thread never outlives this test.
+        self.addCleanup(lambda: self.assertFalse(runner.join(WAIT_S) or runner.is_alive(),
+                                                 "run_jobs outlived the test"))
+        self.addCleanup(release.set)
         self.assertTrue(started.wait(WAIT_S), "the worker never reached its History append")
         h.shutdown.request()  # Quit's drain ran out while the append was under way
         keeper = threading.Thread(target=h.worker.keep_untranscribed, args=(job,), daemon=True)
