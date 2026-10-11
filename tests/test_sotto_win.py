@@ -2211,7 +2211,7 @@ class SharedPolicyRunTest(unittest.TestCase):
             dict(base, dictionary={"rules": rule, "asr_text": "New line uh second hello world"},
                  voice={"asr_text": "New line uh second Hello World"}),
         ])
-        self.assertEqual([row["provenance"] for row in rows],
+        self.assertEqual([row["attempts"][0]["provenance"] for row in rows],
                          ["live", "live", "live", "live_suspect", "live"])
         logs = app["logs"] + module_logs  # the dictionary has logged through either
         self.assertEqual(logs.count("  dictionary: 1 replacement(s)"), 2, logs)
