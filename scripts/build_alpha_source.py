@@ -105,6 +105,7 @@ WINDOWS_FILES = (
     'pipeline.py',
     'sotto_log.py',
     'delivery.py',
+    'lifecycle.py',
     'scripts/install-windows.ps1',
     'scripts/update-windows.ps1',
     'scripts/get.ps1',
