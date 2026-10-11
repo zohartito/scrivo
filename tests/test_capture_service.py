@@ -24,6 +24,7 @@ from unittest import mock
 
 import numpy as np
 
+import capture as capture_module
 import sotto
 
 
@@ -130,7 +131,7 @@ class FakeEngine:
 
 
 def fake_avfoundation(engine_factory):
-    """sotto imports AVAudioEngine lazily inside _start_engine_locked."""
+    """capture imports AVAudioEngine lazily inside _start_engine_locked."""
     module = types.ModuleType("AVFoundation")
 
     class AVAudioEngine:
@@ -213,7 +214,7 @@ class DeviceNameLeakTest(unittest.TestCase):
             raise AssertionError(f"unexpected library {path}")
 
         with mock.patch("ctypes.CDLL", cdll):
-            devices = sotto._audio_devices()
+            devices = capture_module._audio_devices()
         self.assertEqual([d["name"] for d in devices], ["MacBook Pro Microphone"])
         self.assertEqual(core_foundation.released, [FakeCoreAudio.NAME_REF],
                          "kAudioObjectPropertyName is a +1 CFStringRef; name_of must CFRelease it")
@@ -224,7 +225,7 @@ class DeviceNameLeakTest(unittest.TestCase):
 class TeardownTest(unittest.TestCase):
     def setUp(self):
         self.logs = []
-        patcher = mock.patch.object(sotto, "log", self.logs.append)
+        patcher = mock.patch.object(capture_module, "log", self.logs.append)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -264,7 +265,7 @@ class TeardownTest(unittest.TestCase):
 class IdleReleaseTest(unittest.TestCase):
     def setUp(self):
         self.logs = []
-        patcher = mock.patch.object(sotto, "log", self.logs.append)
+        patcher = mock.patch.object(capture_module, "log", self.logs.append)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -346,8 +347,8 @@ class RouteChangeMidCaptureTest(unittest.TestCase):
         capture = sotto.CaptureService()
         capture._engine_obj = engine
         with fake_avfoundation(lambda: engine), \
-             mock.patch.object(sotto, "log", lambda msg: None), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", lambda n: 77), \
+             mock.patch.object(capture_module, "log", lambda msg: None), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda n: 77), \
              mock.patch.object(sotto.threading, "Thread", InlineThread):
             capture._start_engine()                          # built-in mic, 48 kHz
             capture.begin()                                  # key down
@@ -417,7 +418,7 @@ class FailedMicStartTest(unittest.TestCase):
         real_sleep = time.sleep
         for patcher in (mock.patch.object(sotto.threading, "Thread", RecordingThread),
                         mock.patch.object(sotto.time, "sleep", lambda s: None),  # retry pauses
-                        mock.patch.object(sotto, "log", self.logs.append)):
+                        mock.patch.object(capture_module, "log", self.logs.append)):
             patcher.start()
             self.addCleanup(patcher.stop)
         # announce_live's own clock: its 10 s "mic live" deadline passes in 0.5 s
@@ -470,7 +471,7 @@ class FailedMicStartTest(unittest.TestCase):
 
     def test_a_failed_start_never_announces_a_live_mic(self):
         with fake_avfoundation(lambda: None), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", lambda node: 77):
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
             capture, gesture, ui, jobs = self.wire(with_handler=False)
             gesture.pressed()                               # key down: five failed starts
             self.join_all()
@@ -482,7 +483,7 @@ class FailedMicStartTest(unittest.TestCase):
 
     def test_a_failed_start_ends_the_gesture_and_tells_the_user_once(self):
         with fake_avfoundation(lambda: None), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", lambda node: 77):
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
             capture, gesture, ui, jobs = self.wire(with_handler=True)
             gesture.pressed()
             self.join_all()
@@ -514,7 +515,7 @@ class DoctorProbeTest(unittest.TestCase):
 
         out = __import__("io").StringIO()
         with fake_avfoundation(lambda: engine), \
-             mock.patch.object(sotto, "_pin_input_to_builtin", pin), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", pin), \
              contextlib.redirect_stdout(out):
             status = sotto.doctor_input_probe()
         self.assertEqual(status, 0)
@@ -541,6 +542,179 @@ class DoctorProbeTest(unittest.TestCase):
         self.assertNotIn("outputFormatForBus_", probe)
         self.assertEqual(run.call_args.kwargs.get("cwd"), str(Path(sotto.__file__).resolve().parent))
         self.assertIn("✓ input device: 48000 Hz, 1 ch (built-in mic)", logs)
+
+
+# -- which mic a key press records from, pinned before capture moves out of sotto.py
+
+def device(dev_id, name, transport, inputs=(0x0201,), outputs=()):
+    return {"id": dev_id, "name": name, "transport": fourcc(transport),
+            "input_terminals": list(inputs), "output_terminals": list(outputs)}
+
+
+BUILT_IN = device(1, "MacBook Pro Microphone", "bltn")
+
+
+class DeviceSelectionTest(unittest.TestCase):
+    def select(self, devices):
+        with mock.patch.object(capture_module, "_audio_devices", lambda: devices):
+            return capture_module._select_input_device()
+
+    def test_a_worn_headset_beats_the_built_in_mic(self):
+        airpods = device(2, "Zohar's AirPods Pro", "blue")
+        self.assertEqual(self.select([BUILT_IN, airpods]), (2, "Zohar's AirPods Pro (headset mic)"))
+
+    def test_headset_terminal_types_mark_a_worn_mic(self):
+        for name, inputs, outputs in (("USB Audio", (0x0402,), ()), ("USB Audio", (0x0201,), (0x0302,)),
+                                      ("USB Audio", (fourcc("hmic"),), ()),
+                                      ("USB Audio", (0x0201,), (fourcc("hdph"),))):
+            with self.subTest(inputs=inputs, outputs=outputs):
+                usb = device(3, name, "usb ", inputs, outputs)
+                self.assertEqual(self.select([BUILT_IN, usb]), (3, "USB Audio (headset mic)"))
+
+    def test_continuity_and_virtual_inputs_are_never_chosen(self):
+        iphone = device(4, "iPhone headset Microphone", "ccwd", (0x0402,))
+        loopback = device(5, "Loopback headset", "virt", (0x0402,))
+        self.assertEqual(self.select([iphone, loopback, BUILT_IN]), (1, "built-in mic"))
+
+    def test_a_room_speaker_mic_loses_to_the_built_in(self):
+        speaker = device(6, "JBL Flip 6", "blue", (0x0201,), (0x0301,))
+        self.assertEqual(self.select([speaker, BUILT_IN]), (1, "built-in mic"))
+
+    def test_the_first_worn_headset_and_the_first_built_in_win(self):
+        first, second = device(7, "Beats Flex", "blue"), device(8, "Wired EarPods", "usb ")
+        self.assertEqual(self.select([first, second, BUILT_IN]), (7, "Beats Flex (headset mic)"))
+        later_built_in = device(9, "Second built-in", "bltn")
+        self.assertEqual(self.select([BUILT_IN, later_built_in]), (1, "built-in mic"))
+
+    def test_no_usable_device_and_a_failed_query_say_why(self):
+        self.assertEqual(self.select([device(4, "iPhone Microphone", "ccwd")]),
+                         (None, "no suitable input device"))
+
+        def broken():
+            raise OSError("CoreAudio gone")
+        with mock.patch.object(capture_module, "_audio_devices", broken):
+            self.assertEqual(capture_module._select_input_device(), (None, "device query failed"))
+
+    def test_the_built_in_failover_target_ignores_a_worn_headset(self):
+        airpods = device(2, "AirPods", "blue")
+        with mock.patch.object(capture_module, "_audio_devices", lambda: [airpods, BUILT_IN]):
+            self.assertEqual(capture_module._builtin_input_device(), 1)
+        with mock.patch.object(capture_module, "_audio_devices", lambda: [airpods]):
+            self.assertIsNone(capture_module._builtin_input_device())
+
+        def broken():
+            raise OSError("CoreAudio gone")
+        with mock.patch.object(capture_module, "_audio_devices", broken):
+            self.assertIsNone(capture_module._builtin_input_device())
+
+
+class FakeAudioToolbox:
+    def __init__(self, status=0):
+        self.status = status
+        self.calls = []
+
+    def AudioUnitSetProperty(self, unit, prop, scope, element, data_ref, size):
+        self.calls.append((unit.value, prop, scope, element, data_ref._obj.value, size))
+        return self.status
+
+
+class PinnableNode:
+    """Just enough of AVAudioInputNode for _pin_input_to_builtin."""
+    UNIT = 0xA0D10
+
+    def audioUnit(self):
+        return types.SimpleNamespace(pointerAsInteger=self.UNIT)
+
+
+class PinInputTest(unittest.TestCase):
+    def pin(self, selected, toolbox):
+        logs, opened = [], []
+
+        def cdll(path, *args, **kwargs):
+            opened.append(path)
+            if isinstance(toolbox, Exception):
+                raise toolbox
+            return toolbox
+
+        with mock.patch.object(capture_module, "_select_input_device", lambda: selected), \
+             mock.patch.object(capture_module, "log", logs.append), \
+             mock.patch("ctypes.CDLL", cdll):
+            result = capture_module._pin_input_to_builtin(PinnableNode())
+        return result, logs, opened
+
+    def test_the_selected_device_becomes_the_input_units_current_device(self):
+        toolbox = FakeAudioToolbox()
+        result, logs, opened = self.pin((2, "AirPods (headset mic)"), toolbox)
+        self.assertEqual(result, 2)
+        self.assertEqual(logs, ["  mic: AirPods (headset mic)"])
+        self.assertEqual(opened, ["/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox"])
+        self.assertEqual(toolbox.calls, [(PinnableNode.UNIT, 2000, 0, 0, 2, 4)])
+
+    def test_a_rejected_pin_still_reports_the_intended_route(self):
+        result, logs, _ = self.pin((1, "built-in mic"), FakeAudioToolbox(status=-10851))
+        self.assertEqual(result, 1)
+        self.assertEqual(logs, ["  mic: built-in mic",
+                                "! mic pin rejected (err -10851) — using system default input"])
+
+    def test_a_pin_that_raises_falls_back_to_the_default_input(self):
+        result, logs, _ = self.pin((1, "built-in mic"), OSError("no AudioToolbox"))
+        self.assertEqual(result, 1)
+        self.assertEqual(logs, ["  mic: built-in mic",
+                                "! could not pin the mic — using system default input"])
+
+    def test_no_device_pins_nothing(self):
+        result, logs, opened = self.pin((None, "no suitable input device"), FakeAudioToolbox())
+        self.assertIsNone(result)
+        self.assertEqual((logs, opened), ([], []))
+
+
+class IdleDeviceScanTest(unittest.TestCase):
+    """tick() follows a plugged-in or removed headset only while idle."""
+
+    def setUp(self):
+        self.logs = []
+        patcher = mock.patch.object(capture_module, "log", self.logs.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def idle_capture(self, wanted):
+        capture = sotto.CaptureService()
+        engine = FakeEngine()
+        engine.running = True
+        capture._engine_obj = capture._engine = engine
+        capture._node = engine.node
+        capture._device_id = 1
+        capture.idle_release_s = -1                          # keep the engine; only the scan acts
+        calls = []
+        patchers = (mock.patch.object(capture_module, "_select_input_device", lambda: wanted),
+                    mock.patch.object(capture, "_release_engine", lambda **kw: calls.append("release") or True),
+                    mock.patch.object(capture, "_start_engine", lambda: calls.append("start")))
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return capture, calls
+
+    def test_a_new_device_rebuilds_the_engine_on_it(self):
+        capture, calls = self.idle_capture((2, "AirPods (headset mic)"))
+        capture.tick()
+        self.assertEqual(calls, ["release", "start"])
+        self.assertIn("! input device changed — switching to AirPods (headset mic)", self.logs)
+
+    def test_the_same_device_or_a_recent_scan_changes_nothing(self):
+        capture, calls = self.idle_capture((1, "built-in mic"))
+        capture.tick()
+        self.assertGreater(capture._last_device_scan, 0.0)
+        capture._device_id = 3                               # would switch, but the scan just ran
+        capture.tick()
+        self.assertEqual(calls, [])
+        self.assertEqual(self.logs, [])
+
+    def test_no_scan_while_recording(self):
+        capture, calls = self.idle_capture((2, "AirPods (headset mic)"))
+        capture.begin()
+        capture.tick()
+        self.assertEqual(calls, [])
+        self.assertEqual(capture._last_device_scan, 0.0)
 
 
 if __name__ == "__main__":
