@@ -76,3 +76,47 @@ def clean(text: str, *, fillers: bool = True, commands: bool = True) -> tuple[st
     if commands:
         text = _line_breaks(text)
     return text, None
+
+
+class LastInsert:
+    """The one insert "scratch that" may undo: Sotto's own most recent real
+    insert, within SCRATCH_WINDOW_S, into the same target still in front,
+    with no key typed by the user since.
+
+    Both apps share this rule; each supplies its own identity of where an
+    insert went (the Mac: the frontmost app's pid; Windows: the foreground
+    window and its pid), its own count of the user's real key-downs, and
+    presses its own undo keys. No clock or platform calls of its own.
+    """
+
+    def __init__(self, noun: str = "app") -> None:
+        self.noun = noun  # how a refusal names the target: "app" (Mac) or "window" (Windows)
+        self.last: dict | None = None
+
+    def record(self, *, at: float, target, keydowns: int) -> None:
+        """A real insert reached ``target`` at ``at``, after ``keydowns`` user key-downs.
+
+        Side effects: replaces the remembered insert."""
+        self.last = {"at": at, "target": target, "keydowns": keydowns}
+
+    def refusal(self, *, now: float, target, keydowns) -> str | None:
+        """Why nothing may be undone at ``now``, or None when the undo may go
+        ahead. ``target`` and ``keydowns`` are zero-argument callables, read
+        only once the rules before them pass."""
+        last = self.last
+        if last is None or now - last["at"] > SCRATCH_WINDOW_S:
+            return "nothing recent to undo"
+        current = target()
+        if current is None or last["target"] is None:  # no identity to compare: None == None proves nothing
+            return f"the {self.noun} in front is unknown — nothing undone"
+        if current != last["target"]:
+            return f"the dictation went to another {self.noun} — nothing undone"
+        if keydowns() != last["keydowns"]:
+            return "you typed since the dictation — nothing undone"
+        return None
+
+    def forget(self) -> None:
+        """The insert was undone: nothing is left to undo.
+
+        Side effects: clears the remembered insert."""
+        self.last = None

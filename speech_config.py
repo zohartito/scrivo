@@ -319,3 +319,41 @@ def glossary_prompt(terms: Iterable[str], duration_seconds: float | None) -> Glo
     # explicitly which local terms and phrases enter the prompt.
     phrases = ". ".join(term.rstrip(".?!") for term in bounded_terms)
     return GlossaryPrompt("Speech context: " + phrases + ".", None)
+
+
+def transcription_kwargs(speech_config, glossary_terms: tuple[str, ...], duration: float) -> tuple[dict, dict]:
+    """Build MLX options and bounded, persistable attempt metadata.
+
+    Shared by the Mac and Windows (Windows' CT2 adapter gets the same options
+    through ``sotto.transcribe_canonical_samples``, and both record the same
+    attempt metadata). Moved verbatim from sotto.py, which still binds it as
+    ``_transcription_kwargs``."""
+    if speech_config.profile.backend == "nemotron":
+        from nemotron_backend import metadata
+        return {}, metadata()
+    if speech_config.profile.backend == "parakeet":
+        return {}, {"profile": "parakeet", "language": None,
+                    "prompt": {"disabled": "Parakeet does not use Whisper glossary prompts"}}
+
+    prompt_decision = glossary_prompt(glossary_terms, duration)
+    kwargs = {
+        "path_or_hf_repo": speech_config.model_repo,
+        "condition_on_previous_text": False,
+        # Sotto does not consume word timings.  Asking MLX Whisper to compute
+        # them nearly doubled warm latency on the user's own captures.  Output
+        # safety remains in the VAD metadata, no-speech verdict, implausible
+        # rate/compression guard, and conservative repetition-loop salvage.
+        "word_timestamps": False,
+    }
+    if speech_config.language is not None:
+        kwargs["language"] = speech_config.language
+    if prompt_decision.prompt is not None:
+        kwargs["initial_prompt"] = prompt_decision.prompt
+    metadata = {
+        "profile": speech_config.profile.name,
+        "language": speech_config.language,
+        "prompt": prompt_decision.prompt if prompt_decision.prompt is not None else {
+            "disabled": prompt_decision.reason,
+        },
+    }
+    return kwargs, metadata

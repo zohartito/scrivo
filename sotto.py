@@ -39,7 +39,10 @@ import pipeline
 # importable from sotto for existing callers.
 from pipeline import (LOOP_MAX_UNIT_WORDS, LOOP_MIN_PREFIX_CHARS, LOOP_MIN_REPEATS,  # noqa: F401
                       NO_SPEECH_TEXT, _find_repetition_loop, apply_voice_cleanup,
-                      looks_hallucinated, reads_as_no_speech, salvage_repetition_loop, screen)
+                      finalize_primary_live_delivery, looks_hallucinated, reads_as_no_speech,
+                      salvage_repetition_loop, screen)
+# The decode options live in speech_config.py (shared with Windows).
+from speech_config import transcription_kwargs as _transcription_kwargs
 # The log and its rotation live in sotto_log.py (it imports nothing from sotto);
 # these names stay importable from sotto for existing callers.
 from sotto_log import keep_app_log_small, log, route_app_logs  # noqa: F401
@@ -85,31 +88,6 @@ DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
 HISTORY_KEEP = 200   # every stored transcript is listed; the menu scrolls
 FAST_MARGIN_FRAMES = 500         # Fast: encode the speech plus 5 s, not a padded 30 s
 MODEL_REWARM_AFTER_S = 240.0
-
-
-def finalize_primary_live_delivery(*, append, adaptive_runtime, appended_publication: dict | None,
-                                  shutdown: ShutdownBoundary, inject) -> object | None:
-    """Persist and authorize a primary result before any cursor side effect.
-
-    The caller supplies the already-prepared History append closure.  This
-    narrow seam makes the order testable without a macOS event loop: append,
-    adaptive registration, exact comparator publication acknowledgement, then
-    (only while still live) cursor scheduling.
-    """
-    row=append()
-    if adaptive_runtime is not None and row is not None and not shutdown.requested():
-        try:
-            adaptive_runtime.register_live(row)
-            if appended_publication is not None and not adaptive_runtime.acknowledge_comparator_publication(appended_publication):
-                raise RuntimeError("comparator publication unavailable")
-        except Exception:
-            if appended_publication is not None:
-                adaptive_runtime.cancel_comparator_publication(appended_publication)
-                adaptive_runtime.fail_comparator_publication(appended_publication)
-            raise
-    if row is not None and inject is not None and not shutdown.requested():
-        inject()
-    return row
 
 # Sotto keeps its small, required Whisper model on the Mac itself.  The general
 # Hugging Face cache may live on removable storage, but dictation must still
@@ -1023,40 +1001,6 @@ def export_learning_snapshot(output: str | Path) -> int:
         # remain visible for inspection rather than deleting user-selected data.
         raise
     return len(rows)
-
-
-def _transcription_kwargs(speech_config, glossary_terms: tuple[str, ...], duration: float) -> tuple[dict, dict]:
-    """Build MLX options and bounded, persistable attempt metadata."""
-    if speech_config.profile.backend == "nemotron":
-        from nemotron_backend import metadata
-        return {}, metadata()
-    if speech_config.profile.backend == "parakeet":
-        return {}, {"profile": "parakeet", "language": None,
-                    "prompt": {"disabled": "Parakeet does not use Whisper glossary prompts"}}
-    from speech_config import glossary_prompt
-
-    prompt_decision = glossary_prompt(glossary_terms, duration)
-    kwargs = {
-        "path_or_hf_repo": speech_config.model_repo,
-        "condition_on_previous_text": False,
-        # Sotto does not consume word timings.  Asking MLX Whisper to compute
-        # them nearly doubled warm latency on the user's own captures.  Output
-        # safety remains in the VAD metadata, no-speech verdict, implausible
-        # rate/compression guard, and conservative repetition-loop salvage.
-        "word_timestamps": False,
-    }
-    if speech_config.language is not None:
-        kwargs["language"] = speech_config.language
-    if prompt_decision.prompt is not None:
-        kwargs["initial_prompt"] = prompt_decision.prompt
-    metadata = {
-        "profile": speech_config.profile.name,
-        "language": speech_config.language,
-        "prompt": prompt_decision.prompt if prompt_decision.prompt is not None else {
-            "disabled": prompt_decision.reason,
-        },
-    }
-    return kwargs, metadata
 
 
 def transcribe_canonical_samples(mlx_whisper, samples: np.ndarray, speech_config,

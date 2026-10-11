@@ -94,23 +94,16 @@ class DeliveryLogicTest(unittest.TestCase):
             self.assertEqual(win_asr.choose_language(probabilities, allowed),
                              sotto.choose_language(probabilities, allowed), (probabilities, allowed))
 
-    def test_detected_language_moves_into_preprocessing_like_the_mac(self):
-        metadata, preprocessing = {"detected_language": "pt", "profile": "auto"}, {}
-        sotto_win.move_detected_language(metadata, preprocessing)
-        self.assertEqual((metadata, preprocessing), ({"profile": "auto"}, {"detected_language": "pt"}))
-
-    def test_screen_keeps_back_empty_and_looping_output_and_salvages_a_prefix(self):
-        self.assertEqual(sotto_win.screen_transcript("", 1.0, 1.0, {}),
-                         ("[no speech detected]", "empty transcript"))
-        text, reason = sotto_win.screen_transcript("loop " * 60, 1.0, 1.0, {})
-        self.assertIsNotNone(reason)
-        prefix = "This part of the dictation is real and should be kept intact."
-        preprocessing: dict = {}
-        with mock.patch.object(sotto_win, "log"):
-            text, reason = sotto_win.screen_transcript(prefix + " difference" * 40, 12.0, 1.0,
-                                                       preprocessing)
-        self.assertEqual((text, reason), (prefix, None))
-        self.assertIn("repetition_trimmed", preprocessing)
+    def test_shared_policy_is_imported_not_copied(self):
+        # Restructure step 7: live dictation and Retry both call
+        # pipeline.screen (SharedPolicyRunTest pins what they produce), and
+        # the drains are lifecycle's; Windows keeps no copy of its own.
+        import lifecycle
+        for name in ("screen_transcript", "move_detected_language", "TRANSCRIPTION_FAILED_TEXT",
+                     "drain_until_idle"):
+            self.assertFalse(hasattr(sotto_win, name), name)
+        for name in ("wait_until_idle", "end_capture_now", "QUIT_DRAIN_S", "DRAIN_POLL_S"):
+            self.assertIs(getattr(sotto_win, name), getattr(lifecycle, name), name)
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
@@ -2160,6 +2153,105 @@ class RoundTwoRunTest(unittest.TestCase):
         self.assertEqual(results["listed"], [results["entry_id"]])
         self.assertEqual(len(app["notes"]), 1, app["notes"])
         self.assertEqual(app["copied"], [])
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
+class SharedPolicyRunTest(unittest.TestCase):
+    """Characterization of the policy Windows shares with the Mac (restructure
+    step 7): written against main before Windows switched to the shared code,
+    so any change it makes to what a dictation produces shows up here."""
+
+    ENGLISH = RoundTwoRunTest.ENGLISH
+    run_app = RoundTwoRunTest.run_app
+    fakes = staticmethod(RoundTwoRunTest.fakes)
+    dictate = staticmethod(RoundTwoRunTest.dictate)
+    PREFIX = "This part of the dictation is real and should be kept intact."
+
+    def test_live_dictation_is_screened_like_pipeline_screen(self):
+        from history import HistoryStore
+        replies = ["hello world, um, again", "scratch that", self.PREFIX + " difference" * 40, "",
+                   "New line uh second hello world"]
+        fakes = self.fakes([_voiced(), _voiced(), _voiced(3.0), _voiced(), _voiced()], list(replies))
+        undos, module_logs = [], []
+
+        def drive(results, app):
+            for _reply in replies:
+                self.dictate(app)
+
+        with tempfile.TemporaryDirectory(prefix="sotto-win-screen-") as temporary:
+            data = Path(temporary)
+            (data / "dictionary.txt").write_text("hello world => Hello World\n", encoding="utf-8")
+            results, app = self.run_app(fakes, drive, data, settings=self.ENGLISH, extra=(
+                mock.patch.object(sotto_win.win_inject, "send_inputs", undos.append),
+                mock.patch.object(sotto_win.win_inject, "foreground_identity", lambda: (101, 7),
+                                  create=True),
+                mock.patch.object(sotto, "log", module_logs.append)))
+            rows = HistoryStore(data).entries(10)[::-1]
+        self.assertEqual(app["delivered"], ["Hello World again", self.PREFIX, "\nSecond Hello World"])
+        self.assertEqual(len(undos), 1, "the scratch undid the first dictation")
+        self.assertEqual([row["text"] for row in rows],
+                         ["Hello World again", "", self.PREFIX, "[no speech detected]",
+                          "\nSecond Hello World"])
+        base = {"resampled_normalized": True, "vad_trimmed": False, "silence_collapsed": False,
+                "detected_language": "en"}
+        rule = [{"heard": "hello world", "write": "Hello World", "count": 1}]
+        self.assertEqual([row["preprocessing"] for row in rows], [
+            dict(base, dictionary={"rules": rule, "asr_text": "hello world, um, again"},
+                 voice={"asr_text": "Hello World, um, again"}),
+            dict(base, voice={"asr_text": "scratch that", "action": "scratch"}),
+            dict(base, repetition_trimmed={"unit": "difference", "repeats": 40, "dropped_chars": 440}),
+            dict(base, outcome="suspect"),
+            dict(base, dictionary={"rules": rule, "asr_text": "New line uh second hello world"},
+                 voice={"asr_text": "New line uh second Hello World"}),
+        ])
+        self.assertEqual([row["attempts"][0]["provenance"] for row in rows],
+                         ["live", "live", "live", "live_suspect", "live"])
+        logs = app["logs"] + module_logs  # the dictionary has logged through either
+        self.assertEqual(logs.count("  dictionary: 1 replacement(s)"), 2, logs)
+        for line in ("  cut a 40x repetition loop (440 chars) — keeping the clean prefix",
+                     "! not pasted (empty transcript) — kept in history",
+                     "↶ scratch that — undid the last dictation"):
+            self.assertIn(line, logs)
+
+    def test_scratch_that_logs_each_refusal_with_its_reason(self):
+        steps = [  # (reply, what the insert does, window in front, user typed first)
+            ("first words", "", (101, 7), False),
+            ("scratch that", "", (101, 7), False),
+            ("second words", "type", (101, 7), False),
+            ("scratch that", "type", (202, 9), False),
+            ("scratch that", "type", (101, 7), True),
+            ("third words", "type", (101, 7), False),
+            ("scratch that", "type", (101, 7), False),
+            ("scratch that", "type", (101, 7), False),
+            ("fourth words", "type", None, False),
+            ("scratch that", "type", None, False),
+        ]
+        fakes = self.fakes([_voiced() for _ in steps], [reply for reply, *_ in steps])
+        state = {"inserts": "", "window": None}
+
+        def drive(results, app):
+            hook = app["hooks"][0]
+            for _reply, inserts, window, typed in steps:
+                state["inserts"], state["window"] = inserts, window
+                if typed:
+                    hook.keydowns += 1
+                self.dictate(app)
+
+        with tempfile.TemporaryDirectory(prefix="sotto-win-scratch-reasons-") as temporary:
+            results, app = self.run_app(fakes, drive, Path(temporary), settings=self.ENGLISH, extra=(
+                mock.patch.object(sotto_win.win_inject, "deliver",
+                                  lambda text, **kwargs: state["inserts"]),
+                mock.patch.object(sotto_win.win_inject, "send_inputs", lambda inputs: None),
+                mock.patch.object(sotto_win.win_inject, "foreground_identity",
+                                  lambda: state["window"], create=True)))
+        self.assertEqual([line for line in app["logs"] if "scratch that" in line], [
+            "  scratch that: nothing recent to undo",
+            "  scratch that: the dictation went to another window — nothing undone",
+            "  scratch that: you typed since the dictation — nothing undone",
+            "↶ scratch that — undid the last dictation",
+            "  scratch that: nothing recent to undo",
+            "  scratch that: the window in front is unknown — nothing undone",
+        ])
 
 
 if __name__ == "__main__":
