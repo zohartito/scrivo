@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """sotto on Windows — hold right-ctrl, speak, release; the words land at your cursor.
 
-Same pipeline as sotto.py — the pure logic (GestureEngine, VAD, hallucination
-guards, history/learning stores, dictionary, settings) is imported and shared —
-with Windows I/O:
+Same pipeline as sotto.py — the pure logic (GestureEngine, VAD, pipeline.screen's
+guards and cleanup, the "scratch that" rule, the drains, history/learning
+stores, dictionary, settings) is imported and shared — with Windows I/O:
   * trigger   pynput low-level keyboard hook (win_hotkey)
   * capture   one fresh stream per capture on the default input, MME (win_capture)
   * ASR       faster-whisper / CTranslate2: CUDA float16, else CPU int8 (win_asr)
