@@ -321,7 +321,8 @@ class HotkeyListener:
         )
         if self.tap is None:
             self.log("failed to create event tap — grant Accessibility to this terminal "
-                     "(System Settings → Privacy & Security → Accessibility)")
+                     "(System Settings → Privacy & Security → Accessibility, called "
+                     "Device Control and Data Access on newer macOS)")
             sys.exit(1)
         source = self.quartz.CFMachPortCreateRunLoopSource(None, self.tap, 0)
         self.quartz.CFRunLoopAddSource(self.quartz.CFRunLoopGetCurrent(), source,

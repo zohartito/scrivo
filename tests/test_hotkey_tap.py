@@ -380,7 +380,8 @@ class TapSetupTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 1)
         self.assertEqual(self.app.logged("failed to create event tap"),
                          ["failed to create event tap — grant Accessibility to this terminal "
-                          "(System Settings → Privacy & Security → Accessibility)"])
+                          "(System Settings → Privacy & Security → Accessibility, called "
+                          "Device Control and Data Access on newer macOS)"])
         self.assertIsNone(self.app.gate.target, "no poller without a tap")
 
     def test_an_unparsable_hotkey_is_logged_and_disabled(self):
