@@ -19,6 +19,7 @@ import threading
 import time
 
 from sotto_log import log
+import voice_commands
 
 try:  # Keep content-free CLI/admin helpers importable on non-macOS test hosts.
     import Quartz
@@ -361,7 +362,7 @@ class DeliveryQueue:
         self._poll_armed = False
         self._waiting = False
         self._blocked_since: float | None = None
-        self.last_delivery: dict | None = None  # the insert "scratch that" may undo
+        self.last_insert = voice_commands.LastInsert("app")  # the insert "scratch that" may undo
 
     def paste(self, text: str, in_history: bool = True) -> None:
         """in_history is False when History could not keep this dictation
@@ -471,7 +472,7 @@ class DeliveryQueue:
     def _deliver(self, text: str, in_history: bool = True) -> None:
         pid, keydowns = self._frontmost_pid(), self._keydowns()  # the paste target, before ⌘V
         if self._insert(text):  # a secure-input decline inserted nothing: arm no undo
-            self.last_delivery = {"at": self._clock(), "pid": pid, "keydowns": keydowns}
+            self.last_insert.record(at=self._clock(), target=pid, keydowns=keydowns)
         else:  # N34: every other drop path tells the user, so this one does too
             self._note("Dictation not pasted",
                        "Secure input is on (a password field may have focus), so Sotto did not "
@@ -479,24 +480,15 @@ class DeliveryQueue:
 
     def _undo(self) -> None:
         """'scratch that': the app's own ⌘Z, only for Sotto's own recent insert —
-        same app still in front, nothing typed by the user since."""
-        import voice_commands
-        last = self.last_delivery
-        if last is None or self._clock() - last["at"] > voice_commands.SCRATCH_WINDOW_S:
-            self._log("  scratch that: nothing recent to undo")
-            return
-        pid = self._frontmost_pid()
-        if pid is None or last["pid"] is None:  # no identity to compare: None == None proves nothing
-            self._log("  scratch that: the app in front is unknown — nothing undone")
-            return
-        if pid != last["pid"]:
-            self._log("  scratch that: the dictation went to another app — nothing undone")
-            return
-        if self._keydowns() != last["keydowns"]:
-            self._log("  scratch that: you typed since the dictation — nothing undone")
+        same app still in front, nothing typed by the user since (the rule
+        voice_commands.LastInsert shares with Windows)."""
+        refusal = self.last_insert.refusal(now=self._clock(), target=self._frontmost_pid,
+                                           keydowns=self._keydowns)
+        if refusal:
+            self._log(f"  scratch that: {refusal}")
             return
         if self._secure_input():
             return
         self._undo_keys()
-        self.last_delivery = None
+        self.last_insert.forget()
         self._log("↶ scratch that — undid the last dictation")
