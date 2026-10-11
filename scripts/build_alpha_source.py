@@ -101,6 +101,7 @@ WINDOWS_FILES = (
     'voice_commands.py',
     'updates.py',
     'pipeline.py',
+    'sotto_log.py',
     'scripts/install-windows.ps1',
     'scripts/update-windows.ps1',
     'scripts/get.ps1',

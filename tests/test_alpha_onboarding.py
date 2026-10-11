@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import sotto
+import sotto_log
 from launchd_templates import render
 from speech_config import MODEL_PROFILES, MODEL_REVISIONS
 
@@ -507,8 +508,8 @@ class AppLogRotationTests(unittest.TestCase):
             path = Path(folder) / "sotto.log"
             path.write_text("x" * 50)
             reopened = []
-            with patch.object(sotto, "_point_output_at", reopened.append), \
-                    patch.dict(sotto._app_log, {"path": path, "max_bytes": 100}):
+            with patch.object(sotto_log, "_point_output_at", reopened.append), \
+                    patch.dict(sotto_log._app_log, {"path": path, "max_bytes": 100}):
                 sotto.keep_app_log_small()
                 self.assertEqual(reopened, [])           # under the limit: untouched
                 path.write_text("x" * 150)
@@ -521,10 +522,10 @@ class AppLogRotationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)
             pointed = []
-            with patch.object(sotto, "_point_output_at", pointed.append), \
-                    patch.dict(sotto._app_log, {"path": None, "max_bytes": 0}):
+            with patch.object(sotto_log, "_point_output_at", pointed.append), \
+                    patch.dict(sotto_log._app_log, {"path": None, "max_bytes": 0}):
                 path = sotto.route_app_logs(data, max_bytes=100)
-                self.assertEqual(dict(sotto._app_log), {"path": path, "max_bytes": 100})
+                self.assertEqual(dict(sotto_log._app_log), {"path": path, "max_bytes": 100})
                 self.assertEqual(path, data / "logs" / "sotto.log")
                 self.assertEqual(os.stat(data / "logs").st_mode & 0o777, 0o700)
                 path.write_text("x" * 150)                    # an oversized log from the last run
@@ -533,8 +534,8 @@ class AppLogRotationTests(unittest.TestCase):
             self.assertEqual(path.with_suffix(".log.1").read_text(), "x" * 150)
 
     def test_nothing_happens_when_logs_are_not_routed(self):
-        with patch.object(sotto, "_point_output_at") as reopen, \
-                patch.dict(sotto._app_log, {"path": None, "max_bytes": 100}):
+        with patch.object(sotto_log, "_point_output_at") as reopen, \
+                patch.dict(sotto_log._app_log, {"path": None, "max_bytes": 100}):
             sotto.keep_app_log_small()
         reopen.assert_not_called()
 
@@ -560,8 +561,8 @@ class AppLogRotationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "sotto.log"
             path.write_text("x" * 150)
-            with patch.object(sotto, "_point_output_at", reopen), \
-                    patch.dict(sotto._app_log, {"path": path, "max_bytes": 100}), \
+            with patch.object(sotto_log, "_point_output_at", reopen), \
+                    patch.dict(sotto_log._app_log, {"path": path, "max_bytes": 100}), \
                     patch.object(sotto.os, "replace", slow_replace), \
                     patch("sys.stderr", new=open(os.devnull, "w")):
                 threads = [threading.Thread(target=write_a_line) for _ in range(2)]
@@ -581,8 +582,8 @@ class AppLogRotationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "sotto.log"
             path.write_text("x" * 150)
-            with patch.object(sotto, "_point_output_at", disk_full), \
-                    patch.dict(sotto._app_log, {"path": path, "max_bytes": 100}), \
+            with patch.object(sotto_log, "_point_output_at", disk_full), \
+                    patch.dict(sotto_log._app_log, {"path": path, "max_bytes": 100}), \
                     patch("sys.stderr", new=open(os.devnull, "w")):
                 sotto.log("a line")                           # must not raise
                 with patch("builtins.print", disk_full):
