@@ -62,6 +62,7 @@ PUBLIC_TEST_FILES = (
     'tests/test_voice_commands.py',
     'tests/test_pipeline.py',
     'tests/test_transcription_worker.py',
+    'tests/test_app_controller.py',
     'tests/test_get_installers.py',
     'tests/test_app_install.py',
     'tests/test_parakeet_engine.py',
