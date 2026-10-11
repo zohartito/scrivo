@@ -260,6 +260,37 @@ class AlphaCliTests(unittest.TestCase):
                 assert_ok(self, without)
                 self.assertEqual(without.stdout, with_lane.stdout)
 
+    def test_the_lane_commands_and_adaptive_run_refuse_cleanly_without_it(self):
+        for command in ("learning-preflight", "learning-review-list", "learning-evaluate", "learning-rollback"):
+            with self.subTest(command=command):
+                done = run_alpha(CLI, args=(command,))
+                self.assertEqual(done.returncode, 2, done.stderr[-2000:])
+                self.assertIn("maintainer lane", done.stderr)
+                self.assertNotIn("Traceback", done.stderr)
+        done = run_alpha("""
+            from unittest.mock import patch
+            import sotto
+            sys.argv = ["sotto.py", "run", "--adaptive"]
+            with patch.object(sotto, "run", side_effect=AssertionError("run() reached without the lane")):
+                sotto.main()
+        """)
+        self.assertEqual(done.returncode, 2, done.stderr[-2000:])
+        self.assertIn("maintainer lane", done.stderr)
+
+    def test_with_the_lane_present_adaptive_run_still_reaches_run(self):
+        done = run_alpha("""
+            from unittest.mock import patch
+            import sotto
+            assert sotto.maintainer_lane_available()
+            sys.argv = ["sotto.py", "run", "--adaptive"]
+            with patch.object(sotto, "run") as run:
+                sotto.main()
+            assert run.call_args.kwargs["adaptive"] is True
+            print("adaptive run reached")
+        """, block=False)
+        assert_ok(self, done)
+        self.assertIn("adaptive run reached", done.stdout)
+
 
 
 if __name__ == "__main__":
