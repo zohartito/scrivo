@@ -1,4 +1,4 @@
-"""Is Sotto getting better for you? A local summary of recent History.
+"""Is Scrivo getting better for you? A local summary of recent History.
 
 Pure logic shared by the macOS menu and the Windows tray: counts and timings
 only, never transcript text. Everything comes from History rows on this

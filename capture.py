@@ -2,7 +2,7 @@
 
 Key-down starts AVAudioEngine on the chosen mic (a worn headset, else the
 built-in) and installs the input tap; key-up stops the engine and removes the
-tap, so idle Sotto holds no microphone. The service also owns the idle device
+tap, so idle Scrivo holds no microphone. The service also owns the idle device
 scan, the dead-route repair ladder (drop the reused engine object, then a
 launchd relaunch) and joining tap blocks recorded at different rates.
 
@@ -373,7 +373,7 @@ class CaptureService:
 
         Every teardown step runs even when an earlier one raises: a tap
         removal that threw used to skip engine.stop(), and with the handle
-        already cleared nothing ever stopped that engine — idle Sotto kept
+        already cleared nothing ever stopped that engine — idle Scrivo kept
         the microphone open. Returns True only when the engine actually
         stopped; otherwise the handle stays so the next tick retries."""
         with self._lock:
@@ -576,12 +576,12 @@ class CaptureService:
             if now - self._restart_deferred_at > 60.0:
                 self._restart_deferred_at = now
                 log("! mic still silent in a freshly started process — check "
-                    "the mic in System Settings; 'Restart sotto' is in the menu")
+                    "the mic in System Settings; 'Restart Scrivo' is in the menu")
             return False
-        log("! mic still silent after a fresh audio engine — restarting sotto")
+        log("! mic still silent after a fresh audio engine — restarting Scrivo")
         try:
             if self.restart_callback is None:
-                log("! no runtime restart handler; quit and launch Sotto again")
+                log("! no runtime restart handler; quit and launch Scrivo again")
                 return False
             return bool(self.restart_callback())
         except Exception as exc:

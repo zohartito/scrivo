@@ -1,4 +1,4 @@
-"""sotto's voice indicator — a quiet ember, not a waveform.
+"""Scrivo's voice indicator — a quiet ember, not a waveform.
 
 A small glassy island at top-center holds a single warm orb that breathes
 with the smoothed voice level (fast attack, slow decay, eased core-animation
@@ -69,9 +69,9 @@ def language_menu_options(active: str, languages=None) -> tuple[tuple[str, str, 
 
 
 def correction_disclosure(adaptive: bool) -> str:
-    return ("Saving is an explicit review action and automatically enters Sotto's private learning set; deletion or revocation removes it."
+    return ("Saving is an explicit review action and automatically enters Scrivo's private learning set; deletion or revocation removes it."
             if adaptive else
-            "Save a corrected transcript locally. Adding it to Sotto's learning set remains a separate action.")
+            "Save a corrected transcript locally. Adding it to Scrivo's learning set remains a separate action.")
 
 
 def show_manual_enroll_action(*, adaptive_mode: bool, corrected: bool, active: bool,
@@ -100,11 +100,11 @@ def live_snippet(text: str, limit: int = LIVE_CHARS) -> str:
     return "…" + tail
 
 
-_app_icon = {"image": None}  # Sotto.app's icon once use_app_icon found it
+_app_icon = {"image": None}  # Scrivo.app's icon once use_app_icon found it
 
 
 def use_app_icon(icon_path) -> None:
-    """Sotto.app runs Python as a child, so dialogs would show Python's icon.
+    """Scrivo.app runs Python as a child, so dialogs would show Python's icon.
 
     Side effects: sets the application icon and remembers it for new_alert();
     AppKit can put Python's bundle icon back when the app finishes launching,
@@ -116,7 +116,7 @@ def use_app_icon(icon_path) -> None:
 
 
 def new_alert():
-    """An NSAlert showing Sotto's icon (when Sotto.app started this process)."""
+    """An NSAlert showing Scrivo's icon (when Scrivo.app started this process)."""
     alert = AppKit.NSAlert.alloc().init()
     if _app_icon["image"] is not None:
         alert.setIcon_(_app_icon["image"])
@@ -133,7 +133,7 @@ class _PermissionWait(AppKit.NSObject):
 
     def openSettings_(self, _sender):
         if self.register is not None:
-            self.register()  # makes macOS list Sotto in the pane
+            self.register()  # makes macOS list Scrivo in the pane
         AppKit.NSWorkspace.sharedWorkspace().openURL_(self.url)
 
     def poll_(self, _timer):
@@ -389,8 +389,8 @@ class StatusUI:
                                      ("Finish recording now", "finishNow:", ""),
                                      ("Settings…", "openSettings:", ","),
                                      ("Check for Updates…", "checkUpdates:", ""),
-                                     ("Restart sotto", "restart:", ""),
-                                     ("Quit sotto", "quit:", "")):
+                                     ("Restart Scrivo", "restart:", ""),
+                                     ("Quit Scrivo", "quit:", "")):
             item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
                 label, selector, key)
             item.setTarget_(self._target)
@@ -535,7 +535,7 @@ class StatusUI:
         tooltip = (f"{when} · {entry['duration']:.1f}s · "
                    f"{entry['model'].split('/')[-1]}{ready_note}\n\n{text}")
         if is_active:
-            tooltip += "\n\nIn Sotto's local learning set"
+            tooltip += "\n\nIn Scrivo's local learning set"
         item.setToolTip_(tooltip)
         submenu = AppKit.NSMenu.alloc().init()
         submenu.setAutoenablesItems_(False)
@@ -646,7 +646,7 @@ class StatusUI:
         alert = new_alert()
         alert.setMessageText_("Add corrected sample to learning set?")
         alert.setInformativeText_(
-            "The corrected transcript and audio will be copied into Sotto's "
+            "The corrected transcript and audio will be copied into Scrivo's "
             "local learning corpus and are never uploaded automatically.")
         alert.addButtonWithTitle_("Add to Learning Set")
         alert.addButtonWithTitle_("Cancel")
@@ -666,7 +666,7 @@ class StatusUI:
 
     def show_error(self, title: str, message: str) -> None:
         """Show a native error alert. Call this method on AppKit's main thread.
-        Error text comes from Sotto itself, so it is also logged."""
+        Error text comes from Scrivo itself, so it is also logged."""
         if self.on_overlay_event is not None:
             self.on_overlay_event(f"! {title}: {message}")
         self._alert(AppKit.NSAlertStyleCritical, title, message)

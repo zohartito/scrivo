@@ -82,7 +82,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           venv-alpha\Scripts\python -m pip check
 
-      # scripts/test_alpha.py points every Sotto data and cache folder at a
+      # scripts/test_alpha.py points every Scrivo data and cache folder at a
       # temporary one and runs offline.
       - name: Unit tests
         run: venv-alpha\Scripts\python scripts\test_alpha.py

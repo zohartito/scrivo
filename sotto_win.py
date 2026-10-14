@@ -92,7 +92,7 @@ class _ConsoleLog:
     I/O.  Gesture callbacks log on the keyboard-hook thread, and Windows
     silently drops a low-level hook that is slow to return, so a log line must
     never wait for the disk there.  drain() (also at exit) writes what is left.
-    A log that grows past LOG_ROTATE_BYTES while Sotto runs moves to
+    A log that grows past LOG_ROTATE_BYTES while Scrivo runs moves to
     sotto.log.1 and a fresh sotto.log starts (the Mac's keep_app_log_small).
     """
 
@@ -237,7 +237,7 @@ def instance_name() -> str:
 
 
 def single_instance() -> int | None:
-    """The session-wide named mutex, or None when another Sotto holds it."""
+    """The session-wide named mutex, or None when another Scrivo holds it."""
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = ctypes.c_void_p
     kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
@@ -258,7 +258,7 @@ def release_instance(handle: int | None) -> None:
 def restart_command() -> list[str]:
     """The same launch again, without a console window.  A relative script
     path is made absolute: the restart runs in the repository folder, not in
-    the folder Sotto was started from."""
+    the folder Scrivo was started from."""
     import win_startup
     script = sys.argv[0]
     if script and not Path(script).is_absolute():
@@ -463,7 +463,7 @@ class Controller:
         closed = self.lifecycle["closed"]
         if closed:
             log(f"○ {closed} — dictation not started")
-            return f"Sotto is {closed}; dictation was not started."
+            return f"Scrivo is {closed}; dictation was not started."
         if self.engine.force_start() and self.recording():
             log("● dictation started from the tray (hands-free)")
         return None
@@ -528,7 +528,7 @@ class Controller:
         with self._lifecycle_lock:
             closed = self.lifecycle["closed"]
             if closed or self.shutdown.requested():
-                return f"Not retried: Sotto is {closed or 'stopping'}."
+                return f"Not retried: Scrivo is {closed or 'stopping'}."
             self.shutdown.enqueue(self.jobs, ("retry", entry_id, time.monotonic(),
                                               uuid.uuid4().hex, self.current_speech_config()))
         return "Retrying — the new text is copied when ready."
@@ -545,7 +545,7 @@ class Controller:
     def correct(self, entry_id: str, before: str, after: str, revision: int | None) -> list:
         """Save a correction; returns dictionary rules it suggests (never added here)."""
         if self.shutdown.requested():
-            raise RuntimeError("Sotto is shutting down")
+            raise RuntimeError("Scrivo is shutting down")
         if sotto.nonadaptive_correct(self.dependency_guard, self.coordinator, entry_id, after,
                                      expected_revision=revision) is None:
             raise ValueError("The recording changed or no longer exists; open Correct again.")
@@ -631,11 +631,11 @@ class Controller:
         """
         with self._lifecycle_lock:
             if self.shutdown.requested() or self.lifecycle["closed"] == "quitting":
-                return "Sotto is already stopping."
+                return "Scrivo is already stopping."
             if self.restart_requested:
                 return "Restarting…"
             if self.lifecycle["closed"]:
-                return "Sotto is updating; it restarts when that is done."
+                return "Scrivo is updating; it restarts when that is done."
             self.restart_requested = True
             self._close_gate("restarting")  # on_start takes no new capture from now on
         if not self.busy():
@@ -668,8 +668,8 @@ class Controller:
 
     def update_and_restart(self) -> str:
         """Hand the update to scripts/update-windows.ps1: Windows keeps a
-        running Python's files in use, so it waits for Sotto to quit, updates,
-        and starts Sotto again.
+        running Python's files in use, so it waits for Scrivo to quit, updates,
+        and starts Scrivo again.
 
         Side effects: closes the capture gate before the busy check, so no
         recording can start between the check and the quit; reopens it when
@@ -677,7 +677,7 @@ class Controller:
         """
         with self._lifecycle_lock:
             if self.shutdown.requested() or self.lifecycle["closed"]:
-                return "Sotto is already restarting or quitting."
+                return "Scrivo is already restarting or quitting."
             self._close_gate("updating")
         try:
             work = self.in_flight()
@@ -698,9 +698,9 @@ class Controller:
         except BaseException:
             self._reopen_gate("updating")
             raise
-        log("● updating Sotto; it restarts when the update is done")
+        log("● updating Scrivo; it restarts when the update is done")
         self.quit()
-        return "Updating — Sotto restarts when it is done."
+        return "Updating — Scrivo restarts when it is done."
 
     def quit(self) -> None:
         """Quit once the dictation in flight is done: recorded, transcribed
@@ -719,7 +719,7 @@ class Controller:
             self._close_gate("quitting")
 
         def finish_then_stop() -> None:
-            # Whatever fails here, Quit stops Sotto: the gate is already
+            # Whatever fails here, Quit stops Scrivo: the gate is already
             # closed as "quitting", so a later Quit would return at once.
             try:
                 try:
@@ -1334,7 +1334,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
     last_insert = voice_commands.LastInsert("window")  # the insert "scratch that" may undo
 
     def undo_last_dictation() -> None:
-        """'scratch that': the app's own Ctrl+Z, only for Sotto's own insert
+        """'scratch that': the app's own Ctrl+Z, only for Scrivo's own insert
         within the last minute, with the same window still in front and
         nothing typed by the user since (voice_commands.LastInsert, the rule
         the Mac's DeliveryQueue._undo uses)."""
@@ -1525,12 +1525,12 @@ def main(argv: list[str] | None = None) -> None:
     def alert(message: str) -> None:
         if args.tray:
             import win_ui
-            win_ui.message_box("Sotto", message, error=True)
+            win_ui.message_box("Scrivo", message, error=True)
 
     instance = single_instance()
     if instance is None:
-        log("✗ Sotto is already running")
-        alert("Sotto is already running (see the tray icon).")
+        log("✗ Scrivo is already running")
+        alert("Scrivo is already running (see the tray icon).")
         raise SystemExit(0 if args.tray else 1)
     restart = False
     try:

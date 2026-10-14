@@ -79,7 +79,7 @@ def clean(text: str, *, fillers: bool = True, commands: bool = True) -> tuple[st
 
 
 class LastInsert:
-    """The one insert "scratch that" may undo: Sotto's own most recent real
+    """The one insert "scratch that" may undo: Scrivo's own most recent real
     insert, within SCRATCH_WINDOW_S, into the same target still in front,
     with no key typed by the user since.
 

@@ -3,7 +3,7 @@
     pythonw win_launch.py --data-dir DIR [--hf-home DIR] [sotto_win options]
 
 A shortcut or Run value cannot set environment variables, so this sets
-SOTTO_DATA_DIR (and SOTTO_HF_HOME, default DIR\\huggingface) before any Sotto
+SOTTO_DATA_DIR (and SOTTO_HF_HOME, default DIR\\huggingface) before any Scrivo
 module resolves its paths, then starts ``sotto_win`` with ``--tray``.
 """
 from __future__ import annotations

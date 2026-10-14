@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Install (or remove) the Sotto Windows source alpha for the current user.
+  Install (or remove) the Scrivo Windows source alpha for the current user.
 
 .DESCRIPTION
   Checks for Windows x64 and Python 3.13 (64-bit), creates venv-alpha in this
@@ -9,18 +9,20 @@
   install; -Cpu / -Cuda override), prepares the alpha data
   folder, downloads the pinned speech model and voice detection into it
   (sotto_win.py setup; -SkipSetup leaves that to the first launch), and adds a
-  Start Menu shortcut "Sotto" that starts the tray app without a console
+  Start Menu shortcut "Scrivo" that starts the tray app without a console
   window, with SOTTO_DATA_DIR applied.
 
   Nothing is installed system-wide: no admin rights, services or scheduled
   tasks. Python itself is never installed for you; the script says exactly
-  what to install instead. Re-running is safe. It refuses to run while Sotto
+  what to install instead. Re-running is safe. It refuses to run while Scrivo
   runs from this environment (Windows would swap its packages underneath it)
-  and never replaces a Start Menu "Sotto" shortcut that starts another copy.
+  and never replaces a Start Menu "Scrivo" shortcut that starts another copy;
+  the "Sotto" entry of earlier versions (Scrivo's former name) is removed
+  when it starts this copy.
   -Uninstall removes only what
   this script recorded creating (and the login entry the Settings window may
   have added); your data folder stays unless you add -RemoveData.
-  -CheckOnly runs only the running-Sotto and shortcut checks, for the copy in -SourceDir
+  -CheckOnly runs only the running-Scrivo and shortcut checks, for the copy in -SourceDir
   (default: this one), and changes nothing; get.ps1 asks the update's
   installer this before it moves an existing copy's source.
 
@@ -90,7 +92,9 @@ if (-not $VenvDir) { $VenvDir = Join-Path $Root 'venv-alpha' }
 if (-not $ShortcutDir) { $ShortcutDir = [Environment]::GetFolderPath('Programs') }
 $DataDir = Long-Path $DataDir
 $VenvDir = Long-Path $VenvDir
-$Shortcut = Join-Path $ShortcutDir 'Sotto.lnk'
+$Shortcut = Join-Path $ShortcutDir 'Scrivo.lnk'
+# Scrivo was called Sotto: the entry earlier versions made, replaced when it starts this copy.
+$LegacyShortcut = Join-Path $ShortcutDir 'Sotto.lnk'
 $Manifest = Join-Path $VenvDir 'sotto-install.json'
 $LegacyData = Join-Path $env:APPDATA 'sotto'
 
@@ -136,6 +140,16 @@ function Points-Here([string]$Command) {
   return $false
 }
 
+# The Start Menu entry of earlier versions ("Sotto"), only when it starts this copy.
+function Remove-LegacyShortcut {
+  if (-not (Test-Path -LiteralPath $LegacyShortcut -PathType Leaf)) { return }
+  $link = (New-Object -ComObject WScript.Shell).CreateShortcut($LegacyShortcut)
+  if ((Points-Here $link.Arguments) -and $PSCmdlet.ShouldProcess($LegacyShortcut, 'Remove the Start Menu shortcut "Sotto" of earlier versions')) {
+    Remove-Item -LiteralPath $LegacyShortcut -Force
+    Say "removed the old Start Menu shortcut $LegacyShortcut (Sotto is now called Scrivo)"
+  }
+}
+
 function Running-From-Venv {
   $prefix = $VenvDir.TrimEnd('\') + '\'
   return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
@@ -150,7 +164,7 @@ if ($Uninstall) {
   $record = Read-Manifest
   $running = @(Running-From-Venv)  # an empty result would otherwise unroll to $null
   if ($running.Count -gt 0) {
-    Fail "Sotto is still running from $VenvDir (process $($running[0].Id)). Quit it from its tray menu, then run -Uninstall again."
+    Fail "Scrivo is still running from $VenvDir (process $($running[0].Id)). Quit it from its tray menu, then run -Uninstall again."
   }
   if (Test-Path -LiteralPath $Shortcut -PathType Leaf) {
     $link = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
@@ -159,8 +173,10 @@ if ($Uninstall) {
         Remove-Item -LiteralPath $Shortcut -Force
         Say "removed Start Menu shortcut $Shortcut"
       }
-    } else { Say "kept $Shortcut (it does not start this copy of Sotto)" }
+    } else { Say "kept $Shortcut (it does not start this copy of Scrivo)" }
   }
+  Remove-LegacyShortcut
+  # The login entry keeps the value name 'Sotto' from before the rename.
   $run = Get-ItemProperty -Path $RunKey -Name 'Sotto' -ErrorAction SilentlyContinue
   if ($run -and (Points-Here $run.Sotto)) {
     if ($PSCmdlet.ShouldProcess("$RunKey\Sotto", 'Remove launch-at-login entry')) {
@@ -182,7 +198,7 @@ if ($Uninstall) {
       Say "kept $DataDir (this script did not create it; delete it yourself if you want)"
     } elseif (Same-Path $DataDir $LegacyData) {
       Say "kept $DataDir (never removed automatically)"
-    } elseif ((Test-Path -LiteralPath $DataDir) -and $PSCmdlet.ShouldProcess($DataDir, 'Remove Sotto data: history, recordings, models, dictionary')) {
+    } elseif ((Test-Path -LiteralPath $DataDir) -and $PSCmdlet.ShouldProcess($DataDir, 'Remove Scrivo data: history, recordings, models, dictionary')) {
       Remove-Item -LiteralPath $DataDir -Recurse -Force
       Say "removed $DataDir"
     }
@@ -197,25 +213,25 @@ if ($Uninstall) {
 if ($Cpu -and $Cuda) { Fail 'Choose at most one of -Cpu and -Cuda.' }
 $running = @(Running-From-Venv)
 if ($running.Count -gt 0) {
-  Fail "Sotto is still running from $VenvDir (process $($running[0].Id)); installing now would replace its packages while they are in use. Quit it from its tray menu (or update it there with Check for updates), then run this again."
+  Fail "Scrivo is still running from $VenvDir (process $($running[0].Id)); installing now would replace its packages while they are in use. Quit it from its tray menu (or update it there with Check for updates), then run this again."
 }
-# Never take over a Start Menu entry that starts another copy of Sotto (or
+# Never take over a Start Menu entry that starts another copy of Scrivo (or
 # another program). One whose copy no longer exists is replaced.
 if (Test-Path -LiteralPath $Shortcut -PathType Leaf) {
   $existing = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
   if (-not (Points-Here $existing.Arguments)) {
     $gone = ($existing.Arguments -match '^\s*"([^"]*win_launch\.py)"') -and -not (Test-Path -LiteralPath $Matches[1])
     if (-not $gone) {
-      Fail "$Shortcut already starts another copy of Sotto or another program ($($existing.TargetPath) $($existing.Arguments)). Remove that copy with its own install-windows.ps1 -Uninstall, or pass -ShortcutDir with another folder."
+      Fail "$Shortcut already starts another copy of Scrivo or another program ($($existing.TargetPath) $($existing.Arguments)). Remove that copy with its own install-windows.ps1 -Uninstall, or pass -ShortcutDir with another folder."
     }
-    Say "! $Shortcut started a copy of Sotto that no longer exists; it will start this one"
+    Say "! $Shortcut started a copy of Scrivo that no longer exists; it will start this one"
   }
 }
-if ($CheckOnly) { Say "OK nothing stops installing Sotto in $Root"; exit 0 }
+if ($CheckOnly) { Say "OK nothing stops installing Scrivo in $Root"; exit 0 }
 $arch = $env:PROCESSOR_ARCHITEW6432
 if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
 if (-not [Environment]::Is64BitOperatingSystem -or $arch -ne 'AMD64') {
-  Fail "Sotto's Windows alpha supports Windows x64 only (this PC reports $arch)."
+  Fail "Scrivo's Windows alpha supports Windows x64 only (this PC reports $arch)."
 }
 Say "OK Windows x64 ($([Environment]::OSVersion.VersionString))"
 
@@ -238,7 +254,7 @@ $instructions = "Install Python 3.13 (64-bit) from https://www.python.org/downlo
   "then run this script again. Or pass -Python C:\path\to\python.exe."
 if (-not $found) { Fail "Python 3.13 was not found. $instructions" }
 if (-not $found.Version.StartsWith('3.13.') -or $found.Bits -ne '64') {
-  Fail "Found Python $($found.Version) ($($found.Bits)-bit) at $($found.Exe); Sotto needs 3.13 64-bit. $instructions"
+  Fail "Found Python $($found.Version) ($($found.Bits)-bit) at $($found.Exe); Scrivo needs 3.13 64-bit. $instructions"
 }
 $BasePython = $found.Exe
 Say "OK Python $($found.Version) 64-bit ($BasePython)"
@@ -321,7 +337,7 @@ if (-not $SkipSetup -and $PSCmdlet.ShouldProcess($DataDir, 'Download the pinned 
     $env:SOTTO_DATA_DIR, $env:SOTTO_HF_HOME = $savedData, $savedHf
   }
   if ($setupExit -ne 0) {
-    Say '! The model download did not finish; Sotto downloads it on first launch (or run this script again).'
+    Say '! The model download did not finish; Scrivo downloads it on first launch (or run this script again).'
   } elseif (Test-Path -LiteralPath (Join-Path $DataDir 'models\silero_vad.onnx') -PathType Leaf) {
     Say 'OK speech model and voice detection ready'
   } else {
@@ -329,21 +345,22 @@ if (-not $SkipSetup -and $PSCmdlet.ShouldProcess($DataDir, 'Download the pinned 
   }
 }
 
-if ($PSCmdlet.ShouldProcess($Shortcut, 'Create Start Menu shortcut "Sotto" (tray app, no console)')) {
+if ($PSCmdlet.ShouldProcess($Shortcut, 'Create Start Menu shortcut "Scrivo" (tray app, no console)')) {
   if (-not (Test-Path -LiteralPath $ShortcutDir)) { New-Item -ItemType Directory -Path $ShortcutDir | Out-Null }
   $link = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
   $link.TargetPath = $VenvPythonW
   $link.Arguments = "`"$Launcher`" --data-dir `"$DataDir`""
   $link.WorkingDirectory = $Root
-  $link.Description = 'Sotto: local push-to-talk dictation'
+  $link.Description = 'Scrivo: local push-to-talk dictation'
   $link.Save()
   Say "OK Start Menu shortcut $Shortcut"
 }
+Remove-LegacyShortcut
 
 Write-Manifest $createdVenv $createdData $flavor $BasePython
 
 Say ''
-Say 'Sotto is installed. Start it from the Start Menu: Sotto (a tray icon appears, then a'
+Say 'Scrivo is installed. Start it from the Start Menu: Scrivo (a tray icon appears, then a'
 Say '"Ready" notification; if the model was not downloaded above, the first launch does it).'
 Say 'Settings (tray menu) can turn on launch at login.'
 Say 'Console run and checks, in PowerShell:'

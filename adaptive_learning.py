@@ -1,4 +1,4 @@
-"""Private, durable protocol state for measured Sotto model selection.
+"""Private, durable protocol state for measured Scrivo model selection.
 
 This module intentionally contains no model imports.  Integrations supply a
 preflighted immutable candidate manifest and a transcription callback.  Admin

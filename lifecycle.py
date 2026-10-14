@@ -1,4 +1,4 @@
-"""How Sotto stops, restarts and refuses new work while it does.
+"""How Scrivo stops, restarts and refuses new work while it does.
 
 ShutdownBoundary is the one-way, event-only shutdown gate (signal handlers
 only set events); CaptureGate and Lifecycle decide who may start a recording
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 APP_DRAIN_TIMEOUT = 1.0
 RESTART_DRAIN_DEADLINE_S = 20.0  # a wedged native call must not block recovery forever
 QUIT_DRAIN_S = 10.0              # Quit finishes the dictation in progress, up to this long
-# launchd SIGKILLs Sotto's job 5 s after SIGTERM (`launchctl print` shows
+# launchd SIGKILLs Scrivo's job 5 s after SIGTERM (`launchctl print` shows
 # "exit timeout = 5"; logout, kickstart -k and rollout all send SIGTERM). The
 # drain and the teardown's waits (clipboard restore, a finish short of the
 # queue, an append under way, the worker join) share one deadline that leaves
@@ -49,7 +49,7 @@ SIGTERM_RESTORE_WAIT_S = 1.0
 DRAIN_POLL_S = 0.1               # how often a Quit/Restart drain re-checks the dictation
 # A foreground restart that cannot exec exits with this status, never 0:
 # KeepAlive {SuccessfulExit: false} (the login item, the sealed LaunchAgent)
-# then starts Sotto again instead of leaving the user without it.
+# then starts Scrivo again instead of leaving the user without it.
 RESTART_FAILED_EXIT = 75         # EX_TEMPFAIL
 # An installed update restarts once dictation is done: the longest recording
 # (the hands-free watchdog) plus time to transcribe and paste it, then anyway.
@@ -173,7 +173,7 @@ LAUNCHD_LABEL = "com.zohartito.sotto.app"  # must match launchd/ and scripts/rol
 
 
 def app_mode() -> bool:
-    """Started by the installed Sotto.app launcher (not a terminal)."""
+    """Started by the installed Scrivo.app launcher (not a terminal)."""
     return os.environ.get("SOTTO_LAUNCHER") == "app"
 
 
@@ -219,7 +219,7 @@ class RestartController:
         if self.shutdown.requested():
             return False
         if not self.managed and not self.exec_allowed:
-            raise RuntimeError("Sotto could not confirm its launchd job; quit and launch it again")
+            raise RuntimeError("Scrivo could not confirm its launchd job; quit and launch it again")
         self._on_failure = on_failure
         if self.managed:
             # launchd stops this very process during kickstart -k; keep the
@@ -240,7 +240,7 @@ class RestartController:
         except (OSError, subprocess.TimeoutExpired):
             failed = True
         if failed:
-            self.failed("launchd could not restart Sotto; quit and launch it again")
+            self.failed("launchd could not restart Scrivo; quit and launch it again")
 
     def failed(self, message: str) -> None:
         """Report a restart that failed after request() already returned."""
@@ -264,7 +264,7 @@ APP_RELAUNCH_SCRIPT = (
 
 
 def relaunch_app_after_exit() -> None:
-    """Sotto.app restarts as a fresh process: an in-place exec keeps the pid,
+    """Scrivo.app restarts as a fresh process: an in-place exec keeps the pid,
     and macOS then leaves the new menu bar icon blank and unclickable
     (2026-09-30). A detached helper waits for the launcher to exit, then
     starts the login item if it is loaded, otherwise opens the app again."""
@@ -275,7 +275,7 @@ def relaunch_app_after_exit() -> None:
         ["/bin/sh", "-c", APP_RELAUNCH_SCRIPT, "sotto-relaunch", str(os.getppid()), login_item.LABEL, str(bundle)],
         start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, close_fds=True)
-    log("restarting Sotto.app")
+    log("restarting Scrivo.app")
 
 
 def main_thread_dispatch(has_ui: bool, call_after, deliveries: PendingDeliveries | None = None):
@@ -375,7 +375,7 @@ class Lifecycle:
 
     Quit, the menu Restart, an installed update and an engine switch close
     the gate for a reason; ``closed`` names it ("quitting", "restarting",
-    "updating", "switching engines") and is None while Sotto runs normally.
+    "updating", "switching engines") and is None while Scrivo runs normally.
     A reason reopens the gate only while it still holds it; Quit takes over
     from any other reason.
 
@@ -399,7 +399,7 @@ class Lifecycle:
 
     def close(self, reason: str) -> bool:
         """Refuse new recordings for ``reason``. False (and nothing changes)
-        when Sotto is stopping or the gate is already closed for a reason."""
+        when Scrivo is stopping or the gate is already closed for a reason."""
         with self._lock:
             if self.shutdown.requested() or self.closed is not None:
                 return False

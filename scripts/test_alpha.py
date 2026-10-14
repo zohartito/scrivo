@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the suite with temporary Sotto state/cache, never the caller's data."""
+"""Run the suite with temporary Scrivo state/cache, never the caller's data."""
 import os
 from pathlib import Path
 import stat

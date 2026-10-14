@@ -97,7 +97,7 @@ class World:
 
     # -- helpers run() hands over --------------------------------------------
     def ui_call(self, method, *args):
-        """Records the call; runs Sotto's own main-thread functions (the
+        """Records the call; runs Scrivo's own main-thread functions (the
         menu bar's methods are only recorded)."""
         self.events.append(("ui", method.__name__, *args))
         if not getattr(method, "recorded", False) and method.__name__ != "refresh":
@@ -151,7 +151,7 @@ class World:
 
     def save_audio_copy(self, source, folder, timestamp):
         self._helper("save_audio_copy", source, folder, timestamp)
-        return folder / "sotto-20261010-120000.wav"
+        return folder / "scrivo-20261010-120000.wav"
 
     def save_language_mode(self, mode):
         return self._helper("save_language_mode", mode, result=f"canonical-{mode}")
@@ -396,15 +396,15 @@ class RetryTests(unittest.TestCase):
         build(world).retry("row1")
         self.assertTrue(world.jobs.empty())
         self.assertEqual(world.events, [
-            ("log", "○ Sotto is updating — Retry refused"),
-            ("ui", "show_error", "Not retried", "Sotto is updating. Retry once it is running again."),
+            ("log", "○ Scrivo is updating — Retry refused"),
+            ("ui", "show_error", "Not retried", "Scrivo is updating. Retry once it is running again."),
         ])
 
     def test_retry_is_refused_while_stopping(self):
         world = World(stopping=True)
         build(world).retry("row1")
         self.assertTrue(world.jobs.empty())
-        self.assertEqual(world.events[0], ("log", "○ Sotto is stopping — Retry refused"))
+        self.assertEqual(world.events[0], ("log", "○ Scrivo is stopping — Retry refused"))
 
 
 class SaveAudioTests(unittest.TestCase):
@@ -414,7 +414,7 @@ class SaveAudioTests(unittest.TestCase):
         self.assertEqual(world.events, [
             ("thread",),
             ("save_audio_copy", Path("/history/audio/row1.wav"), Path.home() / "Desktop", ROW["ts"]),
-            ("log", "✓ saved audio to Desktop as sotto-20261010-120000.wav"),
+            ("log", "✓ saved audio to Desktop as scrivo-20261010-120000.wav"),
         ])
 
     def test_a_missing_row_saves_nothing(self):
@@ -660,7 +660,7 @@ class EngineTests(unittest.TestCase):
     def test_a_closed_gate_refuses(self):
         world = World(closed="updating")
         build(world).set_engine("parakeet")
-        self.assertEqual(world.events, [("ui", "show_error", "Could not change engine", "Sotto is updating.")])
+        self.assertEqual(world.events, [("ui", "show_error", "Could not change engine", "Scrivo is updating.")])
         self.assertEqual(world.lifecycle.closed, "updating")
 
     def test_parakeet_must_be_downloaded_first(self):
@@ -685,10 +685,10 @@ class EngineTests(unittest.TestCase):
 
     def test_a_failed_restart_reopens_the_gate(self):
         world = World()
-        world.persist_failure = "launchd could not restart Sotto"
+        world.persist_failure = "launchd could not restart Scrivo"
         build(world).set_engine("parakeet")
         self.assertEqual(world.events[-1], ("ui", "show_error", "Could not change engine",
-                                            "launchd could not restart Sotto"))
+                                            "launchd could not restart Scrivo"))
         self.assertIsNone(world.lifecycle.closed)
 
 
@@ -815,7 +815,7 @@ class ChangeSettingTests(unittest.TestCase):
     def test_launch_at_login_needs_the_app(self):
         world = World()
         self.assertEqual(self.change(world, "launch_at_login", True),
-                         ("Install Sotto as an app first (scripts/install-mac.sh).", []))
+                         ("Install Scrivo as an app first (scripts/install-mac.sh).", []))
         app = {"SOTTO_LAUNCHER": "app", "SOTTO_APP_EXECUTABLE": "/A/Sotto"}
         world = World()
         self.assertEqual(self.change(world, "launch_at_login", True, environ=app)[0], None)
@@ -870,9 +870,9 @@ class InstallTests(unittest.TestCase):
 
     def test_offline_mode_refuses_the_download(self):
         for engine, message in (
-                ("nemotron", "Installing Nemotron downloads about 700 MB; start Sotto without the offline flags."),
+                ("nemotron", "Installing Nemotron downloads about 700 MB; start Scrivo without the offline flags."),
                 ("parakeet", "Downloading Parakeet (2.5 GB) needs the network; "
-                             "start Sotto without the offline flags.")):
+                             "start Scrivo without the offline flags.")):
             with self.subTest(engine=engine):
                 world = World()
                 self.install(world, engine, offline=True)
@@ -1014,7 +1014,7 @@ class StartNowTests(unittest.TestCase):
     def test_refused_while_the_gate_is_closed_or_stopping(self):
         world = World(closed="updating")
         build(world).start_now()
-        self.assertEqual(world.events, [("log", "○ Sotto is updating — dictation not started")])
+        self.assertEqual(world.events, [("log", "○ Scrivo is updating — dictation not started")])
         world = World(stopping=True)
         build(world).start_now()
         self.assertEqual(world.events, [])
@@ -1035,29 +1035,29 @@ class RestartTests(unittest.TestCase):
     def test_the_menu_restart_drains_then_restarts(self):
         world = World()
         build(world).restart_when_idle()
-        self.assertTrue(wait_for(lambda: ("log", "● restarting Sotto") in world.events), world.events)
+        self.assertTrue(wait_for(lambda: ("log", "● restarting Scrivo") in world.events), world.events)
         # The drain runs on its own thread, so the menu's log line may land on either side.
         world.events.remove(("log", "● restart requested from the menu — after the current dictation"))
-        self.assertEqual(world.events, [("restart.request",), ("log", "● restarting Sotto")])
+        self.assertEqual(world.events, [("restart.request",), ("log", "● restarting Scrivo")])
         self.assertEqual(world.lifecycle.closed, "restarting")
 
     def test_refused_when_the_gate_is_already_closed(self):
         world = World(closed="updating")
         build(world).restart_when_idle()
-        self.assertEqual(world.events, [("log", "○ Sotto is updating — restart not requested")])
+        self.assertEqual(world.events, [("log", "○ Scrivo is updating — restart not requested")])
         world = World(stopping=True)
         build(world).restart_when_idle()
-        self.assertEqual(world.events, [("log", "○ Sotto is stopping — restart not requested")])
+        self.assertEqual(world.events, [("log", "○ Scrivo is stopping — restart not requested")])
 
     def test_a_failed_restart_reopens_the_gate_and_says_so(self):
         world = World()
-        world.restart_failure = "launchd could not restart Sotto"
+        world.restart_failure = "launchd could not restart Scrivo"
         build(world).restart_when_idle()
-        self.assertTrue(wait_for(lambda: ("log", "● restarting Sotto") in world.events), world.events)
+        self.assertTrue(wait_for(lambda: ("log", "● restarting Scrivo") in world.events), world.events)
         world.events.remove(("log", "● restart requested from the menu — after the current dictation"))
         self.assertEqual(world.events, [
-            ("restart.request",), ("ui", "show_error", "Could not restart Sotto", "launchd could not restart Sotto"),
-            ("log", "● restarting Sotto"),
+            ("restart.request",), ("ui", "show_error", "Could not restart Scrivo", "launchd could not restart Scrivo"),
+            ("log", "● restarting Scrivo"),
         ])
         self.assertIsNone(world.lifecycle.closed)
 
@@ -1066,13 +1066,13 @@ class RestartTests(unittest.TestCase):
         world.restart_accepts = False
         after = []
         build(world).restart_now(after_failure=lambda: after.append(True))
-        self.assertEqual(world.events, [("restart.request",), ("ui", "show_error", "Could not restart Sotto",
-                                                               "Sotto is already shutting down")])
+        self.assertEqual(world.events, [("restart.request",), ("ui", "show_error", "Could not restart Scrivo",
+                                                               "Scrivo is already shutting down")])
         self.assertEqual(after, [True])
         world = World()
         world.restart_error = OSError("Argument list too long")
         build(world).restart_now()
-        self.assertEqual(world.events[-1], ("ui", "show_error", "Could not restart Sotto", "Argument list too long"))
+        self.assertEqual(world.events[-1], ("ui", "show_error", "Could not restart Scrivo", "Argument list too long"))
 
 
 class QuitTests(unittest.TestCase):
@@ -1119,10 +1119,10 @@ class ApplyUpdateTests(unittest.TestCase):
         calls = self.apply(world, (True, "", True))
         self.assertEqual(calls, [(SOURCE, sys.executable, UPDATE_LOG)])
         self.assertEqual(world.events, [
-            ("log", "● updating Sotto"), ("thread",), ("apply_mac",),
+            ("log", "● updating Scrivo"), ("thread",), ("apply_mac",),
             ("log", "✓ update installed — restarting once dictation is done"),
             ("wait_until_idle", False, sotto.UPDATE_DRAIN_DEADLINE_S),
-            ("restart.request",), ("log", "● restarting Sotto"),
+            ("restart.request",), ("log", "● restarting Scrivo"),
         ])
         self.assertEqual(world.lifecycle.closed, "updating")
 
@@ -1132,7 +1132,7 @@ class ApplyUpdateTests(unittest.TestCase):
         self.apply(world, (True, "", True))
         self.assertIn(("log", f"! dictation still running after {sotto.UPDATE_DRAIN_DEADLINE_S:.0f}s — "
                               "restarting into the update anyway"), world.events)
-        self.assertEqual(world.events[-2:], [("restart.request",), ("log", "● restarting Sotto")])
+        self.assertEqual(world.events[-2:], [("restart.request",), ("log", "● restarting Scrivo")])
 
     def test_a_failed_restart_reopens_the_gate(self):
         world = World()
@@ -1143,7 +1143,7 @@ class ApplyUpdateTests(unittest.TestCase):
     def test_a_closed_gate_leaves_the_update_for_the_next_start(self):
         world = World(closed="quitting")
         self.apply(world, (True, "", True))
-        self.assertEqual(world.events[-1], ("log", "○ Sotto is quitting; the update applies at the next start"))
+        self.assertEqual(world.events[-1], ("log", "○ Scrivo is quitting; the update applies at the next start"))
         self.assertNotIn(("restart.request",), world.events)
 
     def test_an_unfinished_or_failed_update_is_reported(self):
@@ -1154,14 +1154,14 @@ class ApplyUpdateTests(unittest.TestCase):
             ("ui", "show_error", "Update not finished",
              "pip failed\n\nThe new version is in place but its setup did not finish. "
              "Run scripts/install-mac.sh --update in Terminal to finish it, then "
-             "choose Restart Sotto. Details are in logs/update.log in the data folder."),
+             "choose Restart Scrivo. Details are in logs/update.log in the data folder."),
         ])
         world = World()
         self.apply(world, (False, "fetch failed", False))
         self.assertEqual(world.events[-2:], [
             ("log", "! update failed (see logs/update.log)"),
             ("ui", "show_error", "Update failed",
-             "fetch failed\n\nThe source was not switched, so Sotto keeps running the "
+             "fetch failed\n\nThe source was not switched, so Scrivo keeps running the "
              "current version. Details are in logs/update.log in the data folder."),
         ])
 
@@ -1200,13 +1200,13 @@ class CheckUpdatesTests(unittest.TestCase):
 
     def test_an_available_update_is_offered_to_the_app(self):
         result = updates.UpdateCheck("available", "", behind=2)
-        manual = "run scripts/install-mac.sh --update in Terminal from the Sotto folder."
+        manual = "run scripts/install-mac.sh --update in Terminal from Scrivo's source folder."
         title, text = updates.describe(result, manual, self_update=True)
         world = World()
         self.check(world, result, answer=True)
         self.assertEqual(world.events[:4], [("thread",), ("log", "update check: available, 2 behind"),
                                             ("ui", "present"), ("direct", "ask", title, text, "Update Now", "Later")])
-        self.assertEqual(world.events[4], ("log", "● updating Sotto"))  # Update Now ran apply_update
+        self.assertEqual(world.events[4], ("log", "● updating Scrivo"))  # Update Now ran apply_update
         world = World()
         self.check(world, result, answer=False)
         self.assertEqual(len(world.events), 4)
@@ -1229,8 +1229,8 @@ class CheckUpdatesTests(unittest.TestCase):
 
     def test_a_failure_is_an_error_and_offline_says_so(self):
         result = updates.UpdateCheck("failed", "git fetch failed")
-        title, text = updates.describe(result, "run scripts/install-mac.sh --update in Terminal from the Sotto folder.",
-                                       self_update=True)
+        title, text = updates.describe(result, "run scripts/install-mac.sh --update in Terminal from "
+                                               "Scrivo's source folder.", self_update=True)
         world = World()
         self.check(world, result)
         self.assertEqual(world.events[-1], ("direct", "show_error", title, text))
@@ -1242,7 +1242,7 @@ class CheckUpdatesTests(unittest.TestCase):
     # 2026-10-10: a backup job's git merge moved the running checkout from
     # c2e7f0f to 3bcf356, and Check for Updates said "up to date" while this
     # process still ran c2e7f0f.
-    APP_MANUAL = "run scripts/install-mac.sh --update in Terminal from the Sotto folder."
+    APP_MANUAL = "run scripts/install-mac.sh --update in Terminal from Scrivo's source folder."
 
     def stale(self, state="current", *, packages_changed=False, detail=""):
         return updates.UpdateCheck(state, detail, version="3bcf356",
@@ -1257,7 +1257,7 @@ class CheckUpdatesTests(unittest.TestCase):
             ("thread",), ("log", "update check: current; running c2e7f0f, files 3bcf356"),
             ("ui", "present"), ("direct", "ask", title, text, "Restart Now", "Later")])
         # The menu's Restart: the gate closes and the dictation in flight finishes first.
-        self.assertTrue(wait_for(lambda: ("log", "● restarting Sotto") in world.events), world.events)
+        self.assertTrue(wait_for(lambda: ("log", "● restarting Scrivo") in world.events), world.events)
         self.assertIn(("log", "● restart requested from the menu — after the current dictation"), world.events)
         self.assertEqual(world.lifecycle.closed, "restarting")
         world = World()
@@ -1273,7 +1273,7 @@ class CheckUpdatesTests(unittest.TestCase):
         self.assertEqual(world.events[:5], [
             ("thread",), ("log", "update check: current; running c2e7f0f, files 3bcf356, packages changed"),
             ("ui", "present"), ("direct", "ask", title, text, "Update Now", "Later"),
-            ("log", "● updating Sotto")])  # apply_update: install-mac.sh --update, then the drained restart
+            ("log", "● updating Scrivo")])  # apply_update: install-mac.sh --update, then the drained restart
         self.assertNotIn(("restart.request",), world.events[:5])
         world = World()
         self.check(world, self.stale("offline", packages_changed=True, detail="Offline mode is on."), offline=True)

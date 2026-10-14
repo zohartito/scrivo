@@ -1,6 +1,6 @@
 """Personal dictionary: deterministic "heard => write" replacements.
 
-Applied to the final dictation text right before it is pasted, so Sotto
+Applied to the final dictation text right before it is pasted, so Scrivo
 spells names and terms your way. Corrections in History can propose new
 rules; nothing is added without an explicit confirmation. Plain local text,
 pure logic (no platform imports), shared by the macOS and Windows apps.
@@ -23,8 +23,8 @@ MAX_RULES = 500
 MAX_SIDE_CHARS = 120
 MAX_SUGGESTIONS = 5
 HEADER = (
-    "# Sotto dictionary: one rule per line, written as\n"
-    "#   what Sotto hears => what you want written\n"
+    "# Scrivo dictionary: one rule per line, written as\n"
+    "#   what Scrivo hears => what you want written\n"
     "# Matching ignores case and only replaces whole words or phrases.\n"
     "# Edits apply to the next dictation. Example:\n"
     "#   whisper flow => Wispr Flow\n"

@@ -1,4 +1,4 @@
-# Lint configuration only; Sotto is not an installable package. CI runs
+# Lint configuration only; Scrivo is not an installable package. CI runs
 # `ruff check` with the exact version pinned in .github/workflows/tests.yml.
 
 [tool.ruff]

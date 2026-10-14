@@ -1,4 +1,4 @@
-"""Sotto's log: lines on stderr, which Sotto.app routes to a small rotating
+"""Scrivo's log: lines on stderr, which Scrivo.app routes to a small rotating
 file. Logs hold counts and timings only, never what was said.
 
 Moved verbatim out of sotto.py so the modules split from it (delivery,
@@ -29,7 +29,7 @@ _app_log_lock = threading.Lock()  # every thread logs; one of them rotates at a 
 
 
 def route_app_logs(data_dir: Path, max_bytes: int = 2_000_000) -> Path:
-    """Sotto.app has no terminal: send stdout/stderr to a small rotating log.
+    """Scrivo.app has no terminal: send stdout/stderr to a small rotating log.
     Logs hold counts and timings only, never what was said."""
     folder = data_dir / "logs"
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -57,7 +57,7 @@ def _point_output_at(path: Path) -> None:
 
 
 def keep_app_log_small() -> None:
-    """Rotate a routed log that grew past its limit while Sotto runs; the old
+    """Rotate a routed log that grew past its limit while Scrivo runs; the old
     file keeps the open descriptors, so point output at a fresh one."""
     path = _app_log["path"]
     if path is None:

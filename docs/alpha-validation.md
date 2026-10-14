@@ -2,7 +2,7 @@
 
 What was checked before this alpha was shared, and what those checks do and do
 not establish. It is not a performance benchmark. Every check used its own
-temporary state and cache; no personal Sotto data was involved.
+temporary state and cache; no personal Scrivo data was involved.
 
 ## Reproduce the checks (macOS)
 
@@ -24,7 +24,7 @@ venv-alpha/bin/python scripts/build_alpha_source.py /absolute/output/sotto-alpha
 
 `test_alpha.py` points data, Hugging Face, XDG and Numba caches at a temporary
 folder and sets every offline flag; it refuses a checkout below a world-writable
-or foreign-owned folder, because Sotto's privacy guards reject such paths.
+or foreign-owned folder, because Scrivo's privacy guards reject such paths.
 Inference in the suite is mocked or fixture-based. Five calibration integration
 checks need separately provisioned `SOTTO_CALIBRATION_FIXTURES` and are skipped
 otherwise. The sealed LaunchAgent integration needs Python 3.14 and is skipped
@@ -44,7 +44,7 @@ macOS 27.2, M4 Max, CPython 3.12.14 unless noted.
 | Gesture acceptance | 8/8 | Hold / double-tap / tap state machine, not real key delivery |
 | First launch download | Pinned Whisper revision fetched once; later launches make no Hub request | Measured against a local fake endpoint: 0 requests when cached |
 | Foreground run | Ctrl-C and SIGTERM exit 0 in < 0.1 s; Restart re-executes with arguments and environment kept | Real Cocoa event loop, no microphone |
-| Sotto.app build | Launcher compiled, signed ad hoc, verified; SIGTERM reaches the app; exit status passes through | Local app bundle mechanics, not notarization |
+| Scrivo.app build | Launcher compiled, signed ad hoc, verified; SIGTERM reaches the app; exit status passes through | Local app bundle mechanics, not notarization |
 | Automatic language, one encoder pass | 0.63–0.73 s → 0.32–0.40 s (synthetic speech) | Same text on 48/56 clips; the rest equal or better |
 | Fast speed (experimental) | 0.30 s → 0.13 s median; mean error 0.041 → 0.066 (synthetic, 13 languages) | English unaffected on these clips |
 | Parakeet engine | 50–190 ms per sentence; en/es/de/fr correct (numbers as digits); silence and noise → empty; an unsupported language → a Latin-letter guess, not empty | Array input, pinned snapshot, chunked long input |

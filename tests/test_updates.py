@@ -82,11 +82,11 @@ class CheckTests(unittest.TestCase):
         title, text = updates.describe(updates.UpdateCheck("local-changes", "Has edits."), "run THIS")
         self.assertIn("run THIS", text)
         self.assertEqual(updates.describe(updates.UpdateCheck("current", version="abc1234"), "x")[0],
-                         "Sotto is up to date")
+                         "Scrivo is up to date")
 
     def test_a_terminal_run_is_given_the_command_instead_of_an_update(self):
         # [N28] Owner decision 2026-10-09: Check for Updates in a terminal run
-        # refuses and names the manual command; it used to rebuild Sotto.app
+        # refuses and names the manual command; it used to rebuild Scrivo.app
         # for the alpha data folder, which that run may not use.
         command = updates.mac_manual_update(PurePosixPath("/Users/someone/my sotto"))
         self.assertEqual(command, "cd '/Users/someone/my sotto' && scripts/install-mac.sh --update")
@@ -136,7 +136,7 @@ class RealGitTests(unittest.TestCase):
 
 
 RUNNING, ON_DISK = "c2e7f0f", "3bcf356"
-STALE_NOTE = f"Sotto's files were updated to {ON_DISK}, but the running Sotto is still {RUNNING}."
+STALE_NOTE = f"Scrivo's files were updated to {ON_DISK}, but the running Scrivo is still {RUNNING}."
 NEW_PACKAGES = "The new version needs different packages, so a restart alone is not enough."
 
 
@@ -159,7 +159,7 @@ class StaleRunDialogTests(unittest.TestCase):
                     title, text = updates.describe(result, "MANUAL", self_update=self_update)
                     offer = updates.offer(result, self_update=self_update)
                     case = (state, packages_changed, self_update)
-                    self.assertNotEqual(title, "Sotto is up to date", case)
+                    self.assertNotEqual(title, "Scrivo is up to date", case)
                     self.assertTrue(text.startswith(STALE_NOTE), case)
                     if packages_changed:  # new code on old packages: never the plain restart
                         self.assertNotEqual(offer, "restart", case)
@@ -170,7 +170,7 @@ class StaleRunDialogTests(unittest.TestCase):
         result = stale_result()
         self.assertEqual(updates.offer(result), "restart")
         self.assertEqual(updates.describe(result, "MANUAL"), (
-            "Finish updating Sotto",
+            "Finish updating Scrivo",
             f"{STALE_NOTE}\n\nRestart now? A dictation in progress finishes first."))
 
     def test_new_packages_offer_the_installer_instead_of_a_restart(self):
@@ -179,37 +179,37 @@ class StaleRunDialogTests(unittest.TestCase):
         result = stale_result(packages_changed=True)
         self.assertEqual(updates.offer(result), "update")
         self.assertEqual(updates.describe(result, "MANUAL"), (
-            "Finish updating Sotto",
-            f"{STALE_NOTE} {NEW_PACKAGES}\n\nUpdate now? Sotto installs them, then restarts, "
+            "Finish updating Scrivo",
+            f"{STALE_NOTE} {NEW_PACKAGES}\n\nUpdate now? Scrivo installs them, then restarts, "
             "usually within a minute."))
 
     def test_new_packages_without_github_name_the_command(self):
         # Update Now would contact GitHub: not while offline, and not when it
         # just could not be reached.
-        manual = "run scripts/install-mac.sh --update in Terminal from the Sotto folder."
-        for state, detail in (("offline", "Offline mode is on, so Sotto does not contact GitHub."),
+        manual = "run scripts/install-mac.sh --update in Terminal from Scrivo's source folder."
+        for state, detail in (("offline", "Offline mode is on, so Scrivo does not contact GitHub."),
                               ("failed", "Could not reach GitHub (no network?).")):
             result = stale_result(state, packages_changed=True, detail=detail)
             self.assertEqual(updates.offer(result), "info")
             self.assertEqual(updates.describe(result, manual), (
-                "Finish updating Sotto",
-                f"{STALE_NOTE} {NEW_PACKAGES}\n\n{detail}\n\nQuit Sotto, then run scripts/install-mac.sh "
-                "--update in Terminal from the Sotto folder. Then start Sotto again."))
-        offline_restart = stale_result("offline", detail="Offline mode is on, so Sotto does not contact GitHub.")
+                "Finish updating Scrivo",
+                f"{STALE_NOTE} {NEW_PACKAGES}\n\n{detail}\n\nQuit Scrivo, then run scripts/install-mac.sh "
+                "--update in Terminal from Scrivo's source folder. Then start Scrivo again."))
+        offline_restart = stale_result("offline", detail="Offline mode is on, so Scrivo does not contact GitHub.")
         self.assertEqual(updates.offer(offline_restart), "restart")
         self.assertEqual(updates.describe(offline_restart, manual)[1],
-                         f"{STALE_NOTE}\n\nOffline mode is on, so Sotto does not contact GitHub.\n\n"
+                         f"{STALE_NOTE}\n\nOffline mode is on, so Scrivo does not contact GitHub.\n\n"
                          "Restart now? A dictation in progress finishes first.")
 
     def test_a_terminal_run_is_told_what_to_do(self):
         command = updates.mac_manual_update(PurePosixPath("/Users/someone/sotto"))
         self.assertEqual(updates.describe(stale_result(), command, self_update=False), (
-            "Finish updating Sotto",
-            f"{STALE_NOTE}\n\nSotto was started from a terminal, so it does not restart itself. "
+            "Finish updating Scrivo",
+            f"{STALE_NOTE}\n\nScrivo was started from a terminal, so it does not restart itself. "
             "Quit it, then start it again."))
         self.assertEqual(updates.describe(stale_result(packages_changed=True), command, self_update=False), (
-            "Finish updating Sotto",
-            f"{STALE_NOTE} {NEW_PACKAGES}\n\nSotto was started from a terminal, so it does not update "
+            "Finish updating Scrivo",
+            f"{STALE_NOTE} {NEW_PACKAGES}\n\nScrivo was started from a terminal, so it does not update "
             f"itself. Quit it, then run in Terminal:\n{command}\nThen start it again."))
 
     def test_github_ahead_too_offers_the_update_with_the_note(self):
@@ -233,11 +233,11 @@ class StaleRunDialogTests(unittest.TestCase):
             result = stale_result(state, detail=detail)
             self.assertEqual(updates.offer(result), "restart", state)
             self.assertEqual(updates.describe(result, "MANUAL"), (
-                "Finish updating Sotto",
+                "Finish updating Scrivo",
                 f"{STALE_NOTE}\n\n{detail}\n\nRestart now? A dictation in progress finishes first."), state)
             self.assertEqual(updates.offer(result, self_update=False), "info", state)
             self.assertEqual(updates.describe(result, "MANUAL", self_update=False)[1],
-                             f"{STALE_NOTE}\n\n{detail}\n\nSotto was started from a terminal, so it does not "
+                             f"{STALE_NOTE}\n\n{detail}\n\nScrivo was started from a terminal, so it does not "
                              "restart itself. Quit it, then start it again.", state)
 
     def test_without_a_stale_run_the_offers_are_unchanged(self):
@@ -252,7 +252,7 @@ class StaleRunDialogTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("git"), "needs git")
 class StartedFromRealGitTests(unittest.TestCase):
-    """A bare 'GitHub' remote, a publisher clone and the folder Sotto runs from."""
+    """A bare 'GitHub' remote, a publisher clone and the folder Scrivo runs from."""
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
@@ -289,7 +289,7 @@ class StartedFromRealGitTests(unittest.TestCase):
             result = updates.check(user, offline=False, started_from=started)
             self.assertEqual(result.state, "current")
             self.assertEqual(result.stale, updates.StaleRun(started[:7], moved[:7], False))
-            self.assertNotEqual(updates.describe(result, "x")[0], "Sotto is up to date")
+            self.assertNotEqual(updates.describe(result, "x")[0], "Scrivo is up to date")
             self.assertEqual(updates.offer(result), "restart")
 
             # A pin moved too: the plain restart would start new code on old packages.
@@ -335,7 +335,7 @@ class ApplyMacTests(unittest.TestCase):
         return result
 
     def test_a_finished_update_reports_its_last_line_and_the_new_source(self):
-        self.assertEqual(self.apply(["aaa", "bbb"], 0, "== Sotto.app\nDone.\n"), (True, "Done.", True))
+        self.assertEqual(self.apply(["aaa", "bbb"], 0, "== Scrivo.app\nDone.\n"), (True, "Done.", True))
 
     def test_a_failure_before_the_switch_leaves_the_source_alone(self):
         self.assertEqual(self.apply(["aaa", "aaa"], 1, "✗ Installing packages failed.\n"),
@@ -348,7 +348,7 @@ class ApplyMacTests(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "the Mac updater")
     def test_a_stuck_update_is_stopped_with_everything_it_started(self):
         # [N25] The timeout killed bash but not its pip child, which went on
-        # changing packages after Sotto had reported the update failed.
+        # changing packages after Scrivo had reported the update failed.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "scripts").mkdir()
@@ -450,11 +450,11 @@ class WindowsUpdateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             status = Path(temporary) / "update-status.txt"
             status.write_text("﻿ok abc1234\n", encoding="utf-8")
-            self.assertEqual(win_ui.update_report(temporary), "Sotto updated (abc1234).")
+            self.assertEqual(win_ui.update_report(temporary), "Scrivo updated (abc1234).")
             self.assertIsNone(win_ui.update_report(temporary))
-            status.write_text("failed Sotto did not quit, so nothing was changed.", encoding="utf-8")
+            status.write_text("failed Scrivo did not quit, so nothing was changed.", encoding="utf-8")
             self.assertEqual(win_ui.update_report(temporary),
-                             "Update failed: Sotto did not quit, so nothing was changed.")
+                             "Update failed: Scrivo did not quit, so nothing was changed.")
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ RUNTIME_SOURCE_FILES = (
     "settings_window.py",
     "progress.py",
     "login_item.py",
+    "mac_app.py",
     "updates.py",
     "voice_commands.py",
     "pipeline.py",

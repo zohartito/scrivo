@@ -171,7 +171,7 @@ def markdown_report(report: dict) -> str:
     if report.get("dry_run"):
         models = report.get("models", [])
         lines = [
-            "# Sotto offline speech benchmark dry run",
+            "# Scrivo offline speech benchmark dry run",
             "",
             f"Validated {report.get('sample_count', 0)} manifest samples without loading a model.",
             "",
@@ -180,7 +180,7 @@ def markdown_report(report: dict) -> str:
         ]
         lines.extend(f"| {model['label']} | `{model['repo']}` |" for model in models)
         return "\n".join(lines) + "\n"
-    lines = ["# Sotto offline speech benchmark", "", "This report is comparative; sample count alone does not establish statistical sufficiency.", ""]
+    lines = ["# Scrivo offline speech benchmark", "", "This report is comparative; sample count alone does not establish statistical sufficiency.", ""]
     for model in report.get("models", []):
         overall = model["aggregate"]["overall"]
         metrics = overall["metrics"]
@@ -206,7 +206,7 @@ def markdown_report(report: dict) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run an offline Sotto speech-model benchmark.")
+    parser = argparse.ArgumentParser(description="Run an offline Scrivo speech-model benchmark.")
     parser.add_argument("manifest", help="JSONL manifest containing audio and reference fields")
     parser.add_argument("--model", action="append", default=[], metavar="LABEL=REPO",
                         help="Candidate MLX repo (repeatable); use label=repo to name it")

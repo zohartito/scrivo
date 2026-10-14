@@ -1,4 +1,4 @@
-"""Pure, local configuration helpers for Sotto speech models.
+"""Pure, local configuration helpers for Scrivo speech models.
 
 This module deliberately has no MLX or platform imports.  Resolving a profile is
 therefore safe to use in a preferences UI, a CLI ``--dry-run``, or tests without
@@ -339,7 +339,7 @@ def transcription_kwargs(speech_config, glossary_terms: tuple[str, ...], duratio
     kwargs = {
         "path_or_hf_repo": speech_config.model_repo,
         "condition_on_previous_text": False,
-        # Sotto does not consume word timings.  Asking MLX Whisper to compute
+        # Scrivo does not consume word timings.  Asking MLX Whisper to compute
         # them nearly doubled warm latency on the user's own captures.  Output
         # safety remains in the VAD metadata, no-speech verdict, implausible
         # rate/compression guard, and conservative repetition-loop salvage.

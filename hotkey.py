@@ -209,7 +209,7 @@ class HotkeyListener:
                 self.ui_call(self.status_ui.set_tap_health, True)
         elif self.clock() - self.tap_warned_at > 60:
             self.tap_warned_at = self.clock()
-            self.log("✗ event tap stays disabled — re-grant Accessibility to Sotto")
+            self.log("✗ event tap stays disabled — re-grant Accessibility to Scrivo")
             if self.status_ui is not None:
                 self.ui_call(self.status_ui.set_tap_health, False)
 
@@ -218,7 +218,7 @@ class HotkeyListener:
             return event
         if event_type in (self.quartz.kCGEventKeyDown, self.quartz.kCGEventKeyUp,
                           self.quartz.kCGEventFlagsChanged) and self.is_own_event(event):
-            return event  # Sotto's own ⌘V / ⌘Z / typing: never a chord, never the user typing
+            return event  # Scrivo's own ⌘V / ⌘Z / typing: never a chord, never the user typing
         if event_type == self.quartz.kCGEventKeyDown:
             code = self.quartz.CGEventGetIntegerValueField(event, self.quartz.kCGKeyboardEventKeycode)
             hotkey_key = self.hotkey is not None and code == self.hotkey[1]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit, pinned provisioning for Sotto's optional macOS Nemotron engine.
+"""Explicit, pinned provisioning for Scrivo's optional macOS Nemotron engine.
 
 Run with venv/bin/python scripts/setup_nemotron.py. No runtime auto-downloads.
 """
@@ -20,7 +20,7 @@ from sotto_paths import DATA_DIR
 
 def install() -> None:
     if platform.system() != "Darwin" or platform.machine() != "arm64":
-        raise SystemExit("This optional Sotto runtime is for Apple Silicon Macs.")
+        raise SystemExit("This optional Scrivo runtime is for Apple Silicon Macs.")
     spec = json.loads((Path(__file__).resolve().parents[1] / "config/nemotron-runtime.json").read_text())
     root = DATA_DIR / "nemotron" / spec["version"]
     root.mkdir(parents=True, exist_ok=True, mode=0o700)

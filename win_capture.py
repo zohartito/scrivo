@@ -1,7 +1,7 @@
 """Windows capture: one fresh input stream per capture (sounddevice/PortAudio).
 
 The stream opens PortAudio's default input device, which on Windows belongs to
-the MME host API (Windows resamples to the 16 kHz Sotto asks for).  No host
+the MME host API (Windows resamples to the 16 kHz Scrivo asks for).  No host
 API is chosen explicitly.
 
 The privacy boundary matches the Mac's ``--idle-release 0``: the microphone
@@ -219,4 +219,4 @@ class WinCapture:
                 stream.close()
             except Exception:
                 pass
-        self._wait_closed(self._close_wait_s)  # the mic is closed when Sotto stops
+        self._wait_closed(self._close_wait_s)  # the mic is closed when Scrivo stops

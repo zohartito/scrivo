@@ -5,7 +5,7 @@ so a crash, a SIGKILL or a logout that skipped the drain lost it. Now the
 key-up hands the audio to ``history.CaptureSpool`` (written off the event-tap
 thread), the worker or teardown deletes the file once the capture's row
 exists or its fate is decided, and the next launch turns any file still there
-into a "[not transcribed: Sotto stopped]" row, exactly like the N9 keep.
+into a "[not transcribed: Scrivo stopped]" row, exactly like the N9 keep.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from speech_config import resolve_speech_config
 
 ROOT = Path(__file__).resolve().parents[1]
 WHISPER = resolve_speech_config("auto", language="en")
-NOT_TRANSCRIBED = "[not transcribed: Sotto stopped]"
+NOT_TRANSCRIBED = "[not transcribed: Scrivo stopped]"
 WAIT_S = 10.0
 
 
@@ -137,7 +137,7 @@ class CaptureSpoolTests(TemporaryData):
         spool = new_spool(self.base)
         time.sleep(0.05)
         self.assertEqual(spooled(self.base), [])
-        self.assertIsNone(spool._writer, "an idle Sotto started the spool writer")
+        self.assertIsNone(spool._writer, "an idle Scrivo started the spool writer")
 
     def test_n9b_a_second_sotto_on_the_same_data_folder_neither_spools_nor_recovers(self):
         from history import CaptureSpool
@@ -382,7 +382,7 @@ class WindowsAppTests(TemporaryData):
             except BaseException as exc:
                 results["error"] = exc
             finally:
-                boundaries[0].request()  # Sotto ends without its drain
+                boundaries[0].request()  # Scrivo ends without its drain
 
         with contextlib.ExitStack() as stack:
             win_tests._patched_run(stack, self.base, (whisper, FakeCapture, FakeHook), logs=logs,

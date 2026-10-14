@@ -1,10 +1,11 @@
-# Install Sotto on Windows with one line (in PowerShell):
+# Install Scrivo on Windows with one line (in PowerShell):
 #
-#   irm https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.ps1 | iex
+#   irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex
 #
-# Downloads Sotto with git into %USERPROFILE%\sotto (or $env:SOTTO_SOURCE), or
-# updates that copy (the new packages first, the source only after them), then
-# runs its scripts\install-windows.ps1 and starts Sotto.
+# Downloads Scrivo with git into %USERPROFILE%\sotto (or $env:SOTTO_SOURCE; the
+# folder keeps the name Scrivo had before, Sotto), or updates that copy (the new
+# packages first, the source only after them), then runs its
+# scripts\install-windows.ps1 and starts Scrivo.
 # No admin rights. Missing tools are named with the command that installs them.
 
 # A folder has a long name and, on most volumes, an 8.3 short one
@@ -52,22 +53,31 @@ function Fail-Install([string]$Text) {
 
 function Install-Sotto {
   $ErrorActionPreference = 'Stop'
-  $repo = if ($env:SOTTO_REPO) { $env:SOTTO_REPO } else { 'https://github.com/zohartito/sotto.git' }
+  # This project, and its URL from before the rename (Scrivo was called Sotto).
+  $scrivoRepo = 'https://github.com/zohartito/scrivo.git'
+  $legacyRepo = 'https://github.com/zohartito/sotto.git'
+  $repo = if ($env:SOTTO_REPO) { $env:SOTTO_REPO } else { $scrivoRepo }
   $dest = if ($env:SOTTO_SOURCE) { $env:SOTTO_SOURCE } else { Join-Path $env:USERPROFILE 'sotto' }
   $shortcutDir = [Environment]::GetFolderPath('Programs')
 
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Fail-Install 'Sotto needs Git: winget install --id Git.Git -e  (then open a new PowerShell and run this line again)'
+    Fail-Install 'Scrivo needs Git: winget install --id Git.Git -e  (then open a new PowerShell and run this line again)'
     return
   }
   if (Test-Path -LiteralPath (Join-Path $dest '.git')) {
     $origin = ''
     try { $origin = git -C $dest remote get-url origin 2>$null } catch { $origin = '' }
+    $renamed = ''
     if (-not (Test-SameRepo $origin $repo)) {
-      Fail-Install "$dest is a git copy of $origin, not Sotto. Choose another folder with `$env:SOTTO_SOURCE."
-      return
+      # A copy made before the rename follows the old URL (GitHub redirects
+      # it): the same project, moved to the new URL below.
+      if (-not ((Test-SameRepo $repo $scrivoRepo) -and (Test-SameRepo $origin $legacyRepo))) {
+        Fail-Install "$dest is a git copy of $origin, not Scrivo. Choose another folder with `$env:SOTTO_SOURCE."
+        return
+      }
+      $renamed = $origin -replace 'zohartito/sotto', 'zohartito/scrivo'  # same form: https or ssh
     }
-    # Pulling and reinstalling under a running Sotto would swap its source and
+    # Pulling and reinstalling under a running Scrivo would swap its source and
     # packages while they are in use.
     $prefix = (Long-Path $dest).TrimEnd('\') + '\'
     $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
@@ -76,10 +86,14 @@ function Install-Sotto {
         $path -and (Long-Path $path).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
       })
     if ($running.Count -gt 0) {
-      Fail-Install "Sotto is running from $dest (process $($running[0].Id)). Quit it from its tray menu (or update it there with Check for updates), then run this line again."
+      Fail-Install "Scrivo is running from $dest (process $($running[0].Id)). Quit it from its tray menu (or update it there with Check for updates), then run this line again."
       return
     }
-    Write-Host "== Updating Sotto in $dest"
+    if ($renamed) {
+      git -C $dest remote set-url origin $renamed
+      Write-Host "== $dest now follows $renamed (Sotto is now called Scrivo)"
+    }
+    Write-Host "== Updating Scrivo in $dest"
     git -C $dest fetch --quiet
     if ($LASTEXITCODE -ne 0) { Fail-Install "Could not download the update into $dest."; return }
     # Ask the update's own installer whether it will run here (its Start Menu
@@ -115,19 +129,19 @@ function Install-Sotto {
     git -C $dest merge --ff-only --quiet '@{u}'
     if ($LASTEXITCODE -ne 0) { Fail-Install "Could not update $dest (local changes?)."; return }
   } elseif (Test-Path -LiteralPath $dest) {
-    Fail-Install "$dest exists and is not a copy of Sotto. Choose another folder with `$env:SOTTO_SOURCE."
+    Fail-Install "$dest exists and is not a copy of Scrivo. Choose another folder with `$env:SOTTO_SOURCE."
     return
   } else {
-    Write-Host "== Downloading Sotto into $dest"
+    Write-Host "== Downloading Scrivo into $dest"
     git clone --quiet $repo $dest
-    if ($LASTEXITCODE -ne 0) { Fail-Install 'Could not download Sotto.'; return }
+    if ($LASTEXITCODE -ne 0) { Fail-Install 'Could not download Scrivo.'; return }
   }
 
   if ($env:SOTTO_GET_DRY_RUN) { "dry run: would run $dest\scripts\install-windows.ps1"; return }
   # The installer checks Windows, Python 3.13 and the GPU, and says what is missing.
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dest 'scripts\install-windows.ps1') -ShortcutDir $shortcutDir
   if ($LASTEXITCODE -ne 0) { Fail-Install 'The installer stopped; see the messages above.'; return }
-  $shortcut = Join-Path $shortcutDir 'Sotto.lnk'
+  $shortcut = Join-Path $shortcutDir 'Scrivo.lnk'
   if (Test-Path -LiteralPath $shortcut) { Start-Process -FilePath $shortcut }
 }
 

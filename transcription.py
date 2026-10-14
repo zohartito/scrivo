@@ -32,7 +32,7 @@ from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
 # A live capture whose speech model failed (F4) is kept under
 # pipeline.TRANSCRIPTION_FAILED_TEXT (shared with Windows), so Retry can
 # transcribe it again.
-# A live capture Sotto stopped before transcribing (N9) is kept the same way,
+# A live capture Scrivo stopped before transcribing (N9) is kept the same way,
 # under sotto.NOT_TRANSCRIBED_TEXT (shared with the N9b spool recovery).
 # How long the teardown's keep waits for a History append of the same capture
 # that is already under way, before leaving that capture to it.
@@ -533,7 +533,7 @@ class TranscriptionWorker:
         self._show_error("Transcription failed", f"The audio is in History; use Retry.\n\n{error}")
 
     def keep_untranscribed(self, job, wait_s: float = APPEND_WAIT_S) -> None:
-        """Sotto is stopping and this live capture was never transcribed (N9):
+        """Scrivo is stopping and this live capture was never transcribed (N9):
         Quit, Restart or SIGTERM waited as long as it may. The recording is
         not lost: it becomes a ``live_suspect`` History row reading
         NOT_TRANSCRIBED_TEXT, so Retry can transcribe it at the next start.
@@ -552,7 +552,7 @@ class TranscriptionWorker:
         with self._settle_cond:
             self._settle_cond.wait_for(lambda: capture_id not in self._saving, timeout=wait_s)
             if capture_id in self._saving:
-                self.log("! History was still saving a capture as Sotto stopped — left to that save")
+                self.log("! History was still saving a capture as Scrivo stopped — left to that save")
                 return
         if not self._start_saving(capture_id):
             return
@@ -562,7 +562,7 @@ class TranscriptionWorker:
                 self.coordinator, raw=raw, native_rate=native_rate, captured_ts=captured_ts, model=self.model,
                 speech_config=job_config, glossary_terms=self.glossary_terms,
                 queue_wait_s=round(time.monotonic() - queued_at, 4),
-                error="not transcribed before Sotto stopped")
+                error="not transcribed before Scrivo stopped")
             saved = True
         except Exception as exc:
             self.log(f"! untranscribed capture not saved ({type(exc).__name__}: {str(exc)[:160]})")

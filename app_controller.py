@@ -179,9 +179,9 @@ class AppController:
             lambda: self.shutdown.enqueue(self.jobs, ("retry", entry_id, time.monotonic(), uuid.uuid4().hex,
                                                       self.current_speech_config())))
         if refused:
-            self.log(f"○ Sotto is {refused} — Retry refused")
+            self.log(f"○ Scrivo is {refused} — Retry refused")
             self.ui_call(self.status_ui.show_error, "Not retried",
-                         f"Sotto is {refused}. Retry once it is running again.")
+                         f"Scrivo is {refused}. Retry once it is running again.")
 
     def save(self, entry_id: str) -> None:
         """Save a recording's audio to the Desktop.
@@ -391,7 +391,7 @@ class AppController:
 
     def set_engine(self, mode: str) -> None:
         """Switch the speech engine: closes the capture gate, saves the
-        choice and restarts Sotto; refused while dictation is in flight.
+        choice and restarts Scrivo; refused while dictation is in flight.
 
         Side effects: closes the gate (reopened if the switch fails),
         persists the engine and requests the restart; shows any refusal."""
@@ -405,7 +405,7 @@ class AppController:
         # first, then check again, as the update restart does (N8).
         if not self.lifecycle.close("switching engines"):
             self.ui_call(self.status_ui.show_error, "Could not change engine",
-                         f"Sotto is {self.lifecycle.closed or 'stopping'}.")
+                         f"Scrivo is {self.lifecycle.closed or 'stopping'}.")
             return
 
         def failed(message: str) -> None:
@@ -492,7 +492,7 @@ class AppController:
                 import login_item
                 executable = os.environ.get("SOTTO_APP_EXECUTABLE", "")
                 if value and not (app_mode() and executable):
-                    return "Install Sotto as an app first (scripts/install-mac.sh)."
+                    return "Install Scrivo as an app first (scripts/install-mac.sh)."
                 login_item.enable(executable) if value else login_item.disable()
             store.save({key: value}, store.SETTINGS_PATH)
             if key == "trigger":
@@ -532,7 +532,7 @@ class AppController:
         from offline_runtime import offline_requested
         if offline_requested():
             self.ui_call(self.status_ui.show_error, "Offline mode is on",
-                         "Installing Nemotron downloads about 700 MB; start Sotto without the offline flags.")
+                         "Installing Nemotron downloads about 700 MB; start Scrivo without the offline flags.")
             return
         self.nemotron_installing = True
 
@@ -564,7 +564,7 @@ class AppController:
         from offline_runtime import offline_requested
         if offline_requested():
             self.ui_call(self.status_ui.show_error, "Offline mode is on",
-                         "Downloading Parakeet (2.5 GB) needs the network; start Sotto without the offline flags.")
+                         "Downloading Parakeet (2.5 GB) needs the network; start Scrivo without the offline flags.")
             return
         self.parakeet_installing = True
 
@@ -610,7 +610,7 @@ class AppController:
         if self.shutdown.requested():
             return
         if self.lifecycle.closed:
-            self.log(f"○ Sotto is {self.lifecycle.closed} — dictation not started")
+            self.log(f"○ Scrivo is {self.lifecycle.closed} — dictation not started")
             return
         if self.engine.force_start():
             self.log("● dictation started via menu (hands-free)")
@@ -624,7 +624,7 @@ class AppController:
         if self.lifecycle.restart(self.restart_now):
             self.log("● restart requested from the menu — after the current dictation")
         else:
-            self.log(f"○ Sotto is {self.lifecycle.closed or 'stopping'} — restart not requested")
+            self.log(f"○ Scrivo is {self.lifecycle.closed or 'stopping'} — restart not requested")
 
     def restart_now(self, after_failure=None) -> None:
         """Restart this foreground process or its own sealed supervisor.
@@ -635,11 +635,11 @@ class AppController:
         def failed(message: str) -> None:
             if after_failure is not None:
                 after_failure()
-            self.ui_call(self.status_ui.show_error, "Could not restart Sotto", message[:160])
+            self.ui_call(self.status_ui.show_error, "Could not restart Scrivo", message[:160])
         try:
             if not self.restart.request(on_failure=failed):
-                raise RuntimeError("Sotto is already shutting down")
-            self.log("● restarting Sotto")
+                raise RuntimeError("Scrivo is already shutting down")
+            self.log("● restarting Scrivo")
         except Exception as exc:
             failed(str(exc))
 
@@ -660,7 +660,7 @@ class AppController:
         then closes the gate, drains (at most UPDATE_DRAIN_DEADLINE_S) and
         restarts, or shows why the update did not finish; logs."""
         if not app_mode():
-            return  # [N28] its installer rebuilds Sotto.app; a terminal run is given the command
+            return  # [N28] its installer rebuilds Scrivo.app; a terminal run is given the command
         if self.update_running:
             return
         if self.lifecycle.busy():
@@ -668,7 +668,7 @@ class AppController:
                          "Update after the current recording and transcription finish.")
             return
         self.update_running = True
-        self.log("● updating Sotto")
+        self.log("● updating Scrivo")
 
         def work() -> None:
             import updates
@@ -682,7 +682,7 @@ class AppController:
                 # and the user may have dictated while the update ran. Refuse new
                 # recordings first, then drain, so none can start in between.
                 if not self.lifecycle.close("updating"):
-                    self.log(f"○ Sotto is {self.lifecycle.closed or 'stopping'}; the update applies at the next start")
+                    self.log(f"○ Scrivo is {self.lifecycle.closed or 'stopping'}; the update applies at the next start")
                     return
                 if not self.wait_until_idle(lambda: self.lifecycle.busy() and self.lifecycle.closed == "updating",
                                             deadline_s=UPDATE_DRAIN_DEADLINE_S):
@@ -695,11 +695,11 @@ class AppController:
                 self.ui_call(self.status_ui.show_error, "Update not finished",
                              f"{tail}\n\nThe new version is in place but its setup did not finish. "
                              "Run scripts/install-mac.sh --update in Terminal to finish it, then "
-                             "choose Restart Sotto. Details are in logs/update.log in the data folder.")
+                             "choose Restart Scrivo. Details are in logs/update.log in the data folder.")
             else:
                 self.log("! update failed (see logs/update.log)")
                 self.ui_call(self.status_ui.show_error, "Update failed",
-                             f"{tail}\n\nThe source was not switched, so Sotto keeps running the "
+                             f"{tail}\n\nThe source was not switched, so Scrivo keeps running the "
                              "current version. Details are in logs/update.log in the data folder.")
         self.start_thread(work)
 
@@ -708,7 +708,7 @@ class AppController:
 
         Side effects: on a background thread, runs git against GitHub and
         logs the result; on the main thread, shows it (offering Update Now
-        to Sotto.app, the drained restart when the folder moved past the
+        to Scrivo.app, the drained restart when the folder moved past the
         running code, or the Releases page to a copy without git)."""
         def work() -> None:
             import updates
@@ -721,8 +721,8 @@ class AppController:
                      + (", packages changed" if stale and stale.packages_changed else ""))
 
             def present() -> None:
-                # [N28] Only Sotto.app updates or restarts itself; a terminal run is told what to do.
-                manual = ("run scripts/install-mac.sh --update in Terminal from the Sotto folder."
+                # [N28] Only Scrivo.app updates or restarts itself; a terminal run is told what to do.
+                manual = ("run scripts/install-mac.sh --update in Terminal from Scrivo's source folder."
                           if app_mode() else updates.mac_manual_update(self.sotto_script.parent))
                 title, text = updates.describe(result, manual, self_update=app_mode())
                 offer = updates.offer(result, self_update=app_mode())

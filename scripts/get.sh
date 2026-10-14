@@ -1,12 +1,13 @@
 #!/bin/bash
-# Install Sotto on a Mac with one line:
+# Install Scrivo on a Mac with one line:
 #
-#   curl -fsSL https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
 #
-# Downloads Sotto with git into ~/sotto (or $SOTTO_SOURCE) and runs its
-# scripts/install-mac.sh, or updates that copy with install-mac.sh --update
-# (the new packages first, the source only after them), then opens Sotto. Nothing needs
-# sudo. Missing tools are named with the command that installs them.
+# Downloads Scrivo with git into ~/sotto (or $SOTTO_SOURCE; the folder keeps
+# the name Scrivo had before, Sotto) and runs its scripts/install-mac.sh, or
+# updates that copy with install-mac.sh --update (the new packages first, the
+# source only after them), then opens Scrivo. Nothing needs sudo. Missing
+# tools are named with the command that installs them.
 # Everything sits inside main(), so a partly downloaded script never runs.
 set -euo pipefail
 
@@ -25,7 +26,7 @@ same_repo() {
 }
 
 # The first process running the sotto.py in folder $1 (resolved): by that path
-# (what Sotto.app runs) or relative to the process's working directory (a
+# (what Scrivo.app runs) or relative to the process's working directory (a
 # terminal run: venv-alpha/bin/python sotto.py run).
 running_from() {
     local listing pid command words word dir
@@ -48,14 +49,17 @@ running_from() {
 }
 
 main() {
-    local repo="${SOTTO_REPO:-https://github.com/zohartito/sotto.git}"
+    # This project, and its URL from before the rename (Scrivo was called Sotto).
+    local scrivo_repo=https://github.com/zohartito/scrivo.git
+    local legacy_repo=https://github.com/zohartito/sotto.git
+    local repo="${SOTTO_REPO:-$scrivo_repo}"
     local dest="${SOTTO_SOURCE:-$HOME/sotto}"
     local python="${SOTTO_PYTHON:-}"
 
     fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
 
     [ "$(uname -s)" = Darwin ] || fail "This installer is for macOS. On Windows, see the README."
-    [ "$(uname -m)" = arm64 ] || fail "Sotto needs an Apple Silicon Mac."
+    [ "$(uname -m)" = arm64 ] || fail "Scrivo needs an Apple Silicon Mac."
     if ! xcrun --find clang >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
         fail "First install Apple's command line tools: xcode-select --install  (then run this line again)"
     fi
@@ -72,30 +76,39 @@ main() {
     fi
     if [ -z "$python" ]; then
         if command -v brew >/dev/null 2>&1; then
-            fail "Sotto needs Python 3.12: brew install python@3.12  (then run this line again)"
+            fail "Scrivo needs Python 3.12: brew install python@3.12  (then run this line again)"
         fi
-        fail "Sotto needs Python 3.12: install it from https://www.python.org/downloads/ (then run this line again)"
+        fail "Scrivo needs Python 3.12: install it from https://www.python.org/downloads/ (then run this line again)"
     fi
 
     local update=""
     if [ -d "$dest/.git" ]; then
-        local origin
+        local origin renamed=""
         origin="$(git -C "$dest" remote get-url origin 2>/dev/null || true)"
-        same_repo "$origin" "$repo" \
-            || fail "$dest is a git copy of ${origin:-an unknown project}, not Sotto. Choose another folder with SOTTO_SOURCE=..."
-        # Updating under a running Sotto would swap its source and packages
+        if ! same_repo "$origin" "$repo"; then
+            # A copy made before the rename follows the old URL (GitHub
+            # redirects it): the same project, moved to the new URL below.
+            same_repo "$repo" "$scrivo_repo" && same_repo "$origin" "$legacy_repo" \
+                || fail "$dest is a git copy of ${origin:-an unknown project}, not Scrivo. Choose another folder with SOTTO_SOURCE=..."
+            renamed="${origin/zohartito\/sotto/zohartito/scrivo}"  # same form: https or ssh
+        fi
+        # Updating under a running Scrivo would swap its source and packages
         # while they are in use.
         local running
         running="$(running_from "$(cd "$dest" && pwd -P)")"
-        [ -z "$running" ] || fail "Sotto is running from $dest (process $running). Quit it from its menu (or update it there with Check for Updates), then run this line again."
-        echo "== Updating Sotto in $dest"
+        [ -z "$running" ] || fail "Scrivo is running from $dest (process $running). Quit it from its menu (or update it there with Check for Updates), then run this line again."
+        if [ -n "$renamed" ]; then
+            git -C "$dest" remote set-url origin "$renamed"
+            echo "== $dest now follows $renamed (Sotto is now called Scrivo)"
+        fi
+        echo "== Updating Scrivo in $dest"
         # install-mac.sh --update fetches, installs the new packages, and moves
         # the source only after them (putting the packages back on a failure).
         update="--update"
     elif [ -e "$dest" ]; then
-        fail "$dest exists and is not a copy of Sotto. Choose another folder with SOTTO_SOURCE=..."
+        fail "$dest exists and is not a copy of Scrivo. Choose another folder with SOTTO_SOURCE=..."
     else
-        echo "== Downloading Sotto into $dest"
+        echo "== Downloading Scrivo into $dest"
         git clone --quiet "$repo" "$dest" < /dev/null
     fi
 
@@ -105,7 +118,7 @@ main() {
     fi
     # shellcheck disable=SC2086  # $update is one word or nothing
     bash "$dest/scripts/install-mac.sh" $update --python "$python" < /dev/null
-    open -a Sotto || true
+    open -a Scrivo || true
 }
 
 main "$@"

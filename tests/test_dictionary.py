@@ -86,7 +86,7 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(dictionary.add([Rule("sotto", "Sotto"), Rule("x => y", "bad")], self.path), 1)
         self.assertEqual(dictionary.add([Rule("SOTTO", "again"), Rule("iphone", "iPhone")], self.path), 1)
         text = self.path.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("# Sotto dictionary"))
+        self.assertTrue(text.startswith("# Scrivo dictionary"))
         self.assertEqual(dictionary.parse(text), [Rule("sotto", "Sotto"), Rule("iphone", "iPhone")])
         if os.name == "posix":
             self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
