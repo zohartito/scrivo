@@ -50,9 +50,9 @@ class LabelTest(unittest.TestCase):
         self.assertLessEqual(set(win_ui.COMMON_LANGUAGES), set(win_ui.WHISPER_LANGUAGES))
 
     def test_tooltips(self) -> None:
-        self.assertEqual(win_ui.tooltip("idle", "left-option", ""), "Sotto — hold Left Alt to dictate")
-        self.assertEqual(win_ui.tooltip("recording", "right-ctrl", ""), "Sotto — recording")
-        self.assertEqual(win_ui.tooltip("starting", "right-ctrl", "Warming up…"), "Sotto — Warming up…")
+        self.assertEqual(win_ui.tooltip("idle", "left-option", ""), "Scrivo — hold Left Alt to dictate")
+        self.assertEqual(win_ui.tooltip("recording", "right-ctrl", ""), "Scrivo — recording")
+        self.assertEqual(win_ui.tooltip("starting", "right-ctrl", "Warming up…"), "Scrivo — Warming up…")
 
     @unittest.skipUnless(_pystray_available(), "pystray/Pillow not installed (requirements-alpha-windows.txt)")
     def test_icon_images_differ_by_state(self) -> None:
@@ -112,7 +112,7 @@ class MenuTest(unittest.TestCase):
     def test_before_listening_only_status_and_quit(self) -> None:
         items = list(self.app.items())
         texts = [getattr(item, "text", "") for item in items]
-        self.assertEqual(texts[0], "Sotto — starting…")
+        self.assertEqual(texts[0], "Scrivo — starting…")
         self.assertFalse(items[0].enabled)
         self.by_text(items)["Quit"](None)
         self.assertEqual(self.quits, [1])
@@ -168,7 +168,7 @@ class MenuTest(unittest.TestCase):
 class UpdateDialogTest(unittest.TestCase):
     """Check for updates on the tray: the Mac's offers, in the same words."""
 
-    MANUAL = "run git pull, then scripts\\install-windows.ps1, from the Sotto folder."
+    MANUAL = "run git pull, then scripts\\install-windows.ps1, from Scrivo's source folder."
 
     def dialog(self, result, answer=True):
         import updates
@@ -191,19 +191,19 @@ class UpdateDialogTest(unittest.TestCase):
                                    stale=updates.StaleRun("c2e7f0f", "3bcf356", False))
         calls, ask, info, (title, text) = self.dialog(same)
         ask.assert_called_once_with(title, text, parent=None)
-        self.assertEqual(title, "Finish updating Sotto")
+        self.assertEqual(title, "Finish updating Scrivo")
         self.assertEqual(calls, [("restart",)])
         changed = updates.UpdateCheck("current", version="3bcf356",
                                       stale=updates.StaleRun("c2e7f0f", "3bcf356", True))
         calls, ask, info, (title, text) = self.dialog(changed)
         ask.assert_called_once_with(title, text, parent=None)
         self.assertEqual(calls, [("update_and_restart",)])
-        offline = updates.UpdateCheck("offline", "Offline mode is on, so Sotto does not contact GitHub.",
+        offline = updates.UpdateCheck("offline", "Offline mode is on, so Scrivo does not contact GitHub.",
                                       stale=updates.StaleRun("c2e7f0f", "3bcf356", True))
         calls, ask, info, (title, text) = self.dialog(offline)
         ask.assert_not_called()
         info.assert_called_once_with(title, text, parent=None)
-        self.assertIn("Quit Sotto, then run git pull", text)
+        self.assertIn("Quit Scrivo, then run git pull", text)
         self.assertEqual(calls, [])
         calls, ask, info, _ = self.dialog(same, answer=False)
         self.assertEqual(calls, [])

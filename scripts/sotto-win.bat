@@ -1,5 +1,5 @@
 @echo off
-rem sotto for Windows (developer shortcut): first run creates .\venv and installs
+rem scrivo for Windows (developer shortcut): first run creates .\venv and installs
 rem the pinned Windows alpha set (+ CUDA extras when nvidia-smi is present).
 rem Testers: follow docs\windows-alpha.md instead.
 cd /d "%~dp0.."

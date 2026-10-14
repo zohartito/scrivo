@@ -19,7 +19,7 @@ Windows offers no reliable, app-independent way to read the character before
 the caret, so no leading space is ever guessed (sotto.compose_insertion with
 an unknown context).
 
-Every event Sotto injects carries ``INJECTED_TAG`` in ``dwExtraInfo`` so the
+Every event Scrivo injects carries ``INJECTED_TAG`` in ``dwExtraInfo`` so the
 trigger hook can ignore exactly its own keystrokes (win_hotkey).
 
 UIPI: Windows silently drops synthetic input aimed at elevated (admin)
@@ -46,7 +46,7 @@ KEYEVENTF_UNICODE = 0x0004
 VK_CONTROL = 0x11
 VK_V = 0x56
 VK_MENU_MASK = 0xE8  # unassigned; cancels Alt's menu activation (win_hotkey)
-INJECTED_TAG = 0x534F54544F  # "SOTTO" — marks Sotto's own synthetic keys
+INJECTED_TAG = 0x534F54544F  # "SOTTO" — marks Scrivo's own synthetic keys
 _CHUNK = 256  # inputs per SendInput call (dictations are far smaller)
 
 RENDER_WAIT_S = 10.0    # an app that has not read the offer by now never pastes it
@@ -191,7 +191,7 @@ OFFER_MARKERS = (EXCLUDE_MONITORS, VIEWER_IGNORE, NO_HISTORY, NO_CLOUD)
 RESTORE_MARKERS = (NO_HISTORY, NO_CLOUD)
 COPY_MARKERS = (NO_CLOUD,)
 # An owner that asks monitors to skip its content (password managers) may
-# clear it on a timer; putting it back would defeat that, so Sotto types.
+# clear it on a timer; putting it back would defeat that, so Scrivo types.
 SENSITIVE_MARKERS = (VIEWER_IGNORE, EXCLUDE_MONITORS)
 RESTORE_ATTEMPTS = 6  # a busy clipboard is retried with backoff (about 5 s in all)
 GMEM_MOVEABLE = 0x0002

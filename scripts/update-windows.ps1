@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-  Update Sotto from GitHub once it has quit, then start it again.
+  Update Scrivo from GitHub once it has quit, then start it again.
 
 .DESCRIPTION
   Started hidden by the tray's "Check for updates..." (it can also be run by
   hand). Windows keeps the files of a running Python in use, so this waits
-  until no process runs from Sotto's environment. Then, like
+  until no process runs from Scrivo's environment. Then, like
   install-mac.sh --update, it fetches the update and installs the new
   version's pinned packages (the CPU or CUDA set recorded at install) while
   this copy's source stays as it was; pip has no rollback, so a failed install
@@ -13,13 +13,13 @@
   after the packages are in does it fast-forward the source and re-run
   install-windows.ps1 -SkipSetup for the shortcut and the install record.
 
-  Sotto is started again either way: the new version, or the unchanged
+  Scrivo is started again either way: the new version, or the unchanged
   previous one, whose tray then reports the failure. The outcome goes to
   update-status.txt in the data folder, which the tray reports once at its
   next start; the full output is in update.log.
 
   get.ps1 runs the update's own copy of this script on an existing copy:
-  -SourceDir names that copy, -NoRestart leaves starting Sotto to get.ps1
+  -SourceDir names that copy, -NoRestart leaves starting Scrivo to get.ps1
   and -ShortcutDir is its Start Menu folder.
 #>
 param(
@@ -70,7 +70,7 @@ $DataDir = Long-Path $DataDir
 $VenvDir = Long-Path $VenvDir
 $Log = Join-Path $DataDir 'update.log'
 $Status = Join-Path $DataDir 'update-status.txt'
-$Shortcut = Join-Path $ShortcutDir 'Sotto.lnk'
+$Shortcut = Join-Path $ShortcutDir 'Scrivo.lnk'
 $Launcher = Join-Path $Root 'win_launch.py'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
 $Manifest = Join-Path $VenvDir 'sotto-install.json'
@@ -169,8 +169,8 @@ function Restore-Packages([string]$Previous) {
 $deadline = (Get-Date).AddSeconds($WaitSeconds)
 while (@(Running-From-Venv).Count -gt 0 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
 if (@(Running-From-Venv).Count -gt 0) {
-  Say 'Sotto did not quit; nothing was changed.'
-  Set-Content -LiteralPath $Status -Value 'failed Sotto did not quit, so nothing was changed.' -Encoding UTF8
+  Say 'Scrivo did not quit; nothing was changed.'
+  Set-Content -LiteralPath $Status -Value 'failed Scrivo did not quit, so nothing was changed.' -Encoding UTF8
   exit 1
 }
 
@@ -248,5 +248,5 @@ if ($LASTEXITCODE -ne 0) {
 # Shortcut and install record, keeping the recorded dependency set.
 Logged { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\install-windows.ps1') `
     -SkipSetup $FlavorSwitch -DataDir $DataDir -VenvDir $VenvDir -ShortcutDir $ShortcutDir }
-if ($LASTEXITCODE -ne 0) { Finish $false "Sotto was updated to $version, but its setup did not finish." }
+if ($LASTEXITCODE -ne 0) { Finish $false "Scrivo was updated to $version, but its setup did not finish." }
 Finish $true $version

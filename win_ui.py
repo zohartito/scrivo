@@ -83,9 +83,9 @@ def other_languages(active: str, saved) -> list[str]:
 
 def tooltip(state: str, trigger: str, phase: str) -> str:
     if state == "starting":
-        return f"Sotto — {phase}"[:120]
-    return {"recording": "Sotto — recording", "transcribing": "Sotto — transcribing"}.get(
-        state, f"Sotto — hold {win_hotkey.label(trigger)} to dictate")
+        return f"Scrivo — {phase}"[:120]
+    return {"recording": "Scrivo — recording", "transcribing": "Scrivo — transcribing"}.get(
+        state, f"Scrivo — hold {win_hotkey.label(trigger)} to dictate")
 
 
 def icon_image(state: str):
@@ -108,7 +108,7 @@ def update_report(data_dir=None) -> str | None:
         return None
     path.unlink(missing_ok=True)
     if line.startswith("ok"):
-        return f"Sotto updated ({line[2:].strip()})."
+        return f"Scrivo updated ({line[2:].strip()})."
     return "Update failed: " + line.removeprefix("failed").strip()
 
 class DialogHost:
@@ -135,7 +135,7 @@ class DialogHost:
         try:
             import tkinter as tk
         except ImportError:
-            message_box("Sotto", "This Python has no tkinter, so Settings and Correct can't open. "
+            message_box("Scrivo", "This Python has no tkinter, so Settings and Correct can't open. "
                         "Re-run the python.org installer, choose Modify, and tick 'tcl/tk and IDLE'.",
                         error=True)
             return
@@ -282,7 +282,7 @@ class TrayApp:
     def notify(self, text: str) -> None:
         try:
             if self._icon is not None:
-                self._icon.notify(text, "Sotto")
+                self._icon.notify(text, "Scrivo")
         except Exception:
             pass
 
@@ -297,7 +297,7 @@ class TrayApp:
                     self.notify(message)
             except Exception as exc:
                 self._log(f"! tray action failed: {str(exc)[:120]}")
-                message_box("Sotto", str(exc)[:300], error=True)
+                message_box("Scrivo", str(exc)[:300], error=True)
         return lambda icon, item: threading.Thread(target=work, daemon=True).start()
 
     def _dialog(self, build: Callable, *args) -> Callable:
@@ -308,7 +308,7 @@ class TrayApp:
         Item, Menu = pystray.MenuItem, pystray.Menu
         controller = self.controller
         if controller is None:
-            yield Item(menu_text(f"Sotto — {self._phase}"), None, enabled=False)
+            yield Item(menu_text(f"Scrivo — {self._phase}"), None, enabled=False)
             yield Menu.SEPARATOR
             yield Item("Quit", lambda icon, item: self._quit())
             return
@@ -389,7 +389,7 @@ class TrayApp:
         from tkinter import messagebox
         import updates
         title, text = updates.describe(
-            result, "run git pull, then scripts\\install-windows.ps1, from the Sotto folder.")
+            result, "run git pull, then scripts\\install-windows.ps1, from Scrivo's source folder.")
         offer = updates.offer(result)  # the Mac's offers (app_controller.check_updates)
         if offer == "update":
             if messagebox.askyesno(title, text, parent=root):
@@ -487,7 +487,7 @@ class TrayApp:
             return
         controller = self.controller
         saved = controller.settings()
-        window = self._settings_window = self._window(root, "Sotto settings")
+        window = self._settings_window = self._window(root, "Scrivo settings")
         frame = ttk.Frame(window, padding=14)
         frame.pack(fill="both", expand=True)
 
@@ -543,7 +543,7 @@ class TrayApp:
 
         box = section("General")
         login = tk.BooleanVar(window, value=bool(saved["launch_at_login"]))
-        ttk.Checkbutton(box, text="Launch Sotto when I sign in", variable=login).pack(anchor="w")
+        ttk.Checkbutton(box, text="Launch Scrivo when I sign in", variable=login).pack(anchor="w")
         row = ttk.Frame(box)
         row.pack(anchor="w", pady=(6, 0))
         ttk.Button(row, text="Open dictionary", command=lambda: self._act(
@@ -563,7 +563,7 @@ class TrayApp:
         def save() -> None:
             languages = [code for code, variable in chosen_languages.items() if variable.get()]
             if not 1 <= len(languages) <= user_settings.MAX_LANGUAGES:
-                messagebox.showerror("Sotto settings",
+                messagebox.showerror("Scrivo settings",
                                      f"Choose between 1 and {user_settings.MAX_LANGUAGES} languages "
                                      "for Automatic.", parent=window)
                 return

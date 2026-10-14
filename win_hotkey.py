@@ -17,7 +17,7 @@ arrives with a synthetic left Ctrl that would cancel every capture);
 right-shift (holding it 8 seconds opens the Filter Keys prompt); the Windows
 key (Start menu on release, Win+H voice typing, PowerToys hold-guides).
 
-Events Sotto injects itself (typing, Ctrl+V, the Alt mask) carry
+Events Scrivo injects itself (typing, Ctrl+V, the Alt mask) carry
 win_inject.INJECTED_TAG and are ignored, so a paste can never look like a
 trigger press or a chord.
 """
@@ -68,7 +68,7 @@ def get_async_key_state(vk: int) -> bool:
 
 
 def own_event(_msg, data) -> bool:
-    """pynput win32_event_filter: False drops Sotto's own injected keys."""
+    """pynput win32_event_filter: False drops Scrivo's own injected keys."""
     return (data.dwExtraInfo or 0) != win_inject.INJECTED_TAG
 
 
@@ -83,7 +83,7 @@ class TriggerHook:
         self._engine = engine
         self._mask_menu = mask_menu
         self._down = False
-        # The user's own key-downs so far (Sotto's injected keys never reach
+        # The user's own key-downs so far (Scrivo's injected keys never reach
         # the callbacks): typing after an insert means "scratch that" must
         # not undo it.  Read from other threads; only the hook thread writes.
         self.keydowns = 0

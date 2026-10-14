@@ -3,7 +3,7 @@
 No model load, no microphone, no real hotkey, no keystrokes: ``run`` is driven
 with fakes, subprocess checks stop before the model loads, and every one of
 them runs against its own temporary state (settings, dictionary, History).
-Each test process uses its own single-instance name, so a Sotto running on the
+Each test process uses its own single-instance name, so a Scrivo running on the
 same desktop never collides with the tests.
 """
 from __future__ import annotations
@@ -426,7 +426,7 @@ class QuitAndUpdateTest(unittest.TestCase):
     def test_quit_still_stops_when_finishing_the_recording_fails(self):
         # Ending an orphan capture raised on the quit thread: shutdown was
         # never requested, the gate stayed closed as "quitting" and every
-        # later Quit returned at once — only killing the process stopped Sotto.
+        # later Quit returned at once — only killing the process stopped Scrivo.
         controller, _jobs = self.controller(busy=False)
         self.virtual_clock(controller)
         controller.capture.is_active.return_value = True  # an orphan capture
@@ -434,7 +434,7 @@ class QuitAndUpdateTest(unittest.TestCase):
         logs: list = []
         with mock.patch.object(sotto_win, "log", logs.append):
             controller.quit()
-            self.assertTrue(controller.shutdown.event.wait(5), "Quit always stops Sotto")
+            self.assertTrue(controller.shutdown.event.wait(5), "Quit always stops Scrivo")
         failed = [line for line in logs if "could not be ended" in line]
         self.assertEqual(len(failed), 1, logs)
         controller.on_finish.assert_called_once_with(copy_only=True)
@@ -639,7 +639,7 @@ class MainExitTest(unittest.TestCase):
                     sotto_win.main([])
             self.assertEqual(ctx.exception.code, 1)
             run.assert_not_called()
-            log.assert_any_call("✗ Sotto is already running")
+            log.assert_any_call("✗ Scrivo is already running")
         finally:
             sotto_win.release_instance(held)
 
@@ -1764,11 +1764,11 @@ class QuitRunTest(unittest.TestCase):
     def test_a_console_signal_during_a_restart_stops_instead(self):
         # Ctrl-C or Ctrl-Break while a Restart waited for the dictation in
         # flight requested shutdown but left the restart requested: run()
-        # returned True and main() started Sotto again.
+        # returned True and main() started Scrivo again.
         for signum in (signal.SIGINT, signal.SIGBREAK):
             with self.subTest(signal=signum.name):
                 results, _copied, _texts, logs = self.console_signal_during_a_restart(signum)
-                self.assertFalse(results["restart"], f"{signum!r} stops Sotto, never restarts it")
+                self.assertFalse(results["restart"], f"{signum!r} stops Scrivo, never restarts it")
                 self.assertIn("✓ stopped", logs)
 
     def test_a_console_signal_finishes_the_dictation_in_flight_like_quit(self):
