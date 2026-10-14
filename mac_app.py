@@ -101,7 +101,6 @@ def hand_off(app_executable: str, script: Path, *, folders: list[Path] | None = 
     return target if opened else None
 
 
-
 def legacy_login_item(script: Path, *, folders: list[Path] | None = None, home: Path | None = None) -> Path | None:
     """The old Sotto login item's plist, when it is ours to move or remove: it
     starts this folder's old Sotto.app, or an old Sotto.app that is gone (so
