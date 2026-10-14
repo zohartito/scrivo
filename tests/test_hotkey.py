@@ -363,7 +363,7 @@ class ReviveTests(unittest.TestCase):
         world.send(FakeQuartz.kCGEventTapDisabledByUserInput)
         world.now += 0.5
         world.send(FakeQuartz.kCGEventTapDisabledByUserInput)
-        self.assertEqual(world.logs, ["✗ event tap stays disabled — re-grant Accessibility to Sotto"] * 2)
+        self.assertEqual(world.logs, ["✗ event tap stays disabled — re-grant Accessibility to Scrivo"] * 2)
         self.assertEqual(world.health, [False, False])
 
     def test_without_a_menu_bar_health_is_only_logged(self):

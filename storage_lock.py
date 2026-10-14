@@ -1,4 +1,4 @@
-"""Reentrant, process-wide advisory locking for Sotto's filesystem store."""
+"""Reentrant, process-wide advisory locking for Scrivo's filesystem store."""
 from __future__ import annotations
 
 import os
@@ -61,7 +61,7 @@ _LOCAL = threading.local()
 
 
 def ensure_private_directory(path: Path | str) -> Path:
-    """Create/tighten a Sotto private directory independent of umask."""
+    """Create/tighten a Scrivo private directory independent of umask."""
     directory = Path(path)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if stat.S_ISLNK(os.lstat(directory).st_mode):

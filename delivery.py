@@ -2,7 +2,7 @@
 
 inject() pastes through the general pasteboard (full snapshot, synthetic
 Cmd-V, changeCount-guarded restore, carried forward across overlapping
-pastes) or types it; every key event Sotto posts is tagged as its own.
+pastes) or types it; every key event Scrivo posts is tagged as its own.
 DeliveryQueue is the one FIFO for pastes and "scratch that" undos;
 PendingDeliveries counts what was handed to the main thread but not yet
 delivered. Main thread only, except where a docstring says otherwise.
@@ -36,20 +36,20 @@ except ImportError:  # pragma: no cover - capture itself remains macOS-only
 # Clipboard restore after the synthetic ⌘V. Reading the pasteboard does not
 # change its changeCount and there is no public "the app has read it" signal,
 # so the restore is a bounded wait: long enough for an app that is briefly busy
-# at paste time (Electron hitches, a tab mid-layout) to still read Sotto's text
+# at paste time (Electron hitches, a tab mid-layout) to still read Scrivo's text
 # — the old 0.6 s handed such apps the user's OLD clipboard — and short enough
 # that a user ⌘V a few seconds later gets their own clipboard back. The restore
 # still runs only if changeCount is unchanged (a user ⌘C in the window wins),
 # and overlapping pastes carry the original forward (see inject()).
 RESTORE_DELAY_S = 3.0
-# nspasteboard.org marker on Sotto's own paste write: clipboard managers skip
+# nspasteboard.org marker on Scrivo's own paste write: clipboard managers skip
 # it, so dictations do not pile up in their history (the restore is untouched).
 TRANSIENT_PASTEBOARD_TYPE = "org.nspasteboard.TransientType"
 DELIVERY_POLL_S = 0.15           # re-check a held key this often before pasting
 DELIVERY_WAIT_MAX_S = 30.0       # key held, no recording: give up, the text stays in History
 # The drop note for a dictation History could not keep (F16a/F16b, N16).
 NOT_IN_HISTORY_EITHER = "History could not save it either; please dictate again."
-SOTTO_EVENT_TAG = 0x534F5454     # "SOTT" in kCGEventSourceUserData on every key event Sotto posts
+SOTTO_EVENT_TAG = 0x534F5454     # "SOTT" in kCGEventSourceUserData on every key event Scrivo posts
 
 
 _restore_generation = 0
@@ -106,9 +106,9 @@ def character_before_caret(timeout: float = 0.15) -> str | None:
 
 
 def post_own_event(event) -> None:
-    """Tag a synthetic key event as Sotto's own and post it into the session.
+    """Tag a synthetic key event as Scrivo's own and post it into the session.
 
-    The event tap in run() skips tagged events, so a ⌘V or ⌘Z Sotto posts can
+    The event tap in run() skips tagged events, so a ⌘V or ⌘Z Scrivo posts can
     never be read as a chord that discards a live dictation, nor as the user
     typing (which would disarm "scratch that")."""
     Quartz.CGEventSetIntegerValueField(event, Quartz.kCGEventSourceUserData, SOTTO_EVENT_TAG)
@@ -116,12 +116,12 @@ def post_own_event(event) -> None:
 
 
 def is_own_event(event) -> bool:
-    """Did Sotto post this key event itself (see post_own_event)?"""
+    """Did Scrivo post this key event itself (see post_own_event)?"""
     return Quartz.CGEventGetIntegerValueField(event, Quartz.kCGEventSourceUserData) == SOTTO_EVENT_TAG
 
 
 def post_command_key(keycode: int) -> None:
-    """Press and release ⌘+key (9 = V to paste, 6 = Z to undo) as Sotto's own events."""
+    """Press and release ⌘+key (9 = V to paste, 6 = Z to undo) as Scrivo's own events."""
     for key_down in (True, False):
         event = Quartz.CGEventCreateKeyboardEvent(None, keycode, key_down)
         Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
@@ -172,9 +172,9 @@ def frontmost_pid() -> int | None:
 
 
 def own_window_without_text_field() -> bool:
-    """Is Sotto itself the active app with no text field to take a paste?
+    """Is Scrivo itself the active app with no text field to take a paste?
 
-    Sotto's alerts activate it (ui._alert), and callAfter still runs during
+    Scrivo's alerts activate it (ui._alert), and callAfter still runs during
     their modal loop, so a Cmd-V would land on an OK-only alert and vanish
     (N24). The correction editor's text view still takes dictation. Main
     thread only; an unavailable probe reports False rather than blocking."""
@@ -210,7 +210,7 @@ def inject(text: str, *, insert_mode: str = "paste", spacing: str = "trailing") 
     pasteboard = NSPasteboard.generalPasteboard()
     pending = _pending_restore
     if pending is not None and pasteboard.changeCount() == pending["own_count"]:
-        # The pasteboard still holds Sotto's previous dictation and its restore
+        # The pasteboard still holds Scrivo's previous dictation and its restore
         # has not run yet: carry the user's original forward instead of
         # snapshotting our own text (two pastes inside the restore window).
         snapshot = pending["snapshot"]
@@ -315,7 +315,7 @@ class PendingDeliveries:
 
 
 class DeliveryQueue:
-    """One FIFO for everything Sotto hands to the frontmost app — finished
+    """One FIFO for everything Scrivo hands to the frontmost app — finished
     dictations and "scratch that" undos — in capture order, so a newer result
     can never overtake an older one.
 
@@ -325,7 +325,7 @@ class DeliveryQueue:
     chop the live dictation. The head of the queue waits as long as a
     recording is active (the release delivers it); with no recording, a key
     held longer than DELIVERY_WAIT_MAX_S drops the pending text — it is already
-    in History — with one note. While Sotto's own alert is in front
+    in History — with one note. While Scrivo's own alert is in front
     (own_window_front), the head waits without a bound: a Cmd-V there would
     land nowhere, and the user's next app switch or click on OK delivers it.
 
@@ -356,7 +356,7 @@ class DeliveryQueue:
         self._clock = clock
         self._timer = timer
         self._on_done = on_done          # () -> None: one item left the queue
-        self._own_window_front = own_window_front  # () -> bool: Sotto's alert would get the Cmd-V
+        self._own_window_front = own_window_front  # () -> bool: Scrivo's alert would get the Cmd-V
         self._copy = copy                # (text) -> None: put text on the general clipboard
         self._items: list[tuple] = []
         self._poll_armed = False
@@ -451,11 +451,11 @@ class DeliveryQueue:
             return False
 
     def _wait_for_own_window(self) -> None:
-        """Hold the queue while Sotto's own window is in front (N24); no drop."""
+        """Hold the queue while Scrivo's own window is in front (N24); no drop."""
         self._blocked_since = None
         if not self._waiting:
             self._waiting = True
-            self._log("  paste deferred — Sotto's own window is in front")
+            self._log("  paste deferred — Scrivo's own window is in front")
         self._arm_poll()
 
     def _arm_poll(self) -> None:
@@ -475,11 +475,11 @@ class DeliveryQueue:
             self.last_insert.record(at=self._clock(), target=pid, keydowns=keydowns)
         else:  # N34: every other drop path tells the user, so this one does too
             self._note("Dictation not pasted",
-                       "Secure input is on (a password field may have focus), so Sotto did not "
+                       "Secure input is on (a password field may have focus), so Scrivo did not "
                        "paste. " + ("Open History to copy the text." if in_history else NOT_IN_HISTORY_EITHER))
 
     def _undo(self) -> None:
-        """'scratch that': the app's own ⌘Z, only for Sotto's own recent insert —
+        """'scratch that': the app's own ⌘Z, only for Scrivo's own recent insert —
         same app still in front, nothing typed by the user since (the rule
         voice_commands.LastInsert shares with Windows)."""
         refusal = self.last_insert.refusal(now=self._clock(), target=self._frontmost_pid,

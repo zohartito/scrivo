@@ -1,4 +1,4 @@
-"""Sotto's Settings window (macOS): every choice in one place, applied live.
+"""Scrivo's Settings window (macOS): every choice in one place, applied live.
 
 The window only renders state and reports changes. A small model object owned
 by the running app supplies ``state()`` and applies ``change(key, value)`` and
@@ -107,7 +107,7 @@ class SettingsController(AppKit.NSObject):
             AppKit.NSMakeRect(0, 0, WIDTH, height),
             AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable,
             AppKit.NSBackingStoreBuffered, False)
-        self.window.setTitle_("Sotto Settings")
+        self.window.setTitle_("Scrivo Settings")
         self.window.setReleasedWhenClosed_(False)
         self.window.center()
         view = _Flipped.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, WIDTH, height))
@@ -167,7 +167,7 @@ class SettingsController(AppKit.NSObject):
 
         view.addSubview_(_label("General", AppKit.NSMakeRect(20, y, 300, 20), bold=True)); y += 30
         self._row_label(view, y, "Login")
-        self._checkbox(view, y, "Start Sotto when I log in", "loginToggled:", key="launch_at_login"); y += 24
+        self._checkbox(view, y, "Start Scrivo when I log in", "loginToggled:", key="launch_at_login"); y += 24
         self.controls["login_note"] = _label("", AppKit.NSMakeRect(CONTROL_X, y, CONTROL_W, 16), small=True)
         view.addSubview_(self.controls["login_note"]); y += 26
         self._row_label(view, y, "Dictionary")
@@ -177,7 +177,7 @@ class SettingsController(AppKit.NSObject):
         self.controls["data_path"] = _label("", AppKit.NSMakeRect(CONTROL_X, y, CONTROL_W, 16), small=True)
         self.controls["data_path"].setLineBreakMode_(AppKit.NSLineBreakByTruncatingMiddle)
         view.addSubview_(self.controls["data_path"]); y += 30
-        view.addSubview_(_label("Changes apply to your next dictation. Switching the speech engine restarts Sotto.",
+        view.addSubview_(_label("Changes apply to your next dictation. Switching the speech engine restarts Scrivo.",
                                 AppKit.NSMakeRect(20, y, WIDTH - 40, 16), small=True))
 
     # -- state ------------------------------------------------------------
@@ -231,7 +231,7 @@ class SettingsController(AppKit.NSObject):
                                                    else AppKit.NSControlStateValueOff)
         self.controls["launch_at_login"].setEnabled_(state["login_available"])
         self.controls["login_note"].setStringValue_(
-            "" if state["login_available"] else "Available when Sotto is installed as Sotto.app.")
+            "" if state["login_available"] else "Available when Scrivo is installed as Scrivo.app.")
         count = state["dictionary_rules"]
         self.controls["dictionary"].setTitle_(f"Open Dictionary ({count} rule{'' if count == 1 else 's'})…")
         self.controls["data_path"].setStringValue_(state["data_dir"])

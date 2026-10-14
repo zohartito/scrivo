@@ -58,7 +58,7 @@ def _fsync_dir(path: Path) -> None:
 
 # str.splitlines() also ends a line at these, and json.dumps(ensure_ascii=False)
 # leaves them raw inside strings: a transcript containing one made every reader
-# that split on them (this one before N4, and older Sotto versions after a
+# that split on them (this one before N4, and older Scrivo versions after a
 # rollback) see a broken row. Written escaped, they are ordinary JSON text.
 _LINE_BREAKS_JSON_LEAVES_RAW = ("\u2028", "\u2029", "\u0085")
 
@@ -176,7 +176,7 @@ class HistoryStore:
         Audio metadata is untrusted durable input.  In particular, never use
         ``resolve()`` here: resolving a metadata-controlled final component
         would turn a retained-path repair or cleanup into a write outside the
-        Sotto store.
+        Scrivo store.
         """
         try:
             info = os.lstat(directory)
@@ -708,7 +708,7 @@ class CaptureSpool:
     keyboard hook never wait on disk, and nothing is written while idle.
     ``release`` deletes a capture's file once a row holds its audio or its
     fate is otherwise decided (a tap, delivered text); a release that comes
-    before the write makes the write skip it. Only the Sotto that ``claim``ed
+    before the write makes the write skip it. Only the Scrivo that ``claim``ed
     the folder spools or recovers: a second copy on the same data folder
     would otherwise take the first one's captures in flight.
     """
@@ -726,7 +726,7 @@ class CaptureSpool:
 
     def claim(self) -> bool:
         """Own this data folder's spool for the life of the process; False
-        when another running Sotto owns it.
+        when another running Scrivo owns it.
 
         Side effects: creates the private folder and its ``.owner`` lock file."""
         ensure_private_directory(self.directory)
@@ -830,7 +830,7 @@ class CaptureSpool:
         _fsync_dir(self.directory)
 
     def leftovers(self) -> list[SpooledCapture]:
-        """Captures a stopped Sotto left here, oldest first ([] unless claimed)."""
+        """Captures a stopped Scrivo left here, oldest first ([] unless claimed)."""
         if not self.claimed:
             return []
         found = []

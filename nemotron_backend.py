@@ -1,6 +1,6 @@
 """Pinned, offline Nemotron English ASR through NVIDIA's stable C ABI.
 
-The recognizer and each stream are driven by Sotto's one transcription worker.
+The recognizer and each stream are driven by Scrivo's one transcription worker.
 No network, microphone, server, or background decoder is created here.
 ABI: NVIDIA/NeMo-Speech.cpp v0.1.0, include/nemo_speech/asr.h.
 """

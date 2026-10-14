@@ -654,7 +654,7 @@ class ReviveTests(unittest.TestCase):
 
         app = run_app(self, drive)
         self.assertEqual(app.logged("✗ event tap stays disabled"),
-                         ["✗ event tap stays disabled — re-grant Accessibility to Sotto"])
+                         ["✗ event tap stays disabled — re-grant Accessibility to Scrivo"])
         self.assertEqual(app.logged("! event tap re-enabled"), [])
         self.assertEqual(app.tap_health(), [False])
 
