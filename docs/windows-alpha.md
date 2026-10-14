@@ -1,10 +1,10 @@
-# Sotto — Windows source alpha
+# Scrivo — Windows source alpha
 
 Local push-to-talk dictation for Windows 10/11. Hold right Ctrl, speak,
 release; the text lands at the cursor. Whisper only (faster-whisper /
 CTranslate2), on an NVIDIA GPU when one works and on the CPU otherwise.
 
-Sotto runs as a **tray app** (Start Menu shortcut, no console window) with a
+Scrivo runs as a **tray app** (Start Menu shortcut, no console window) with a
 menu for History, Language, Speed, Progress (including all-time words and time
 saved), the personal Dictionary, Settings (with English voice commands and
 filler cleanup) and
@@ -30,7 +30,7 @@ dependencies have their own licenses.
   apps access your microphone** turned on.
 - Optional NVIDIA GPU: a driver with CUDA 12 support (release 528 or newer).
   No CUDA Toolkit install is needed; the pip CUDA extras carry cuBLAS and the
-  ctranslate2 wheel carries cuDNN. Without a working GPU Sotto uses the CPU.
+  ctranslate2 wheel carries cuDNN. Without a working GPU Scrivo uses the CPU.
 - About 6 GB free disk for the environment, caches and the default model
   (1.6 GB; the Fast speed adds 0.5 GB). Several GB of
   RAM (CPU) or about 2 GB of VRAM (GPU) for the default model.
@@ -57,16 +57,16 @@ data folder `%LOCALAPPDATA%\sotto-alpha` (`-DataDir` overrides), downloads the
 pinned speech model (about 1.6 GB, into `huggingface\` there) and the pinned
 Silero VAD v6.2 voice detection (2.3 MB, SHA-256 checked) with
 `sotto_win.py setup` (`-SkipSetup` leaves the model to the first launch), and
-adds a Start Menu shortcut **Sotto** that starts the tray app without a
+adds a Start Menu shortcut **Scrivo** that starts the tray app without a
 console window, with that data folder applied. No admin rights, services or
 scheduled tasks. Running it again is safe and updates the environment; it
 keeps the CPU or CUDA set recorded at install (`-Cpu` / `-Cuda` switch it). It
-stops without changing anything while Sotto runs from that environment (quit
-Sotto first), and when the Start Menu already has a **Sotto** shortcut that
+stops without changing anything while Scrivo runs from that environment (quit
+Scrivo first), and when the Start Menu already has a **Scrivo** shortcut that
 starts another copy (remove that copy with its own `-Uninstall`, or pass
 `-ShortcutDir`); a shortcut to a copy that no longer exists is replaced.
 
-Then start **Sotto** from the Start Menu. A tray icon appears (grey while the
+Then start **Scrivo** from the Start Menu. A tray icon appears (grey while the
 model warms up); a "Ready — hold Right Ctrl to dictate" notification says when
 you can dictate. Launches use the cached model with no network access.
 
@@ -117,8 +117,8 @@ right-ctrl**. To forbid any network access:
 $env:SOTTO_OFFLINE = "1"; $env:HF_HUB_OFFLINE = "1"; $env:TRANSFORMERS_OFFLINE = "1"
 ```
 
-Offline with no cached model, Sotto stops with a one-line explanation (in the
-tray app, a message box) instead of downloading. Only one Sotto runs per
+Offline with no cached model, Scrivo stops with a one-line explanation (in the
+tray app, a message box) instead of downloading. Only one Scrivo runs per
 Windows sign-in (two would insert every dictation twice); a second start says
 it is already running.
 
@@ -163,7 +163,7 @@ Right-click the tray icon (left-click opens Settings):
   saved audio again and copies the new text to the clipboard (it never pastes).
 - **Language** — Automatic (among your languages), each of your languages,
   and **Other languages** (common ones); a specific language is always forced.
-- **Speed** — Accurate or Fast; switching restarts Sotto once the current
+- **Speed** — Accurate or Fast; switching restarts Scrivo once the current
   dictation is done.
 - **Progress** — see below. **Dictionary** — opens your dictionary in Notepad.
 - **Settings…**, **Restart** (finishes a dictation in flight first and ignores
@@ -171,12 +171,12 @@ Right-click the tray icon (left-click opens Settings):
   hands-free recording, 10 minutes, and its transcription on the CPU, then
   restarts anyway and logs what it abandoned), **Quit**.
 - **Check for updates…** — compares this git copy with GitHub. **Update**
-  waits for Sotto to quit, installs the new version's pinned packages (the CPU
+  waits for Scrivo to quit, installs the new version's pinned packages (the CPU
   or CUDA set recorded at install) before it switches the source, and puts the
   previous packages back if that fails, so the source never runs on the wrong
-  packages. Sotto starts again either way, and the tray then says whether the
+  packages. Scrivo starts again either way, and the tray then says whether the
   update worked; the details are in `update.log` in the data folder. The
-  one-line `get.ps1` refuses to update a copy while Sotto runs from it.
+  one-line `get.ps1` refuses to update a copy while Scrivo runs from it.
 
 Opening the tray menu takes the focus away from the app you were dictating
 into, so a dictation finished with **Finish dictation** is copied to the
@@ -185,7 +185,7 @@ clipboard (a notification says so) instead of being inserted.
 Voice commands work as on the Mac (English dictation, Settings can turn them
 off): "new line", "new paragraph", and **"scratch that"** said on its own,
 which undoes your last dictation with the app's own Ctrl+Z. It only undoes
-Sotto's own insert: within a minute of it, while the same window is still in
+Scrivo's own insert: within a minute of it, while the same window is still in
 front, and only if you have not typed since; otherwise nothing happens and
 `sotto.log` says why. A "scratch that" finished from the tray undoes nothing
 (the menu has the focus), and a notification says so.
@@ -199,7 +199,7 @@ front, and only if you have not typed since; otherwise nothing happens and
 | Insert text by | Paste (clipboard put back) or Type (clipboard untouched) | Next dictation |
 | Spacing | Smart, Add a space, No space | Next dictation |
 | Speed | Accurate or Fast | After restart |
-| Launch Sotto when I sign in | On/off | Immediately |
+| Launch Scrivo when I sign in | On/off | Immediately |
 
 Settings also has **Open dictionary**, **Show data folder** and the Progress
 numbers. Settings live in `settings.json` in the data folder.
@@ -209,13 +209,13 @@ invisible to Windows); right Alt (it is AltGr on many non-US layouts, and
 arrives with a synthetic left Ctrl that would cancel every
 capture); right Shift (holding it 8 seconds opens the Filter Keys prompt); the
 Windows key (Start menu, Win+H voice typing, PowerToys hold guides). With
-**Left Alt**, Sotto sends an unassigned key on each press so releasing Alt
+**Left Alt**, Scrivo sends an unassigned key on each press so releasing Alt
 does not open the app's menu bar.
 
 ## Personal dictionary and corrections
 
 The dictionary is a plain text file, `dictionary.txt` in the data folder, with
-one rule per line: `what Sotto hears => what you want written`, for example
+one rule per line: `what Scrivo hears => what you want written`, for example
 `whisper flow => Wispr Flow`. Matching ignores case and replaces whole words or
 phrases. Rules apply to the final text right before it is inserted (and to a
 Retry), never to text kept back as suspect. When a rule changes a dictation,
@@ -224,14 +224,14 @@ counts replacements.
 
 **History → Correct…** opens the text for editing. Saving stores the
 correction (same shared History logic as the Mac). If the correction replaced
-words, Sotto asks **"Always write these your way?"** with a checkbox per
+words, Scrivo asks **"Always write these your way?"** with a checkbox per
 suggested rule; only the rules you confirm are added.
 
 ## Languages
 
 **Automatic** chooses among your languages (Settings → Languages, English by
 default). With only one language chosen it skips detection and transcribes in
-that language, so add every language you speak. Otherwise Sotto detects the
+that language, so add every language you speak. Otherwise Scrivo detects the
 language once, takes the most likely of
 your languages, and transcribes with that language fixed. Speech that is
 clearly another language (your languages score below 25% and another language
@@ -279,19 +279,19 @@ languages. Use Accurate if Fast makes mistakes in yours.
 
 ## Insertion: paste or type
 
-- **Paste** (default): Sotto offers the text on the clipboard, marked so that
+- **Paste** (default): Scrivo offers the text on the clipboard, marked so that
   Windows Clipboard History, cloud clipboard sync and clipboard managers skip
   it, and sends Ctrl+V. The text is handed over only when the app actually
-  reads it (delayed rendering); a moment later Sotto puts your previous
+  reads it (delayed rendering); a moment later Scrivo puts your previous
   clipboard back, unless you copied something new meanwhile (your copy wins).
   If the app never reads it (for example a terminal that ignores Ctrl+V), the
   clipboard comes back after 10 seconds. If the clipboard is busy, very large,
   holds content that cannot be restored exactly (for example Office drawings)
   or holds content its owner marked private (password managers that clear the
-  clipboard themselves), Sotto types the text instead and leaves the clipboard
-  alone. If another program holds the clipboard when Sotto puts yours back,
+  clipboard themselves), Scrivo types the text instead and leaves the clipboard
+  alone. If another program holds the clipboard when Scrivo puts yours back,
   it retries for a few seconds, then with the next paste and at Quit.
-  Restored content is not added to Clipboard History again, and nothing Sotto
+  Restored content is not added to Clipboard History again, and nothing Scrivo
   puts on the clipboard (restores, History → Copy, Retry) is uploaded by
   cloud clipboard sync.
 - **Type**: the text arrives as Unicode keystrokes (`SendInput`); the
@@ -299,11 +299,12 @@ languages. Use Accurate if Fast makes mistakes in yours.
 - **Spacing**: *Add a space* appends one space so consecutive dictations do
   not run together; *No space* appends nothing. *Smart* behaves like *Add a
   space* on Windows: there is no reliable, app-independent way to read the
-  character before the cursor, so Sotto never guesses a leading space.
+  character before the cursor, so Scrivo never guesses a leading space.
 
 ## Launch at login
 
-Settings → **Launch Sotto when I sign in** adds one per-user value, `Sotto`,
+Settings → **Launch Scrivo when I sign in** adds one per-user value, `Sotto`
+(the name Scrivo had before; kept so existing entries keep working),
 under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, which starts the
 tray app with pythonw and the same data folder. Turning it off removes that
 value; Task Manager → Startup apps can also disable it. No service or
@@ -335,7 +336,7 @@ about 0.2 seconds.
 
 ## Command-line options
 
-- `--tray` runs the tray app; without it Sotto is a console program.
+- `--tray` runs the tray app; without it Scrivo is a console program.
 - `--trigger right-ctrl|left-ctrl|left-option|left-shift` for one run.
 - `--language auto|en|fr|…` fixes or frees the decode language for one run.
 - `--glossary FILE` adds a local UTF-8 word list as a decoding hint.
@@ -358,7 +359,7 @@ stay. History is also how you recover text that an application refused.
 
 ## Local data and removal
 
-Everything Sotto writes lives in the data folder
+Everything Scrivo writes lives in the data folder
 (`%LOCALAPPDATA%\sotto-alpha` with the installer):
 
 | Location in that folder | Contents |
@@ -370,10 +371,10 @@ Everything Sotto writes lives in the data folder
 | `huggingface\` | Model cache (`SOTTO_HF_HOME`) |
 | `models\silero_vad.onnx` | Pinned Silero VAD v6.2, installed by `setup` |
 
-Without the variables (or the installer's shortcut), Sotto uses
+Without the variables (or the installer's shortcut), Scrivo uses
 `%APPDATA%\sotto` for data and `%APPDATA%\sotto\huggingface` for models.
 
-To uninstall: quit Sotto, then
+To uninstall: quit Scrivo, then
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -Uninstall              # keeps your data
@@ -381,7 +382,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -Uninstall 
 ```
 
 `-Uninstall` removes the Start Menu shortcut and the login entry when they
-start this copy of Sotto, and `venv-alpha` if the installer created it.
+start this copy of Scrivo, and `venv-alpha` if the installer created it.
 `-RemoveData` deletes the data folder only if the installer created it, and
 never `%APPDATA%\sotto`. Then delete the source folder. pip's download cache
 (`%LOCALAPPDATA%\pip\cache`), text inserted into other apps, backups and File
@@ -397,14 +398,14 @@ History copies are separate.
   Settings/Correct windows on a desktop have not been verified by a person.
 - Elevated (administrator) windows, UAC prompts and the sign-in screen ignore
   synthetic input, as can some games, remote-desktop clients and terminals.
-  Do not run Sotto elevated to work around this.
+  Do not run Scrivo elevated to work around this.
 - The trigger uses a low-level keyboard hook (pynput). Windows passes every key
-  event through it; Sotto uses only the trigger key and whether another key
+  event through it; Scrivo uses only the trigger key and whether another key
   joins a hold, and records no keystrokes. Some security software may warn
   about keyboard hooks.
 - Paste restores the clipboard shortly after the foreground app reads the
   offered text. When another program reads it first (a clipboard tool that
-  ignores the "skip me" markers), Sotto waits up to 10 seconds instead; an app
+  ignores the "skip me" markers), Scrivo waits up to 10 seconds instead; an app
   busy for longer than that would paste your previous clipboard. A clipboard
   tool that ignores the markers can also keep its own copy of the dictation.
   Use Type for such setups.
@@ -427,10 +428,10 @@ History copies are separate.
 - **No tray icon:** check the hidden-icons area (^) on the taskbar; the icon is
   grey while the model loads. `sotto.log` in the data folder says what it is
   doing.
-- **"Sotto is already running":** another Sotto (tray or console) is running
+- **"Scrivo is already running":** another Scrivo (tray or console) is running
   in this Windows sign-in; quit it from its tray menu or its console.
 - **`✗ microphone`:** pick a default input in **Settings → System → Sound**
-  and check the microphone privacy switch for desktop apps. Sotto records from
+  and check the microphone privacy switch for desktop apps. Scrivo records from
   the Windows default input through PortAudio's default host API (MME), which
   converts to 16 kHz. `! mic open failed` in the log (and a "Could not start
   the microphone" notification; the press is cancelled) usually means another

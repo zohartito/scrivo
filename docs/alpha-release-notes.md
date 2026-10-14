@@ -1,4 +1,4 @@
-# Sotto 0.1.0-alpha
+# Scrivo 0.1.0-alpha
 
 Local, offline push-to-talk dictation for macOS and Windows: hold a key, speak,
 release, and the text lands at the cursor. Speech is transcribed on your
@@ -14,12 +14,12 @@ computer; there is no account, cloud service or telemetry.
   streaming while you talk). Windows runs Whisper on an NVIDIA GPU or the CPU.
 - **Your languages.** Automatic picks among the languages you choose (English
   by default). With two or more chosen, speech that is clearly another
-  language is written as spoken rather than translated; with one, Sotto skips
+  language is written as spoken rather than translated; with one, Scrivo skips
   detection and writes in that language, so add every language you speak.
 - **Fast.** On an M4 Max with synthetic speech: about 0.3 s from release to
   text with Whisper, about 0.13 s at the Fast speed, 50–190 ms with Parakeet and
   about 30 ms with Nemotron.
-- **Learns your spellings.** Correct a transcript in History and Sotto offers
+- **Learns your spellings.** Correct a transcript in History and Scrivo offers
   the change as a dictionary rule for every later dictation. A glossary helps
   Whisper hear names and terms. **Your progress** shows what it has learned and
   your all-time words and time saved versus typing.
@@ -32,7 +32,7 @@ computer; there is no account, cloud service or telemetry.
   short phrases Whisper invents on silence ("Thank you.") and repetition loops
   are held back in History instead of pasted.
 - **A real app.** Menu-bar app with a Settings window on the Mac (built as
-  Sotto.app by the installer), a tray app on Windows, and start at login on both.
+  Scrivo.app by the installer), a tray app on Windows, and start at login on both.
 
 ## Install
 
@@ -40,20 +40,20 @@ Mac — Apple Silicon, macOS 14 or later, Python 3.12 and Apple's command line
 tools (`xcode-select --install`). One line in Terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
 ```
 
 or clone it yourself and run `scripts/install-mac.sh`.
 
 The script installs the pinned dependencies, downloads the speech model once
-(about 1.6 GB, pinned to an exact revision) and builds Sotto.app in
-Applications. Open it, allow the Microphone and turn Sotto on under Privacy &
-Security → Accessibility. Update later with **Check for Updates…** in Sotto's
+(about 1.6 GB, pinned to an exact revision) and builds Scrivo.app in
+Applications. Open it, allow the Microphone and turn Scrivo on under Privacy &
+Security → Accessibility. Update later with **Check for Updates…** in Scrivo's
 menu (or `scripts/install-mac.sh --update`).
 
 Windows — Windows 10/11 x64 with Git and 64-bit Python 3.13. One line in
-PowerShell: `irm https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.ps1 | iex`
-(or clone it and run `scripts\install-windows.ps1`), then start Sotto from the
+PowerShell: `irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex`
+(or clone it and run `scripts\install-windows.ps1`), then start Scrivo from the
 Start menu. Details: [windows-alpha.md](windows-alpha.md).
 
 The one-line installers and **Check for Updates** follow the `main` branch,
@@ -71,10 +71,10 @@ it with `shasum -a 256` against the published SHA-256.
   SUPER). Other Macs, macOS 14–26 and ARM Windows are untested.
 - The app is built on your computer and is not notarized. Updates are manual:
   Check for Updates contacts GitHub only when you click it. After an update
-  that rebuilds the app, macOS may need Sotto removed and re-added under
+  that rebuilds the app, macOS may need Scrivo removed and re-added under
   Accessibility; the app says so when needed.
 - Secure fields and some apps refuse simulated paste. Use History → Copy.
-- A Bluetooth microphone that reconnects can need **Restart Sotto** from the
+- A Bluetooth microphone that reconnects can need **Restart Scrivo** from the
   menu.
 - Parakeet and Nemotron do not use the glossary. Nemotron is English only.
 

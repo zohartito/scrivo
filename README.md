@@ -1,4 +1,4 @@
-# Sotto
+# Scrivo
 
 **Hold a key, talk, and your words appear wherever you're typing.**
 Free and open source. It runs on your Mac, so your voice never leaves it.
@@ -21,30 +21,30 @@ line below (point at the box and a copy button appears at its right end),
 paste it into Terminal with **⌘ V**, and press **Return**.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
 ```
 
 <img src="docs/images/step1-terminal.png" width="720" alt="A Terminal window with the install line pasted in, ready to press Return.">
 
-It downloads Sotto and its speech model (about 1.6 GB the first time), so give it
+It downloads Scrivo and its speech model (about 1.6 GB the first time), so give it
 a few minutes. It is finished when Terminal says **Done**. If it stops with a
 message instead, do what the message says and paste the line again:
 
 - *First install Apple's command line tools*: paste `xcode-select --install`,
   press Return, and click **Install** in the window that opens.
-- *Sotto needs Python 3.12*: download the macOS installer for Python 3.12 from
+- *Scrivo needs Python 3.12*: download the macOS installer for Python 3.12 from
   [python.org](https://www.python.org/downloads/macos/) and open it.
 
-### 2. Open Sotto and say yes to two questions
+### 2. Open Scrivo and say yes to two questions
 
-Open **Sotto** like any app (⌘ Space, type `Sotto`, Return). It asks for two things:
+Open **Scrivo** like any app (⌘ Space, type `Scrivo`, Return). It asks for two things:
 
 - **Accessibility**, so it can hear your key and type for you. Click
-  **Open System Settings** and switch **Sotto** on. (Newer macOS calls this
+  **Open System Settings** and switch **Scrivo** on. (Newer macOS calls this
   list *Device Control and Data Access*.)
-- **The microphone**. Click **Allow**. Sotto only listens while you are dictating.
+- **The microphone**. Click **Allow**. Scrivo only listens while you are dictating.
 
-<img src="docs/images/step2-switch.png" width="560" alt="Sotto switched on in System Settings.">
+<img src="docs/images/step2-switch.png" width="560" alt="Scrivo switched on in System Settings.">
 
 ### 3. Hold Right Option ⌥, talk, let go
 
@@ -52,11 +52,11 @@ Click where you want the words to go: an email, a note, a chat. Hold the
 **Option ⌥** key on the right side of the space bar, say your sentence, and let
 go. Your words appear at the cursor.
 
-<img src="docs/images/step3-pill.png" width="560" alt="The Sotto pill at the top of the screen: an orange dot and the words being spoken.">
+<img src="docs/images/step3-pill.png" width="560" alt="The Scrivo pill at the top of the screen: an orange dot and the words being spoken.">
 
 While you hold the key, a small pill with an orange dot sits at the top of the
-screen: Sotto is listening. For longer dictation, tap the key twice quickly and
-talk hands-free; tap it once more to stop. Sotto lives in the menu bar at the
+screen: Scrivo is listening. For longer dictation, tap the key twice quickly and
+talk hands-free; tap it once more to stop. Scrivo lives in the menu bar at the
 top right: its menu keeps your recent dictations (copy any of them again),
 **Settings…** (another key, your languages, starting at login) and **Quit**.
 
@@ -71,9 +71,9 @@ Local push-to-talk dictation for Apple Silicon Macs (and, separately, Windows).
 Hold a key, speak, release; final text lands at the cursor. Whisper is the
 default and understands 100 languages; Automatic chooses among the languages
 you pick. Optional English-only Nemotron streams while you speak. Corrections
-teach Sotto your spellings, and a Settings window holds every choice.
+teach Scrivo your spellings, and a Settings window holds every choice.
 
-This alpha installs from source: one script builds a local **Sotto.app** (with
+This alpha installs from source: one script builds a local **Scrivo.app** (with
 its own permissions, launch at login and updates), or you can run it from a
 terminal. It is not notarized. Audio and inference stay on your Mac;
 installing dependencies and downloading model files require internet access.
@@ -91,7 +91,7 @@ their own licenses.
   macOS 14–26 and other Apple Silicon chips are untested, so please report
   results.
 - A microphone, permission to use it, and Accessibility permission for the
-  terminal/Python running Sotto.
+  terminal/Python running Scrivo.
 - Allow several GB of memory and at least 8 GB of free disk for the environment,
   model and download caches. Latency and accuracy vary: the speeds quoted below
   were measured on one M4 Max with synthetic speech, and there are no accuracy
@@ -110,10 +110,10 @@ See [Python for macOS](https://www.python.org/downloads/macos/) and
 
 ## Install as an app (recommended)
 
-One line in Terminal downloads Sotto into `~/sotto` and installs it:
+One line in Terminal downloads Scrivo into `~/sotto` and installs it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
 ```
 
 It needs Apple's command line tools and Python 3.12, and says how to install
@@ -123,42 +123,55 @@ extracted source archive):
 
 ```bash
 scripts/install-mac.sh
-open -a Sotto
+open -a Scrivo
 ```
 
 The script checks your Mac (Apple Silicon, macOS 14+, Python 3.12, Apple's
 command line tools), installs the pinned dependencies into `venv-alpha`,
-downloads the speech model once, and builds `Sotto.app` in `/Applications` (or `~/Applications` when you cannot write there). The app
+downloads the speech model once, and builds `Scrivo.app` in `/Applications` (or `~/Applications` when you cannot write there). The app
 is built on your Mac, so macOS does not block it, and it asks for the
-Microphone and Accessibility as **Sotto**. Sotto lives in the menu bar; choose
-**Start Sotto when I log in** under **Settings…**. Its log (counts and timings,
+Microphone and Accessibility as **Scrivo**. Scrivo lives in the menu bar; choose
+**Start Scrivo when I log in** under **Settings…**. Its log (counts and timings,
 never your words) is `logs/sotto.log` in the data folder.
 
-- Update: **Check for Updates…** in Sotto's menu lists what is new and updates
+- Update: **Check for Updates…** in Scrivo's menu lists what is new and updates
   a git clone on request, then restarts. It contacts GitHub only when you click
   it. From a terminal: `scripts/install-mac.sh --update`. Your settings stay.
-  When Sotto was started from a terminal (not as Sotto.app), Check for Updates
-  only lists what is new and shows that command for this folder: quit Sotto,
+  When Scrivo was started from a terminal (not as Scrivo.app), Check for Updates
+  only lists what is new and shows that command for this folder: quit Scrivo,
   then run it.
 - Remove: `scripts/install-mac.sh --uninstall` (removes the app and its login
   item; your data folder stays until you delete it).
 
-Anything that can change this source folder runs with Sotto's permissions, as
+### Scrivo was called Sotto
+
+If you installed it as Sotto, nothing moves: the folder stays `~/sotto`, and your
+History, dictionary, settings and models stay in the same data folder. Choose
+**Check for Updates…** → **Update Now** in Sotto's menu (or paste the install
+line again). The update builds `Scrivo.app`; Sotto restarts once, opens Scrivo
+and quits, and Scrivo then removes the old `Sotto.app` and moves **Start when I
+log in** over. Scrivo is a new app to macOS, so it asks for the Microphone and
+Accessibility again: allow **Scrivo** (the old **Sotto** entries in System
+Settings can be removed with −). Copies cloned from `github.com/zohartito/sotto`
+keep updating (GitHub forwards the old address); the install line also points
+them at the new one.
+
+Anything that can change this source folder runs with Scrivo's permissions, as
 with any source install; keep it in a folder only you control.
 
 ## Install and first launch from a terminal
 
-To run Sotto from a terminal instead of the app:
+To run Scrivo from a terminal instead of the app:
 
 ```bash
-git clone https://github.com/zohartito/sotto.git
+git clone https://github.com/zohartito/scrivo.git sotto
 cd sotto
 python3.12 -m venv venv-alpha
 venv-alpha/bin/python -m pip install pip==26.2.1
 venv-alpha/bin/python -m pip install -r requirements-alpha.txt
 venv-alpha/bin/python -m pip check
 
-# Keep alpha preferences, recordings and models separate from any installed Sotto.
+# Keep alpha preferences, recordings and models separate from any installed Scrivo.
 export SOTTO_DATA_DIR="$HOME/Library/Application Support/sotto-alpha"
 export SOTTO_HF_HOME="$SOTTO_DATA_DIR/huggingface"
 
@@ -181,7 +194,7 @@ for the event tap, allow the same terminal/Python. Quit/reopen the terminal and
 rerun `doctor` after changing permissions. Do not grant a different Python
 installation by mistake.
 
-On first launch, Sotto downloads a pinned revision of the default
+On first launch, Scrivo downloads a pinned revision of the default
 `mlx-community/whisper-large-v3-turbo` model (about 1.6 GB) from Hugging Face
 into the alpha cache, then warms it before printing **listening on
 right-option**. This can take time; it is not ready while downloading/warming.
@@ -197,7 +210,7 @@ SOTTO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 Click a plain text field in Notes or TextEdit, hold **right Option** (or the key
 you chose in Settings) for at least
 0.35 seconds, speak a short sentence, then release. Wait for final text before
-changing fields. Compare it with what you said. Sotto uses the clipboard to
+changing fields. Compare it with what you said. Scrivo uses the clipboard to
 paste and attempts to restore its previous contents; clipboard managers and
 apps may retain what was pasted. In **Settings** you can switch to **Type**
 (dictation never touches the clipboard; History's Copy and Retry put text on it
@@ -219,14 +232,14 @@ fields are never typed or pasted into.
 | Menu → Language | Automatic (among your languages) or one language; saved locally |
 | Menu → Speech engine | Optional Nemotron or Whisper; restart while idle |
 | Menu → Dictionary | Your personal spellings (see below) |
-| Menu → Restart sotto | Restart this foreground process, retaining args/settings |
+| Menu → Restart scrivo | Restart this foreground process, retaining args/settings |
 | Menu → Quit, or Ctrl-C in terminal | Stop this foreground run and release microphone |
 
 The dictation key starts as **right Option**; choose left or right Option,
 Command, Control or Shift, or Fn, in **Settings**. The change applies to the
 next press. Holding the key while pressing another key (a shortcut such as
 ⌘-Tab) never starts dictation. Never let two running dictation tools share a
-key: if another tool (or another Sotto) already uses right Option or
+key: if another tool (or another Scrivo) already uses right Option or
 Control–Option–D, pick a different key in Settings. `--trigger` and `--hotkey`
 override Settings for a single run (`--hotkey ''` disables the alternate hotkey).
 `--no-overlay` hides both overlay and menu bar; use Ctrl-C to stop that run.
@@ -251,7 +264,7 @@ Say **"new line"** or **"new paragraph"** anywhere in a dictation, pauses or not
 for a line break or a blank line ("a new line of products" stays as words).
 Say **"scratch that"** as a dictation of its own, in a new press after the text
 you want gone, to undo that last dictation with the app's own ⌘Z. It only undoes
-Sotto's own insert: within a minute of the paste, while the same app is still
+Scrivo's own insert: within a minute of the paste, while the same app is still
 in front, and only if you have not typed since; otherwise nothing happens and
 the log says why. Filler words (um, uh) are removed with the comma around them.
 Both apply only to dictation the engine reports as English (Whisper and
@@ -259,9 +272,9 @@ Nemotron; Parakeet does not report a language, so its text stays as spoken)
 and can be switched off under **Settings… → Cleanup**; History keeps what the
 model heard.
 
-## Dictionary: Sotto learns your spellings
+## Dictionary: Scrivo learns your spellings
 
-When you fix a transcript with **History → Correct Transcript**, Sotto offers
+When you fix a transcript with **History → Correct Transcript**, Scrivo offers
 the words you changed as rules ("open ai" → "OpenAI", "john smith" →
 "Jon Smyth"). Checked rules go into your personal dictionary and apply to every
 later dictation, and nothing is added without your confirmation. Open
@@ -278,7 +291,7 @@ rewritten text. `venv-alpha/bin/python sotto.py dictionary` lists the rules.
 
 To help Whisper hear names and terms in the first place, list them one per line
 in `glossary.txt` in the same data folder (up to 100 terms; lines starting with
-`#` are ignored) and restart Sotto. `config/sotto-glossary.txt` is an example.
+`#` are ignored) and restart Scrivo. `config/sotto-glossary.txt` is an example.
 The glossary is used with Whisper on captures up to 30 seconds; a terminal run
 can pass its own file with `--glossary FILE`.
 
@@ -293,9 +306,9 @@ Slovenian, Spanish, Swedish and Ukrainian. It does **not** understand other
 languages (it pastes a Latin-letter guess for them): use Whisper for those.
 Download it once from **Settings → Download Parakeet (2.5 GB)** (or
 `venv-alpha/bin/python sotto.py setup --profile parakeet`), then choose it
-while idle; Sotto restarts on the new engine. The model is pinned to one
+while idle; Scrivo restarts on the new engine. The model is pinned to one
 commit, loaded from the local copy, and never needs ffmpeg. Glossary prompts
-do not apply; your dictionary still does. If it cannot load, Sotto returns to
+do not apply; your dictionary still does. If it cannot load, Scrivo returns to
 Whisper.
 
 ## Optional Nemotron (English only)
@@ -330,7 +343,7 @@ and [native runtime](https://github.com/NVIDIA/NeMo-Speech.cpp).
 
 ## Local data and removal
 
-With the commands above, all Sotto-managed alpha state lives under
+With the commands above, all Scrivo-managed alpha state lives under
 `~/Library/Application Support/sotto-alpha`:
 
 | Location relative to that folder | Contents |
@@ -348,7 +361,7 @@ retain audio and suspect output even when no text was pasted. Without the
 alpha variables, legacy defaults are `~/Library/Application Support/sotto`
 for data and `~/Library/Application Support/Sotto/huggingface` for Whisper
 cache; capitalization can matter on case-sensitive volumes. Keep the data
-folder somewhere only you can write, such as the default above. Sotto's
+folder somewhere only you can write, such as the default above. Scrivo's
 privacy guards refuse storage below `/tmp`, `/Users/Shared`, other
 world-writable folders or a symlinked path, and History → Clear then reports an
 error. The same applies to the checkout when you run the test suite.
@@ -359,27 +372,27 @@ Models and preferences stay. See [storage and revocation details](docs/speech-le
 For a complete alpha uninstall, Quit/Ctrl-C first, then move **only your alpha
 folder** and this clone (including `venv-alpha`) to Trash in Finder. This
 removes alpha recordings/transcripts, learning data, settings and model caches.
-Never remove an existing installed Sotto's folder/LaunchAgent as part of this
+Never remove an existing installed Scrivo's folder/LaunchAgent as part of this
 alpha uninstall. To remove only alpha models, quit and move its `huggingface`
 and optional `nemotron` folders to Trash; they need downloading again later.
 
 Saved audio on Desktop, deliberately exported corpora, clipboard-manager
 history, text pasted into other apps, pip's package cache, backups and filesystem
 snapshots are separate copies; remove them separately if needed. Foreground
-logs go to the terminal, not a Sotto log file, unless you redirect them yourself.
+logs go to the terminal, not a Scrivo log file, unless you redirect them yourself.
 Deletion cannot guarantee erasure from backups or SSD snapshots.
 
 ## Troubleshooting
 
-- **No Sotto icon in the menu bar:** on a full menu bar (especially beside the
-  notch) macOS hides new icons behind **«**. Click it to find Sotto's small `◦`,
+- **No Scrivo icon in the menu bar:** on a full menu bar (especially beside the
+  notch) macOS hides new icons behind **«**. Click it to find Scrivo's small `◦`,
   then hold ⌘ and drag the icon to a visible spot. Dictation works either way.
 - **Recording won't stop:** a double-tap starts hands-free mode; one tap of the
   same key stops it (it also stops by itself after 10 minutes).
 - **Permission error / no hotkey:** rerun `doctor` in the same terminal and
   check that terminal/Python's Accessibility and microphone grants. After a
   Python/venv replacement the old grant may no longer apply. For Fn conflicts,
-  use right Option or another supported trigger. Keep one Sotto per trigger.
+  use right Option or another supported trigger. Keep one Scrivo per trigger.
 - **No input / all-zero audio:** select a working input in System Settings →
   Sound. Check headset/Bluetooth routing; try the built-in mic. Use Restart
   from the menu, or Quit and rerun. A silent/dead route is retained as suspect
@@ -410,11 +423,11 @@ recordings, transcripts, caches or a full data folder.
 
 ## Windows
 
-Sotto also runs on Windows 10/11 x64 as a tray app: hold right Ctrl, Whisper
+Scrivo also runs on Windows 10/11 x64 as a tray app: hold right Ctrl, Whisper
 on an NVIDIA GPU or the CPU. In PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/zohartito/sotto/main/scripts/get.ps1 | iex
+irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex
 ```
 
 It needs Git and 64-bit Python 3.13 and says how to install either. Install

@@ -19,14 +19,14 @@ offline launch with a missing receipt/cache fails rather than downloading or
 changing the frozen identity. With zero human gold the state is collecting;
 there is no automatic fine-tuning.
 
-Sotto is local dictation, not a cloud transcription service. This release does
+Scrivo is local dictation, not a cloud transcription service. This release does
 not upload speech, transcripts, corrections, or model data; it does not train
 model weights automatically; and it does not add TTS, diarization, meeting
 capture, or agent features.
 
 ## Choose a candidate before assuming an improvement
 
-Sotto resolves a named profile first, then accepts an explicit repository or
+Scrivo resolves a named profile first, then accepts an explicit repository or
 language override when one is supplied.
 
 | Profile | Local MLX repository | Default language |
@@ -34,7 +34,7 @@ language override when one is supplied.
 | `auto` | `mlx-community/whisper-large-v3-turbo` | auto |
 
 A language-specific fine-tune is a candidate, not an improvement, until a
-personal-corpus A/B comparison shows it is better on Sotto data.
+personal-corpus A/B comparison shows it is better on Scrivo data.
 `--model REPOSITORY` explicitly replaces the repository selected by the
 profile, and `--language CODE` sets the language.
 
@@ -58,13 +58,13 @@ unbounded instruction.
 
 ```text
 # sotto-glossary.txt
-Sotto
+Scrivo
 PyObjC
 MLX
 ```
 
 ```json
-["Sotto", "PyObjC", "MLX"]
+["Scrivo", "PyObjC", "MLX"]
 ```
 
 The glossary is supplied as an initial prompt only for captures of **30
@@ -77,7 +77,7 @@ cannot honestly provide consistent glossary coverage for longer captures.
 In adaptive English, saving **Correct Transcript**, choosing **Transcript is
 correct**, or choosing **No speech / should be blank** is an explicit human
 action. It automatically copies the paired canonical audio and resulting
-reference into Sotto's private local learning corpus. There is no contradictory
+reference into Scrivo's private local learning corpus. There is no contradictory
 second consent popup in adaptive mode. Ordinary non-adaptive correction keeps
 its established separate manual enrollment behavior. Choose **Remove from
 Learning Set**, Delete, or Clear history to revoke local copies.
@@ -122,7 +122,7 @@ Private history, learning, adaptive state, receipts, locks, and temporary audio
 are tightened by the application to owner-only permissions (`0700` directories,
 `0600` files), including retained history WAVs and recoverable learning WAVs
 created by earlier releases. Startup only repairs regular, direct children of
-Sotto's private audio roots; it does not follow metadata paths or symlinks
+Scrivo's private audio roots; it does not follow metadata paths or symlinks
 outside the store. This does not rely on the shell's umask.
 
 **Delete** first revokes every enrolled sample linked to that history item,
@@ -135,14 +135,14 @@ recovery finds the copied artifacts missing or corrupt.
 
 ## What stays on this Mac
 
-Sotto stores its application data under:
+Scrivo stores its application data under:
 
 ```text
 ~/Library/Application Support/sotto/
 ```
 
 History keeps an immutable initial hypothesis, revisions/attempts, and audio
-needed for dictation history. On a human review action, Sotto creates separate
+needed for dictation history. On a human review action, Scrivo creates separate
 copies under its learning area:
 
 - canonical inference audio: PCM16LE, mono, 16 kHz WAV - exactly the bytes
@@ -197,8 +197,8 @@ manifest: each nonblank line has `audio` and `reference`; `id`, `language`,
 manifest location.
 
 ```json
-{"id":"es-001","audio":"audio/es-001.wav","reference":"El texto corregido","language":"es","tags":["dictation","proper-name"],"required_terms":["Sotto"]}
-{"id":"en-001","audio":"audio/en-001.wav","reference":"Open Sotto","language":"en","tags":["dictation"],"required_terms":["Sotto"]}
+{"id":"es-001","audio":"audio/es-001.wav","reference":"El texto corregido","language":"es","tags":["dictation","proper-name"],"required_terms":["Scrivo"]}
+{"id":"en-001","audio":"audio/en-001.wav","reference":"Open Scrivo","language":"en","tags":["dictation"],"required_terms":["Scrivo"]}
 ```
 
 First validate a manifest and candidate names without importing MLX or

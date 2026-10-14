@@ -27,7 +27,7 @@ and 3 explicit no-speech outcomes. The pool is evaluated once; a promoted
 challenger can be rolled back explicitly or automatically after three runtime
 failures, and revoking dependent gold removes its promotion eligibility.
 Each human review is first written as a revision-keyed, content-free recovery
-record; on restart Sotto verifies the retained canonical audio and completes
+record; on restart Scrivo verifies the retained canonical audio and completes
 the matching adaptive/enrollment operation before it can open or advance a
 generation. A fixed incumbent/challenger/configuration comparison is consumed
 once: repeating it requires a changed frozen human input, not merely a new
@@ -166,13 +166,13 @@ venv/bin/python sotto.py learning-rollback
 All models, snapshots, receipts, audio, and evaluation remain on this Mac;
 offline launch fails clearly if the preflighted local snapshot is absent. The
 initial candidate is `mlx-community/whisper-large-v3-turbo`; the first
-challenger is local `mlx-community/parakeet-tdt-0.6b-v2`. At zero gold Sotto is
+challenger is local `mlx-community/parakeet-tdt-0.6b-v2`. At zero gold Scrivo is
 simply collecting—there is no auto-fine-tuning. See [adaptive research](docs/english-adaptive-research.md).
 
 The production LaunchAgent keeps the Whisper model resident but not the
 microphone. With `--idle-release 0`, key-down starts `AVAudioEngine` and
 installs its input tap; key-up immediately stops the engine and removes the
-tap. Sotto therefore does not capture or retain audio while idle, and the
+tap. Scrivo therefore does not capture or retain audio while idle, and the
 macOS microphone indicator is lit only for an active gesture. Production uses
 the receipt-independent Whisper baseline plus the sealed local
 `config/sotto-glossary.txt`; the adaptive candidate route remains an explicit,
@@ -212,10 +212,10 @@ venv/bin/python sotto.py export-learning --output <empty-dir>
 Model files download locally only when their profile or repository is selected
 and run. Corpus administration (`learning-status`, `learning-list`, and
 `learning-remove`), export, and benchmark `--dry-run` do not load models.
-Sotto added no speech upload or cloud provider.
+Scrivo added no speech upload or cloud provider.
 
 A glossary is a local UTF-8 file with one term or short phrase per line (blank lines and `#`
-comments are ignored), or a JSON file containing a string list. Sotto bounds
+comments are ignored), or a JSON file containing a string list. Scrivo bounds
 the number and size of accepted terms to keep the prompt small. Prompting is
 applied only to captures of **30 seconds** or less: installed `mlx-whisper`
 resets the initial prompt between long-form windows when previous-text
@@ -227,10 +227,10 @@ For the full consent, storage, export, evaluation, and training guidance, see
 
 ## Offline backup and restore
 
-Stop both the Sotto app and adaptive worker before invoking this tool; use it
+Stop both the Scrivo app and adaptive worker before invoking this tool; use it
 only against that explicitly quiesced, copied application-state root.  It
 detects in-window source/SQLite drift but cannot prove an absent external
-owner, and never downloads models or starts Sotto.  Backups
+owner, and never downloads models or starts Scrivo.  Backups
 contain private mutable state only (not model/Hugging Face caches, releases,
 logs, locks, or scheduler debris), are content-addressed, and verify before a
 restore is staged.  Restore requires a fresh empty destination and forces its
