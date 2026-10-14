@@ -232,7 +232,7 @@ fields are never typed or pasted into.
 | Menu → Language | Automatic (among your languages) or one language; saved locally |
 | Menu → Speech engine | Optional Nemotron or Whisper; restart while idle |
 | Menu → Dictionary | Your personal spellings (see below) |
-| Menu → Restart scrivo | Restart this foreground process, retaining args/settings |
+| Menu → Restart Scrivo | Restart this foreground process, retaining args/settings |
 | Menu → Quit, or Ctrl-C in terminal | Stop this foreground run and release microphone |
 
 The dictation key starts as **right Option**; choose left or right Option,

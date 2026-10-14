@@ -1,4 +1,4 @@
-"""scrivo's voice indicator — a quiet ember, not a waveform.
+"""Scrivo's voice indicator — a quiet ember, not a waveform.
 
 A small glassy island at top-center holds a single warm orb that breathes
 with the smoothed voice level (fast attack, slow decay, eased core-animation
@@ -389,8 +389,8 @@ class StatusUI:
                                      ("Finish recording now", "finishNow:", ""),
                                      ("Settings…", "openSettings:", ","),
                                      ("Check for Updates…", "checkUpdates:", ""),
-                                     ("Restart scrivo", "restart:", ""),
-                                     ("Quit scrivo", "quit:", "")):
+                                     ("Restart Scrivo", "restart:", ""),
+                                     ("Quit Scrivo", "quit:", "")):
             item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
                 label, selector, key)
             item.setTarget_(self._target)

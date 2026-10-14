@@ -576,9 +576,9 @@ class CaptureService:
             if now - self._restart_deferred_at > 60.0:
                 self._restart_deferred_at = now
                 log("! mic still silent in a freshly started process — check "
-                    "the mic in System Settings; 'Restart scrivo' is in the menu")
+                    "the mic in System Settings; 'Restart Scrivo' is in the menu")
             return False
-        log("! mic still silent after a fresh audio engine — restarting scrivo")
+        log("! mic still silent after a fresh audio engine — restarting Scrivo")
         try:
             if self.restart_callback is None:
                 log("! no runtime restart handler; quit and launch Scrivo again")
