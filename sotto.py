@@ -10,7 +10,7 @@ Gestures (on whichever trigger key you pick; right Option by default):
     python sotto.py run --trigger fn         # another trigger key
     python sotto.py doctor                   # permission + device checks
 
-The installed Sotto.app asks for the Microphone and Accessibility itself; a
+The installed Scrivo.app asks for the Microphone and Accessibility itself; a
 terminal run needs both granted to the terminal. Speech engines (Whisper via
 mlx-whisper, Parakeet, Nemotron) run on this Mac; model files download once,
 at pinned revisions, and audio never leaves the Mac.
@@ -95,7 +95,7 @@ HISTORY_KEEP = 200   # every stored transcript is listed; the menu scrolls
 FAST_MARGIN_FRAMES = 500         # Fast: encode the speech plus 5 s, not a padded 30 s
 MODEL_REWARM_AFTER_S = 240.0
 
-# Sotto keeps its small, required Whisper model on the Mac itself.  The general
+# Scrivo keeps its small, required Whisper model on the Mac itself.  The general
 # Hugging Face cache may live on removable storage, but dictation must still
 # start when that drive is absent.  Set SOTTO_HF_HOME to override this location.
 from sotto_paths import MODEL_CACHE_DIR
@@ -109,7 +109,7 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
 
 def glossary_source(explicit: str | None) -> Path | None:
-    """--glossary wins; otherwise glossary.txt in the data folder, so Sotto.app
+    """--glossary wins; otherwise glossary.txt in the data folder, so Scrivo.app
     (which takes no arguments) can be taught names and terms too."""
     if explicit:
         return Path(explicit)
@@ -119,9 +119,11 @@ def glossary_source(explicit: str | None) -> Path | None:
 
 
 def sotto_icon_path() -> Path | None:
-    """Sotto.app's icon, found from the launcher that started this process."""
+    """Scrivo.app's icon, found from the launcher that started this process
+    (named after it: Scrivo.icns, or Sotto.icns in an app built before the rename)."""
     executable = os.environ.get("SOTTO_APP_EXECUTABLE", "").strip()
-    icon = Path(executable).parent.parent / "Resources" / "Sotto.icns" if executable else None
+    icon = (Path(executable).parent.parent / "Resources" / f"{Path(executable).name}.icns"
+            if executable else None)
     return icon if icon is not None and icon.is_file() else None
 
 
@@ -134,7 +136,7 @@ ACCESSIBILITY_PROBE = (
 def accessibility_granted_now() -> bool:
     """AXIsProcessTrusted() asks tccd once per process and then repeats that
     answer, so polling it never sees the switch turn on. A fresh child asks
-    again, and macOS attributes it to the same app (Sotto)."""
+    again, and macOS attributes it to the same app (Scrivo)."""
     import subprocess
     try:
         return subprocess.run([sys.executable, "-I", "-S", "-c", ACCESSIBILITY_PROBE],
@@ -144,7 +146,7 @@ def accessibility_granted_now() -> bool:
 
 
 def explain_permission(title: str, message: str, pane: str, *, granted=None, register=None) -> bool:
-    """In Sotto.app there is no terminal to read: say what is missing and
+    """In Scrivo.app there is no terminal to read: say what is missing and
     offer the exact System Settings pane. With ``granted`` the dialog waits
     and returns True once the permission is on; Quit returns False."""
     import ui
@@ -166,7 +168,7 @@ def persist_engine_and_restart(mode: str, restart, on_failure=None) -> None:
 
     try:
         if not restart(on_failure=restore):
-            raise RuntimeError("Sotto is already shutting down")
+            raise RuntimeError("Scrivo is already shutting down")
     except Exception:
         save_engine_mode(previous)
         raise
@@ -216,7 +218,7 @@ def seed_totals(store) -> None:
 
 
 def apply_personal_dictionary(text: str, preprocessing: dict) -> str:
-    """pipeline.apply_personal_dictionary, logging to Sotto's log."""
+    """pipeline.apply_personal_dictionary, logging to Scrivo's log."""
     return pipeline.apply_personal_dictionary(text, preprocessing, log)
 
 
@@ -254,7 +256,7 @@ def desktop_audio_path(folder: Path, timestamp: float) -> Path:
     running at once can never pick the same name.
     """
     import datetime
-    stem = f"sotto-{datetime.datetime.fromtimestamp(timestamp):%Y%m%d-%H%M%S}"
+    stem = f"scrivo-{datetime.datetime.fromtimestamp(timestamp):%Y%m%d-%H%M%S}"
     candidate, number = folder / f"{stem}.wav", 2
     while True:
         try:
@@ -692,21 +694,21 @@ def history_coordinator(store, learning_store):
 def history_unreadable_message(store) -> str:
     # Never suggest moving or deleting the file: a launch with no index would
     # treat every kept recording as an orphan and sweep it.
-    cause, remedy = (("it was written by a newer version of Sotto", "update Sotto again")
+    cause, remedy = (("it was written by a newer version of Scrivo", "update Scrivo again")
                      if store.unreadable.newer_schema else
                      ("part of it is damaged", "repair the damaged line"))
-    return (f"Sotto cannot read {store.index} because {cause}. The file and its recordings "
+    return (f"Scrivo cannot read {store.index} because {cause}. The file and its recordings "
             "were left exactly as they are. Dictation still works, but new dictations are "
-            f"not saved to History until the file can be read again: {remedy}, then restart Sotto.")
+            f"not saved to History until the file can be read again: {remedy}, then restart Scrivo.")
 
 
 def learning_unreadable_message(learning_store) -> str:
     # As for History: never suggest moving or deleting the file, which would
     # make every kept learning recording look like an orphan.
-    return (f"Sotto cannot read {learning_store.unreadable.path} because part of it is damaged. "
+    return (f"Scrivo cannot read {learning_store.unreadable.path} because part of it is damaged. "
             "Your learning set and History were left exactly as they are. Dictation still works, but "
             "new dictations are not saved to History until the file can be read again: repair the "
-            "damaged line, then restart Sotto.")
+            "damaged line, then restart Scrivo.")
 
 
 def unreadable_store_alert(store, learning_store) -> tuple[str, str] | None:
@@ -719,9 +721,9 @@ def unreadable_store_alert(store, learning_store) -> tuple[str, str] | None:
     return None
 
 
-# A live capture Sotto stopped before transcribing (N9, N9b): its audio is
+# A live capture Scrivo stopped before transcribing (N9, N9b): its audio is
 # kept in History under this text so Retry can transcribe it.
-NOT_TRANSCRIBED_TEXT = "[not transcribed: Sotto stopped]"
+NOT_TRANSCRIBED_TEXT = "[not transcribed: Scrivo stopped]"
 
 
 def append_untranscribed_capture(coordinator, *, raw, native_rate, captured_ts, model, speech_config,
@@ -748,7 +750,7 @@ def append_untranscribed_capture(coordinator, *, raw, native_rate, captured_ts, 
 
 
 def recover_capture_spool(spool, store, coordinator, *, model, speech_config, glossary_terms, log) -> int:
-    """At launch, before the UI: every capture a stopped Sotto left in the
+    """At launch, before the UI: every capture a stopped Scrivo left in the
     spool (N9b: a crash, SIGKILL or a logout that skipped the drain) becomes
     a NOT_TRANSCRIBED_TEXT History row with its audio, exactly as the N9
     teardown keep would have saved it; its file goes only once that row is
@@ -760,7 +762,7 @@ def recover_capture_spool(spool, store, coordinator, *, model, speech_config, gl
     waiting = spool.leftovers()
     if isinstance(coordinator, UnsavedHistory):
         if waiting:
-            log(f"! {len(waiting)} recording(s) from when Sotto last stopped wait in {spool.directory} "
+            log(f"! {len(waiting)} recording(s) from when Scrivo last stopped wait in {spool.directory} "
                 "until History can be read again")
         return len(waiting)
     spool.discard_partial()
@@ -776,22 +778,22 @@ def recover_capture_spool(spool, store, coordinator, *, model, speech_config, gl
             append_untranscribed_capture(
                 coordinator, raw=raw, native_rate=float(rate), captured_ts=item.captured_ts,
                 model=model, speech_config=speech_config, glossary_terms=glossary_terms, queue_wait_s=None,
-                error="Sotto stopped before transcribing; recovered from the capture spool at the next launch")
+                error="Scrivo stopped before transcribing; recovered from the capture spool at the next launch")
         except Exception as exc:
             left += 1
-            log(f"! a recording from when Sotto last stopped could not be added to History "
+            log(f"! a recording from when Scrivo last stopped could not be added to History "
                 f"({type(exc).__name__}: {str(exc)[:120]}); it stays in {spool.directory}")
             continue
         spool.remove(item)
         recovered += 1
     if recovered:
-        log(f"○ {recovered} recording(s) Sotto stopped before transcribing are in History for Retry")
+        log(f"○ {recovered} recording(s) Scrivo stopped before transcribing are in History for Retry")
     return left
 
 
 def spool_waiting_note(waiting: int) -> str:
     """The sentence the unreadable-History alert adds while recordings wait (N9b)."""
-    return (f"\n\n{waiting} recording(s) from when Sotto last stopped are kept on disk and will be "
+    return (f"\n\n{waiting} recording(s) from when Scrivo last stopped are kept on disk and will be "
             "added to History once it can be read again." if waiting else "")
 
 
@@ -1004,7 +1006,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     from speech_config import language_mode, resolve_speech_config, save_language_mode, with_language
     # The commit this process runs, read once at launch (local git only):
     # Check for Updates compares the folder's HEAD with it (a git pull or
-    # merge in this folder while Sotto runs).
+    # merge in this folder while Scrivo runs).
     started_from = updates.started_from(Path(__file__).resolve().parent)
     if speech_config is None:
         speech_config = resolve_speech_config(model=model)
@@ -1030,19 +1032,19 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         import ui
         ui.use_app_icon(sotto_icon_path())
     if app_mode() and not ApplicationServices.AXIsProcessTrusted():
-        # Sotto.app: explain, open the right pane, and continue once granted.
+        # Scrivo.app: explain, open the right pane, and continue once granted.
         if not explain_permission(
-                "Sotto needs Accessibility",
-                "Click Open System Settings and turn on Sotto under Privacy & Security → "
+                "Scrivo needs Accessibility",
+                "Click Open System Settings and turn on Scrivo under Privacy & Security → "
                 "Accessibility (called Device Control and Data Access on newer macOS), so it can hear "
                 "your dictation key and put text at the cursor. "
-                "This message closes by itself once it is on.\n\nAlready on? Sotto was rebuilt: "
+                "This message closes by itself once it is on.\n\nAlready on? Scrivo was rebuilt: "
                 "select it, remove it with −, then add it again with +.",
                 "Privacy_Accessibility",
                 granted=accessibility_granted_now,
                 register=lambda: ApplicationServices.AXIsProcessTrustedWithOptions(
                     {ApplicationServices.kAXTrustedCheckOptionPrompt: True})):
-            log("accessibility not granted — open Sotto again after turning it on")
+            log("accessibility not granted — open Scrivo again after turning it on")
             sys.exit(0)  # a clean exit: launchd must not loop this dialog
         # This process still holds the cached "not trusted": start a fresh one.
         log("accessibility granted — restarting")
@@ -1057,8 +1059,8 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     if not microphone_permission(request=True):
         if app_mode():
             explain_permission(
-                "Sotto needs the microphone",
-                "Turn on Sotto under Privacy & Security → Microphone, then open Sotto again. "
+                "Scrivo needs the microphone",
+                "Turn on Scrivo under Privacy & Security → Microphone, then open Scrivo again. "
                 "It listens only while you hold the dictation key.",
                 "Privacy_Microphone")
             sys.exit(0)
@@ -1151,7 +1153,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
                                               speech_config=current_speech_config(),
                                               glossary_terms=glossary_terms, log=log)
     else:
-        log("! another Sotto is using this data folder — captures stay in memory only until History has them")
+        log("! another Scrivo is using this data folder — captures stay in memory only until History has them")
     seed_totals(store)
     # Always available, no-model dependency guard: an earlier adaptive session
     # must remain revocation-safe even when this launch is non-adaptive.
@@ -1222,7 +1224,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             # the Mac side of Windows F70): the mic stays closed, and the
             # gesture ends too, as on_mic_failed does, or it would believe it
             # is recording and a hands-free orb would stay up with no mic.
-            log(f"○ Sotto is {lifecycle.closed or 'restarting'} — this press is ignored")
+            log(f"○ Scrivo is {lifecycle.closed or 'restarting'} — this press is ignored")
             hands_free = engine.snapshot()[1]  # a menu start: its orb shows next
             engine.force_finish(finish=hide_refused_start if hands_free else (lambda: None))
             return
@@ -1325,8 +1327,8 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             log("✗ could not start the microphone — dictation cancelled")
         if status_ui:
             ui_call(status_ui.show_error, "Could not start the microphone",
-                    "Sotto could not open the input device. Check that another app "
-                    "is not holding it and that Sotto may use the microphone "
+                    "Scrivo could not open the input device. Check that another app "
+                    "is not holding it and that Scrivo may use the microphone "
                     "(System Settings → Privacy & Security → Microphone), then "
                     "press the key again.")
 
@@ -1336,7 +1338,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown, capture_gate, end_recording=lambda: end_capture_now(engine, capture, on_finish),
         busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,
                                          warming=bool(model_activity["rewarming"])))
-    # Real key-downs seen by the tap (Sotto's tagged events excluded): typing
+    # Real key-downs seen by the tap (Scrivo's tagged events excluded): typing
     # after a paste means "scratch that" must not undo it.
     user_keydowns = {"count": 0}
     # The event tap (trigger edges, the hotkey, the resync poller); it starts
@@ -1497,14 +1499,14 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             except Exception as exc:
                 # Shutdown is one-way, so this process cannot carry on. Exit
                 # non-zero: KeepAlive (the login item, the LaunchAgent) starts
-                # Sotto again; exit 0 would be a Quit it leaves alone, and an
+                # Scrivo again; exit 0 would be a Quit it leaves alone, and an
                 # alert queued now would never be shown.
                 restart.foreground_pending = False
                 try:
                     restart.failed(f"foreground restart failed ({type(exc).__name__}: {str(exc)[:120]})")
                 except Exception as callback_exc:
                     log(f"! restart failure handling failed: {str(callback_exc)[:120]}")
-                log(f"! exiting with status {RESTART_FAILED_EXIT} so launchd can start Sotto again; "
+                log(f"! exiting with status {RESTART_FAILED_EXIT} so launchd can start Scrivo again; "
                     "from a terminal, run the command again")
                 os._exit(RESTART_FAILED_EXIT)
         if status_ui is not None:
@@ -1624,6 +1626,30 @@ def maintainer_lane_available() -> bool:
         return False
 
 
+def move_from_legacy_app(*, hand_off=None, retire=None) -> bool:
+    """Scrivo was called Sotto. Started by an old Sotto.app (the restart
+    after Update Now, or its login item): open Scrivo.app and return True, so
+    this process exits cleanly. Started by Scrivo.app: move the old login item
+    over and remove the old Sotto.app (mac_app.retire_legacy). A failure here
+    never stops dictation from starting.
+
+    Side effects: may open Scrivo.app, rewrite login items, delete the old
+    app; logs."""
+    import mac_app
+    executable = os.environ.get("SOTTO_APP_EXECUTABLE", "")
+    script = Path(__file__).resolve()
+    try:
+        opened = (hand_off or mac_app.hand_off)(executable, script)
+        if opened is not None:
+            log(f"● Sotto.app is now Scrivo.app: opened {opened}")
+            return True
+        for done in (retire or mac_app.retire_legacy)(executable, script):
+            log(f"○ {done}")
+    except OSError as exc:
+        log(f"! could not finish moving from Sotto.app ({str(exc)[:160]})")
+    return False
+
+
 def main() -> None:
     from speech_config import SUPPORTED_LANGUAGES
     parser = argparse.ArgumentParser(description="Local push-to-talk dictation.")
@@ -1655,17 +1681,19 @@ def main() -> None:
                              "(0 = immediately; negative = never)")
     args = parser.parse_args()
     if (args.command in LANE_COMMANDS or (args.command == "run" and args.adaptive)) and not maintainer_lane_available():
-        parser.error("this needs the maintainer lane (maintainer/), which this copy of Sotto does not include")
+        parser.error("this needs the maintainer lane (maintainer/), which this copy of Scrivo does not include")
     if app_mode() and args.command == "run":
         from sotto_paths import DATA_DIR
         route_app_logs(DATA_DIR)
+        if move_from_legacy_app():
+            return  # exit 0: a login item's KeepAlive leaves a clean exit alone
 
     if args.command == "doctor":
         doctor()
         return
     if args.command == "setup":
         # Download the default model now (with progress) so the first
-        # dictation, or the first Sotto.app launch, is ready immediately.
+        # dictation, or the first Scrivo.app launch, is ready immediately.
         try:
             if args.profile == "parakeet":
                 from speech_config import MODEL_PROFILES

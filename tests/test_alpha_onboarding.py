@@ -81,20 +81,25 @@ class RestartTests(unittest.TestCase):
             execute.assert_called_once_with(sys.executable, [sys.executable, *argv])
             launchctl.assert_not_called()
 
-    @unittest.skipUnless(sys.platform == 'darwin', 'Sotto.app is macOS-only')
-    def test_sotto_app_restarts_as_a_fresh_process_never_in_place(self):
-        restart = controller()
-        env = {'SOTTO_LAUNCHER': 'app', 'SOTTO_APP_EXECUTABLE': '/Applications/Sotto.app/Contents/MacOS/Sotto'}
-        with patch.dict(os.environ, env), patch('subprocess.Popen') as spawn, patch('os.execv') as execute:
-            self.assertTrue(restart.request())
-            restart.exec_foreground()
-        execute.assert_not_called()
-        argv = spawn.call_args.args[0]
-        self.assertEqual(argv[:3], ['/bin/sh', '-c', sotto.APP_RELAUNCH_SCRIPT])
-        self.assertEqual(argv[4:], [str(os.getppid()), 'org.sotto.alpha', '/Applications/Sotto.app'])
-        self.assertTrue(spawn.call_args.kwargs['start_new_session'])
+    @unittest.skipUnless(sys.platform == 'darwin', 'Scrivo.app is macOS-only')
+    def test_scrivo_app_restarts_as_a_fresh_process_never_in_place(self):
+        # Scrivo.app, and the old Sotto.app when this code runs from it (its
+        # restart opens that app again, whose start then hands off to Scrivo.app).
+        for executable, bundle in (('/Applications/Scrivo.app/Contents/MacOS/Scrivo', '/Applications/Scrivo.app'),
+                                   ('/Applications/Sotto.app/Contents/MacOS/Sotto', '/Applications/Sotto.app')):
+            with self.subTest(bundle=bundle):
+                restart = controller()
+                env = {'SOTTO_LAUNCHER': 'app', 'SOTTO_APP_EXECUTABLE': executable}
+                with patch.dict(os.environ, env), patch('subprocess.Popen') as spawn, patch('os.execv') as execute:
+                    self.assertTrue(restart.request())
+                    restart.exec_foreground()
+                execute.assert_not_called()
+                argv = spawn.call_args.args[0]
+                self.assertEqual(argv[:3], ['/bin/sh', '-c', sotto.APP_RELAUNCH_SCRIPT])
+                self.assertEqual(argv[4:], [str(os.getppid()), 'io.github.zohartito.scrivo', bundle])
+                self.assertTrue(spawn.call_args.kwargs['start_new_session'])
 
-    @unittest.skipUnless(sys.platform == 'darwin', 'Sotto.app relaunch helper is macOS-only')
+    @unittest.skipUnless(sys.platform == 'darwin', 'Scrivo.app relaunch helper is macOS-only')
     def test_relaunch_helper_waits_for_the_launcher_then_opens_unless_the_login_item_starts(self):
         for kickstart, expected in (('false', 'opened /B/Sotto.app'), ('true', '')):
             script = (sotto.APP_RELAUNCH_SCRIPT.replace('/bin/launchctl kickstart', kickstart)
@@ -620,13 +625,13 @@ class SaveAudioNameTests(unittest.TestCase):
             desktop = Path(folder)
             moment = datetime.datetime(2026, 10, 9, 1, 53, 7).timestamp()
             first = sotto.desktop_audio_path(desktop, moment)
-            self.assertEqual(first.name, "sotto-20261009-015307.wav")
+            self.assertEqual(first.name, "scrivo-20261009-015307.wav")
             first.write_bytes(b"one")
             second = sotto.desktop_audio_path(desktop, moment)
-            self.assertEqual(second.name, "sotto-20261009-015307-2.wav")
+            self.assertEqual(second.name, "scrivo-20261009-015307-2.wav")
             second.write_bytes(b"two")
-            self.assertEqual(sotto.desktop_audio_path(desktop, moment + 20).name, "sotto-20261009-015327.wav")
-            self.assertEqual(sotto.desktop_audio_path(desktop, moment).name, "sotto-20261009-015307-3.wav")
+            self.assertEqual(sotto.desktop_audio_path(desktop, moment + 20).name, "scrivo-20261009-015327.wav")
+            self.assertEqual(sotto.desktop_audio_path(desktop, moment).name, "scrivo-20261009-015307-3.wav")
 
     def test_a_name_is_reserved_the_moment_it_is_picked(self):
         # Two saves that both pick a name before either copies must not share it.

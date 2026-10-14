@@ -1,14 +1,14 @@
 #!/bin/bash
-# Install, update or remove Sotto.app (in /Applications, or ~/Applications when that
+# Install, update or remove Scrivo.app (in /Applications, or ~/Applications when that
 # is not writable) from this source folder.
 #
 #   scripts/install-mac.sh              install (or repair) the app
 #   scripts/install-mac.sh --update     pull the latest source (git clones), then reinstall
-#   scripts/install-mac.sh --uninstall  remove Sotto.app and its login item; keeps your data
+#   scripts/install-mac.sh --uninstall  remove Scrivo.app and its login item; keeps your data
 #
 # Options: --data-dir DIR (default ~/Library/Application Support/sotto-alpha),
 #          --python PATH (a native arm64 Python 3.12).
-# Nothing here needs sudo, changes privacy settings or touches another Sotto.
+# Nothing here needs sudo, changes privacy settings or touches another Scrivo.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -35,31 +35,40 @@ if [ "$MODE" = uninstall ]; then
     if [ -x "$VENV/bin/python" ]; then
         "$VENV/bin/python" "$ROOT/scripts/install_app.py" --uninstall
     else
-        for app in /Applications/Sotto.app "$HOME/Applications/Sotto.app"; do
-            # Only ever remove a Sotto.app this installer built.
-            if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null)" = org.sotto.alpha ]; then
+        for app in /Applications/Scrivo.app "$HOME/Applications/Scrivo.app"; do
+            # Only ever remove a Scrivo.app this installer built.
+            if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null)" = io.github.zohartito.scrivo ]; then
                 rm -r "$app"
             fi
         done
-        launchctl bootout "gui/$(id -u)/org.sotto.alpha" 2>/dev/null || true
-        rm -f "$HOME/Library/LaunchAgents/org.sotto.alpha.plist"
+        launchctl bootout "gui/$(id -u)/io.github.zohartito.scrivo" 2>/dev/null || true
+        rm -f "$HOME/Library/LaunchAgents/io.github.zohartito.scrivo.plist"
+        # Scrivo was called Sotto: its Sotto.app, only when built for this folder.
+        for app in /Applications/Sotto.app "$HOME/Applications/Sotto.app"; do
+            if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null)" = org.sotto.alpha ] \
+                && LC_ALL=C grep -aqF "$ROOT/sotto.py" "$app/Contents/MacOS/Sotto" 2>/dev/null; then
+                rm -r "$app"
+                launchctl bootout "gui/$(id -u)/org.sotto.alpha" 2>/dev/null || true
+                rm -f "$HOME/Library/LaunchAgents/org.sotto.alpha.plist"
+            fi
+        done
     fi
     echo "Your recordings, settings and models are still in: $DATA_DIR"
     echo "Delete that folder yourself if you want them gone."
     exit 0
 fi
 
-[ "$(uname -s)" = Darwin ] || fail "Sotto's Mac installer runs on macOS only (see docs/windows-alpha.md for Windows)."
-[ "$(uname -m)" = arm64 ] || fail "Sotto needs an Apple Silicon Mac."
+[ "$(uname -s)" = Darwin ] || fail "Scrivo's Mac installer runs on macOS only (see docs/windows-alpha.md for Windows)."
+[ "$(uname -m)" = arm64 ] || fail "Scrivo needs an Apple Silicon Mac."
 MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
-[ "$MACOS_MAJOR" -ge 14 ] || fail "Sotto needs macOS 14 or later (this Mac runs $(sw_vers -productVersion))."
+[ "$MACOS_MAJOR" -ge 14 ] || fail "Scrivo needs macOS 14 or later (this Mac runs $(sw_vers -productVersion))."
 xcrun --find clang >/dev/null 2>&1 || fail "Install Apple's command line tools first: xcode-select --install"
 
-# A Sotto running from this copy would have its source and packages swapped
+# A Scrivo running from this copy would have its source and packages swapped
 # while in use: a process with this copy's sotto.py on its command line, by its
-# resolved path (what Sotto.app runs) or relative to the process's working
+# resolved path (what Scrivo.app runs) or relative to the process's working
 # directory (a terminal run: venv-alpha/bin/python sotto.py run). Check for
-# Updates runs this from inside Sotto, names itself in SOTTO_UPDATE_FROM_PID
+# Updates runs this from inside Scrivo, names itself in SOTTO_UPDATE_FROM_PID
 # and restarts after.
 running_sotto() {
     local listing pid command words word dir
@@ -82,7 +91,7 @@ running_sotto() {
     done <<< "$listing"
 }
 RUNNING="$(running_sotto)"
-[ -z "$RUNNING" ] || fail "Sotto is running from this copy (process $RUNNING). Quit it from its menu (or update it there with Check for Updates), then run this again."
+[ -z "$RUNNING" ] || fail "Scrivo is running from this copy (process $RUNNING). Quit it from its menu (or update it there with Check for Updates), then run this again."
 
 UPSTREAM=""
 REQUIREMENTS="$ROOT/requirements-alpha.txt"
@@ -181,15 +190,15 @@ export SOTTO_HF_HOME="$DATA_DIR/huggingface"
 echo "== Speech model (first time: about 1.6 GB into $SOTTO_HF_HOME)"
 "$VENV/bin/python" "$ROOT/sotto.py" setup
 
-echo "== Sotto.app"
+echo "== Scrivo.app"
 "$VENV/bin/python" "$ROOT/scripts/install_app.py" --data-dir "$DATA_DIR"
 
 cat <<EOF
 
-Done. Open Sotto like any app (Spotlight, Launchpad, or: open -a Sotto).
-The first time, allow "Sotto" to use the Microphone and turn it on under
+Done. Open Scrivo like any app (Spotlight, Launchpad, or: open -a Scrivo).
+The first time, allow "Scrivo" to use the Microphone and turn it on under
 System Settings → Privacy & Security → Accessibility (newer macOS calls it
 Device Control and Data Access). Then hold right Option, speak, and release.
-Choose another key, languages and "Start Sotto when I log in" under Settings…
-in Sotto's menu. Update later with: scripts/install-mac.sh --update
+Choose another key, languages and "Start Scrivo when I log in" under Settings…
+in Scrivo's menu. Update later with: scripts/install-mac.sh --update
 EOF

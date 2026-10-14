@@ -1,10 +1,11 @@
-"""Start Sotto.app at login with a per-user LaunchAgent (macOS).
+"""Start Scrivo.app at login with a per-user LaunchAgent (macOS).
 
-Only the installed Sotto.app launcher is registered, so the running process
+Only the installed Scrivo.app launcher is registered, so the running process
 keeps the app's Microphone/Accessibility identity. launchd relaunches it after
 a crash but not after Quit. Enabling never starts a second copy now: the
 agent is only picked up at the next login. The label is distinct from the
-maintainer's sealed LaunchAgent.
+maintainer's sealed LaunchAgent. LEGACY_LABEL is the login item of Sotto.app,
+Scrivo's earlier name (mac_app.retire_legacy moves it over).
 """
 from __future__ import annotations
 
@@ -14,16 +15,17 @@ import plistlib
 import subprocess
 import tempfile
 
-LABEL = "org.sotto.alpha"
+LABEL = "io.github.zohartito.scrivo"
+LEGACY_LABEL = "org.sotto.alpha"
 
 
-def plist_path(home: Path | None = None) -> Path:
-    return (home or Path.home()) / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+def plist_path(home: Path | None = None, label: str = LABEL) -> Path:
+    return (home or Path.home()) / "Library" / "LaunchAgents" / f"{label}.plist"
 
 
 def agent(executable: str) -> dict:
     if not os.path.isabs(executable):
-        raise ValueError("the Sotto.app launcher path must be absolute")
+        raise ValueError("the Scrivo.app launcher path must be absolute")
     return {"Label": LABEL, "ProgramArguments": [executable], "RunAtLoad": True,
             "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 30,
             "ProcessType": "Interactive", "LimitLoadToSessionType": "Aqua"}
@@ -48,9 +50,9 @@ def enable(executable: str, home: Path | None = None) -> Path:
 
 
 def disable(home: Path | None = None, *, unload: bool = False, run=subprocess.run) -> None:
-    """Remove the agent so the next login does not start Sotto.
+    """Remove the agent so the next login does not start Scrivo.
 
-    Unticking the setting must not stop the Sotto that is running right now
+    Unticking the setting must not stop the Scrivo that is running right now
     (it may be this very job), so only an uninstall also unloads it."""
     path = plist_path(home)
     if unload:

@@ -852,7 +852,7 @@ class FailureHandlingTests(TemporaryUserFiles, unittest.TestCase):
 
 
 class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
-    """N9: a capture Sotto stops before transcribing stays in History with its
+    """N9: a capture Scrivo stops before transcribing stays in History with its
     audio (Quit, Restart and SIGTERM waited as long as they may)."""
 
     def test_the_teardown_keeps_the_capture_for_retry(self):
@@ -862,7 +862,7 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
         self.assertEqual(len(h.coordinator.appended), 1, h.logs)
         row = h.coordinator.appended[0]
         self.assertEqual((row["provenance"], row["text"], row["adaptive"]),
-                         ("live_suspect", "[not transcribed: Sotto stopped]", False))
+                         ("live_suspect", "[not transcribed: Scrivo stopped]", False))
         self.assertIs(row["raw_samples"], raw)
         self.assertEqual(row["preprocessing"]["outcome"], "suspect")
         self.assertEqual((h.injected, h.status_ui.errors, h.whisper.calls), ([], [], 0))
@@ -904,7 +904,7 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
         self.assertEqual(h.worker.abandoned, [job])
         h.worker.keep_untranscribed(job)
         self.assertEqual([row["text"] for row in h.coordinator.appended],
-                         ["[not transcribed: Sotto stopped]"])
+                         ["[not transcribed: Scrivo stopped]"])
 
     def test_a_saved_capture_is_never_kept_again(self):
         h = Harness(says("Please call me back at four"))
@@ -919,7 +919,7 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
         h.worker.keep_untranscribed(job)  # the teardown kept it while the model ran
         h.run_jobs(job)
         self.assertEqual([row["text"] for row in h.coordinator.appended],
-                         ["[not transcribed: Sotto stopped]"])
+                         ["[not transcribed: Scrivo stopped]"])
         self.assertEqual(h.injected, [])
 
     def test_a_failed_append_does_not_stop_the_teardown_from_keeping_it(self):
@@ -937,7 +937,7 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
         h.run_jobs(job)
         self.assertEqual(h.worker.abandoned, [job])
         h.worker.keep_untranscribed(job)
-        self.assertEqual(calls, ["Please call me back at four", "[not transcribed: Sotto stopped]"])
+        self.assertEqual(calls, ["Please call me back at four", "[not transcribed: Scrivo stopped]"])
 
     def blocked_append(self, outcome):
         """A Harness whose first History append blocks until released, then
@@ -975,7 +975,7 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
         self.assertTrue(keeper.is_alive(), "the teardown did not wait for the append under way")
         release.set()
         keeper.join(WAIT_S)
-        self.assertEqual(calls, ["Please call me back at four", "[not transcribed: Sotto stopped]"])
+        self.assertEqual(calls, ["Please call me back at four", "[not transcribed: Scrivo stopped]"])
 
     def test_the_teardown_waits_for_an_append_under_way_and_never_keeps_it_twice(self):
         keeper, release, calls = self.blocked_append("saves")

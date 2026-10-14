@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Build (or remove) Sotto.app in /Applications (or ~/Applications) for this source install.
+"""Build (or remove) Scrivo.app in /Applications (or ~/Applications) for this source install.
 
 The bundle holds a tiny compiled launcher that stays the parent of the Python
-process, so macOS asks for Microphone/Accessibility as "Sotto" and remembers
+process, so macOS asks for Microphone/Accessibility as "Scrivo" and remembers
 the grants. The launcher only embeds absolute paths, so updating the source
 or dependencies never changes it and the grants survive updates. Nothing is
 notarized: the app is built locally, so Gatekeeper does not quarantine it.
-Run by scripts/install-mac.sh; see README "Install as an app".
+Run by scripts/install-mac.sh; see README "Install as an app". The Sotto.app of
+earlier versions stays until Scrivo.app first starts (mac_app.retire_legacy):
+an update in progress restarts through it.
 """
 from __future__ import annotations
 
@@ -20,8 +22,8 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-BUNDLE_ID = "org.sotto.alpha"
-APP_NAME = "Sotto.app"
+sys.path.insert(0, str(ROOT))
+from mac_app import APP_NAME, BUNDLE_ID, EXECUTABLE, candidate_folders  # noqa: E402
 
 LAUNCHER_C = r"""
 #include <signal.h>
@@ -84,11 +86,11 @@ def launcher_source(*, python: Path, script: Path, data_dir: Path, hf_home: Path
 
 def info_plist(version: str) -> bytes:
     return plistlib.dumps({
-        "CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "Sotto", "CFBundleDisplayName": "Sotto",
-        "CFBundleExecutable": "Sotto", "CFBundlePackageType": "APPL",
+        "CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "Scrivo", "CFBundleDisplayName": "Scrivo",
+        "CFBundleExecutable": EXECUTABLE, "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": version, "CFBundleVersion": version,
-        "CFBundleIconFile": "Sotto", "LSMinimumSystemVersion": "14.0", "LSUIElement": True,
-        "NSMicrophoneUsageDescription": "Sotto records only while you hold the dictation key, and "
+        "CFBundleIconFile": EXECUTABLE, "LSMinimumSystemVersion": "14.0", "LSUIElement": True,
+        "NSMicrophoneUsageDescription": "Scrivo records only while you hold the dictation key, and "
                                         "transcribes on this Mac. Audio never leaves it.",
         "NSHighResolutionCapable": True,
     })
@@ -101,7 +103,7 @@ def draw_icon(destination: Path) -> bool:
     except ImportError:
         return False
     with tempfile.TemporaryDirectory() as temporary:
-        iconset = Path(temporary) / "Sotto.iconset"
+        iconset = Path(temporary) / f"{EXECUTABLE}.iconset"
         iconset.mkdir()
         for size in (16, 32, 128, 256, 512):
             for scale in (1, 2):
@@ -139,9 +141,9 @@ def compile_launcher(source: str, output: Path, compiler: str = "clang") -> Path
 def build(*, applications: Path, data_dir: Path, hf_home: Path, python: Path, compiler: str = "clang") -> Path:
     app = applications / APP_NAME
     if app.exists() and not ours(app):
-        raise SystemExit(f"{app} was not made by Sotto's installer, so it is left alone. "
+        raise SystemExit(f"{app} was not made by Scrivo's installer, so it is left alone. "
                          "Move or rename it, then run the installer again.")
-    executable = app / "Contents" / "MacOS" / "Sotto"
+    executable = app / "Contents" / "MacOS" / EXECUTABLE
     source = launcher_source(python=python, script=ROOT / "sotto.py", data_dir=data_dir,
                              hf_home=hf_home, app_executable=executable)
     version = "0.1.0-alpha"
@@ -150,8 +152,8 @@ def build(*, applications: Path, data_dir: Path, hf_home: Path, python: Path, co
         (staging / "Contents" / "MacOS").mkdir(parents=True)
         (staging / "Contents" / "Resources").mkdir()
         (staging / "Contents" / "Info.plist").write_bytes(info_plist(version))
-        compile_launcher(source, staging / "Contents" / "MacOS" / "Sotto", compiler)
-        draw_icon(staging / "Contents" / "Resources" / "Sotto.icns")
+        compile_launcher(source, staging / "Contents" / "MacOS" / EXECUTABLE, compiler)
+        draw_icon(staging / "Contents" / "Resources" / f"{EXECUTABLE}.icns")
         subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(staging)], check=True,
                        capture_output=True)
         # Keep an identical existing launcher (and so its permissions) untouched.
@@ -195,10 +197,6 @@ def _same_bundle(installed: Path, staged: Path) -> bool:
         return False
 
 
-def candidate_folders(home: Path | None = None) -> list[Path]:
-    return [Path("/Applications"), (home or Path.home()) / "Applications"]
-
-
 def default_applications(home: Path | None = None) -> Path:
     """/Applications, where Launchpad, Spotlight and 'open app' tools look,
     when this user can write there (admins can); otherwise ~/Applications."""
@@ -207,7 +205,7 @@ def default_applications(home: Path | None = None) -> Path:
 
 
 def ours(app: Path) -> bool:
-    """Only ever remove a Sotto.app this installer built (our bundle id)."""
+    """Only ever remove a Scrivo.app this installer built (our bundle id)."""
     try:
         return plistlib.loads((app / "Contents" / "Info.plist").read_bytes()).get("CFBundleIdentifier") == BUNDLE_ID
     except (OSError, plistlib.InvalidFileException):
@@ -226,12 +224,13 @@ def remove_copies(folders: list[Path], keep: Path | None = None) -> list[Path]:
 
 def uninstall(folders: list[Path]) -> bool:
     import login_item
+    import mac_app
     login_item.disable(unload=True)
-    return bool(remove_copies(folders))
+    old = mac_app.remove_legacy(ROOT / "sotto.py", folders=folders)  # an old Sotto.app of this folder
+    return bool(remove_copies(folders)) or bool(old)
 
 
 def main() -> None:
-    sys.path.insert(0, str(ROOT))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--applications", type=Path, default=None,
                         help="install folder (default: /Applications if writable, else ~/Applications)")
@@ -242,13 +241,13 @@ def main() -> None:
     args = parser.parse_args()
     folders = [args.applications.expanduser().absolute()] if args.applications else candidate_folders()
     if args.uninstall:
-        print("removed Sotto.app" if uninstall(folders) else "Sotto.app was not installed")
+        print("removed Scrivo.app" if uninstall(folders) else "Scrivo.app was not installed")
         return
     data_dir = args.data_dir.expanduser().absolute()
     target = folders[0] if args.applications else default_applications()
     app = build(applications=target, data_dir=data_dir,
                 hf_home=data_dir / "huggingface", python=Path(sys.executable).absolute())
-    for old in remove_copies(candidate_folders(), keep=app):  # one Sotto.app, not two
+    for old in remove_copies(candidate_folders(), keep=app):  # one Scrivo.app, not two
         print(f"removed the older copy at {old}")
     print(f"built {app}")
 
