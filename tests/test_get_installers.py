@@ -327,8 +327,9 @@ class WindowsInstallerTests(unittest.TestCase):
             result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
             self.assertIn("now follows git@github.com:zohartito/scrivo.git", result.stdout, result.stderr)
             self.assertIn("would run", result.stdout, result.stderr)
-            origin = subprocess.run(["git", "-C", str(dest), "remote", "get-url", "origin"], capture_output=True,
-                                    text=True).stdout.strip()
+            # The configured URL (get-url would apply the insteadOf stand-in).
+            origin = subprocess.run(["git", "-C", str(dest), "config", "--get", "remote.origin.url"],
+                                    capture_output=True, text=True).stdout.strip()
             self.assertEqual(origin, "git@github.com:zohartito/scrivo.git")
 
     def test_an_update_refuses_while_sotto_runs_from_the_copy(self):

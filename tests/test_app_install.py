@@ -473,6 +473,7 @@ def fake_bundle(folder: Path, app_name: str, bundle_id: str, executable: str, sc
     return contents.parent
 
 
+@unittest.skipUnless(sys.platform == "darwin", "Scrivo.app and its login item are macOS only")
 class SottoToScrivoTests(unittest.TestCase):
     """Scrivo was called Sotto. After Update Now on the last Sotto build, the
     old process restarts through the old Sotto.app (or its login item), whose
