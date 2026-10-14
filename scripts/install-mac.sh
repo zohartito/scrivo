@@ -31,6 +31,14 @@ done
 fail() { echo "✗ $*" >&2; exit 1; }
 VENV="$ROOT/venv-alpha"
 
+# Does this compiled launcher start this folder's sotto.py? It holds the path
+# as one NUL-terminated C string (scripts/install_app.py): require that exact
+# string, never a substring, like mac_app.launcher_runs. No perl: not ours.
+launcher_runs_this() {
+    command -v perl >/dev/null 2>&1 || return 1
+    SCRIPT_PATH="$ROOT/sotto.py" perl -0777 -ne 'exit(index($_, "\0$ENV{SCRIPT_PATH}\0") >= 0 ? 0 : 1)' "$1" 2>/dev/null
+}
+
 if [ "$MODE" = uninstall ]; then
     if [ -x "$VENV/bin/python" ]; then
         "$VENV/bin/python" "$ROOT/scripts/install_app.py" --uninstall
@@ -46,7 +54,7 @@ if [ "$MODE" = uninstall ]; then
         # Scrivo was called Sotto: its Sotto.app, only when built for this folder.
         for app in /Applications/Sotto.app "$HOME/Applications/Sotto.app"; do
             if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null)" = org.sotto.alpha ] \
-                && LC_ALL=C grep -aqF "$ROOT/sotto.py" "$app/Contents/MacOS/Sotto" 2>/dev/null; then
+                && launcher_runs_this "$app/Contents/MacOS/Sotto"; then
                 rm -r "$app"
                 launchctl bootout "gui/$(id -u)/org.sotto.alpha" 2>/dev/null || true
                 rm -f "$HOME/Library/LaunchAgents/org.sotto.alpha.plist"

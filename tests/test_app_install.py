@@ -6,6 +6,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import shlex
 import signal
 import subprocess
 import sys
@@ -771,6 +772,34 @@ class UpdateFromLastSottoTests(unittest.TestCase):
         # bash went on reading the old file (git replaced it, never rewrote it in place):
         # the closing message in update.log is the old one.
         self.assertIn("open -a Sotto", result.stdout)
+
+
+@unittest.skipUnless(sys.platform != "win32" and shutil.which("bash") and shutil.which("perl"), "needs bash and perl")
+class UninstallFallbackLauncherTests(unittest.TestCase):
+    """install-mac.sh --uninstall without its venv removes an old Sotto.app
+    only when the launcher starts exactly this folder's sotto.py (Codex review
+    on #40: a substring match would also take a launcher built for a path that
+    merely contains this one)."""
+
+    def launcher_runs_this(self, root: Path, launcher_bytes: bytes) -> int:
+        text = (ROOT / "scripts" / "install-mac.sh").read_text(encoding="utf-8")
+        function = re.search(r"^launcher_runs_this\(\) \{\n.*?^\}\n", text, re.S | re.M)
+        self.assertIsNotNone(function, "install-mac.sh lost launcher_runs_this")
+        with tempfile.TemporaryDirectory() as temporary:
+            launcher = Path(temporary) / "Sotto"
+            launcher.write_bytes(launcher_bytes)
+            script = (f"ROOT={shlex.quote(str(root))}\n{function.group(0)}"
+                      f"launcher_runs_this {shlex.quote(str(launcher))}\n")
+            return subprocess.run(["bash", "-c", script], capture_output=True, timeout=30).returncode
+
+    def test_only_the_exact_nul_terminated_path_counts(self):
+        root = Path("/Users/someone/sotto")
+        exact = os.fsencode(str(root / "sotto.py"))
+        self.assertEqual(self.launcher_runs_this(root, b"\xcf\xfa\0" + exact + b"\0rest"), 0)
+        self.assertNotEqual(self.launcher_runs_this(root, b"\0/Volumes/backup" + exact + b"\0"), 0)
+        self.assertNotEqual(self.launcher_runs_this(root, b"\0" + exact + b".bak\0"), 0)
+        self.assertNotEqual(self.launcher_runs_this(root, b"no path here"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
