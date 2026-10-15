@@ -397,7 +397,7 @@ class UpdateOrderTests(unittest.TestCase):
         elsewhere = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", "scrivo.py", "run"], cwd=other)
         self.addCleanup(elsewhere.wait)
         self.addCleanup(elsewhere.kill)
-        # sotto.py: the stand-in that launchers built before the rename still run.
+        # sotto.py: what a Scrivo started before the module rename runs.
         for arguments, cwd in (([str(self.user.resolve() / "scrivo.py")], None), (["scrivo.py", "run"], self.user),
                                (["./scrivo.py", "run"], self.user), (["../scrivo.py"], self.user / "scripts"),
                                ([str(self.user.resolve() / "sotto.py")], None), (["sotto.py", "run"], self.user)):
@@ -463,11 +463,6 @@ class UpdateOrderTests(unittest.TestCase):
         self.assertEqual(self.git(self.user, "rev-parse", "HEAD"), self.new)
 
 
-LEGACY_COMMIT = "21ce68b"  # the last commit before the rename: what Update Now starts from
-HAVE_LEGACY_COMMIT = (ROOT / ".git").exists() and shutil.which("git") is not None and subprocess.run(
-    ["git", "-C", str(ROOT), "cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}"], capture_output=True).returncode == 0
-
-
 def fake_bundle(folder: Path, app_name: str, bundle_id: str, executable: str, script: Path) -> Path:
     """An app bundle whose stand-in launcher holds the script path as one C
     string among others, the way the compiled launcher does."""
@@ -482,12 +477,11 @@ def fake_bundle(folder: Path, app_name: str, bundle_id: str, executable: str, sc
 
 @unittest.skipUnless(sys.platform == "darwin", "Scrivo.app and its login item are macOS only")
 class SottoToScrivoTests(unittest.TestCase):
-    """Scrivo was called Sotto. After Update Now on the last Sotto build, the
-    old process restarts through the old Sotto.app (or its login item), whose
-    launcher runs this folder's sotto.py, now the stand-in that runs the new
-    scrivo.py; that start opens Scrivo.app, and
-    Scrivo.app's start retires the old app and login item. Fakes stand in for
-    open and launchctl; nothing outside the temp folder is touched."""
+    """Scrivo was called Sotto. An old Sotto.app (or its login item) has a
+    launcher that runs this folder's sotto.py; a start from it opens
+    Scrivo.app, and Scrivo.app's start retires the old app and login item.
+    Fakes stand in for open and launchctl; nothing outside the temp folder is
+    touched."""
 
     def setUp(self):
         base = Path(tempfile.mkdtemp())
@@ -580,8 +574,8 @@ class SottoToScrivoTests(unittest.TestCase):
             self.assertIsNone(mac_app.hand_off(executable, self.script, folders=self.folders, run=run))
 
     def test_a_scrivo_app_built_before_the_module_rename_is_opened_too(self):
-        # Its launcher runs this folder's sotto.py (the stand-in) until the
-        # update rebuilds it; a hand-off must still find it.
+        # Its launcher runs this folder's sotto.py until an update rebuilds
+        # it; a hand-off still finds it.
         old, new = self.old_app(), self.new_app(script=self.script.with_name("sotto.py"))
         self.assertEqual(mac_app.hand_off(str(old / "Contents/MacOS/Sotto"), self.script, folders=self.folders,
                                           run=self.fake_run()), new)
@@ -748,100 +742,6 @@ class SottoToScrivoTests(unittest.TestCase):
             scrivo.main()
         moved.assert_called_once_with()
         run.assert_not_called()
-
-
-LAST_SCRIVO_COMMIT = "f221967"  # main before the module rename (sotto.py -> scrivo.py): the next Update Now
-HAVE_LAST_SCRIVO_COMMIT = HAVE_LEGACY_COMMIT and subprocess.run(
-    ["git", "-C", str(ROOT), "cat-file", "-e", f"{LAST_SCRIVO_COMMIT}^{{commit}}"], capture_output=True).returncode == 0
-
-
-@unittest.skipUnless(HAVE_LAST_SCRIVO_COMMIT and HAVE_CLANG,
-                     f"needs this repository's git history ({LEGACY_COMMIT}, {LAST_SCRIVO_COMMIT}) on macOS")
-class UpdateFromLastSottoTests(unittest.TestCase):
-    """The real first update: the installer of the last Sotto build (21ce68b)
-    or of the last build before the module rename (f221967), read by bash
-    while it fast-forwards its own file, finishes with this version's files.
-    It runs this folder's sotto.py setup (now the stand-in that runs
-    scrivo.py) with only the old SOTTO_* variables, then install_app.py."""
-
-    def git(self, cwd, *args):
-        return subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                               "-c", "init.defaultBranch=main", *args],
-                              cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
-
-    def update_from(self, commit: str, *, stand_in: bool = True):
-        base = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, base)
-        remote, publisher, user = base / "remote.git", base / "publisher", base / "user"
-        self.git(base, "init", "--bare", str(remote))
-        self.git(base, "clone", str(remote), str(publisher))
-        (publisher / "scripts").mkdir()
-        for name in ("scripts/install-mac.sh", "scripts/install_app.py", "sotto.py"):
-            (publisher / name).write_text(self.git(ROOT, "show", f"{commit}:{name}") + "\n")
-        (publisher / "requirements-alpha.txt").write_text("-r requirements.txt\n-c constraints-alpha.txt\n")
-        (publisher / "requirements.txt").write_text("numpy\n")
-        (publisher / "constraints-alpha.txt").write_text("numpy==1.0\n")
-        (publisher / ".gitignore").write_text("venv-alpha/\n")
-        self.git(publisher, "add", ".")
-        self.git(publisher, "commit", "-m", "The installed version")
-        self.git(publisher, "push", "origin", "HEAD:main")
-        self.git(base, "clone", "--branch", "main", str(remote), str(user))
-        for name in ("scripts/install-mac.sh", "scripts/install_app.py", "scrivo.py", "sotto.py", "mac_app.py",
-                     "scrivo_paths.py"):
-            shutil.copy2(ROOT / name, publisher / name)
-        if not stand_in:
-            (publisher / "sotto.py").unlink()
-        self.git(publisher, "add", "-A", ".")
-        self.git(publisher, "commit", "-m", "Scrivo, internals renamed")
-        self.git(publisher, "push", "origin", "HEAD:main")
-        fake = user / "venv-alpha" / "bin" / "python"
-        fake.parent.mkdir(parents=True)
-        log = base / "ran.txt"
-        # Record what the installer runs after the source switch, with which
-        # variables; like python, a missing script file fails with status 2.
-        fake.write_text(FAKE_PYTHON.replace(
-            '[ "$1 $2" = "-m pip" ] || exit 0',
-            'case "$1" in */install_app.py|*/sotto.py|*/scrivo.py)\n'
-            '    [ -f "$1" ] || { echo "python: can\'t open file \'$1\'" >&2; exit 2; }\n'
-            '    echo "ran: $* old=${SOTTO_DATA_DIR:-} new=${SCRIVO_DATA_DIR:-}" >> "$FAKE_RUN_LOG"; exit 0 ;; esac\n'
-            '[ "$1 $2" = "-m pip" ] || exit 0', 1))
-        fake.chmod(0o755)
-        state = base / "installed.txt"
-        state.write_text("numpy==1.0\n")
-        data = base / "data"
-        environment = {name: value for name, value in os.environ.items() if not name.startswith(("SOTTO_", "SCRIVO_"))}
-        result = subprocess.run(
-            ["/bin/bash", str(user / "scripts/install-mac.sh"), "--update", "--python", str(fake)],
-            env=dict(environment, FAKE_LOG=str(base / "pip.log"), FAKE_STATE=str(state), FAKE_RUN_LOG=str(log),
-                     SOTTO_DATA_DIR=str(data)),  # what the running app's launcher exports
-            capture_output=True, text=True, timeout=120)
-        return result, (log.read_text().splitlines() if log.exists() else []), user.resolve(), data
-
-    def test_the_old_installer_runs_the_stand_in_and_the_new_install_app(self):
-        for commit, closing in ((LEGACY_COMMIT, "open -a Sotto"), (LAST_SCRIVO_COMMIT, "open -a Scrivo")):
-            with self.subTest(commit=commit):
-                result, ran, user, data = self.update_from(commit)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue((user / "scrivo.py").is_file(), "the source moved to this version")
-                self.assertIn('with_name("scrivo.py")', (user / "sotto.py").read_text(), "sotto.py is the stand-in")
-                self.assertEqual(len(ran), 2, ran)
-                # Only the old variable: bash went on reading the old file (git
-                # replaced it, never rewrote it in place), so scrivo.py must
-                # read SOTTO_DATA_DIR too.
-                self.assertEqual(ran[0], f"ran: {user}/sotto.py setup old={data} new=")
-                self.assertEqual(ran[1], f"ran: {user}/scripts/install_app.py --data-dir {data} old={data} new=")
-                self.assertIn(closing, result.stdout)
-                self.assertIn('script=ROOT / "scrivo.py"', (user / "scripts/install_app.py").read_text(),
-                              "the app it rebuilds runs scrivo.py")
-
-    def test_without_the_stand_in_the_old_installer_stops_after_the_source_moved(self):
-        # Why sotto.py stays: the old installer calls it by path after the
-        # merge, under set -e, and an old launcher would crash-loop on it.
-        result, ran, user, _data = self.update_from(LAST_SCRIVO_COMMIT, stand_in=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("can't open file", result.stderr)
-        self.assertTrue((user / "scrivo.py").is_file(), "the source had already moved")
-        self.assertEqual(ran, [])
 
 
 @unittest.skipUnless(sys.platform != "win32" and shutil.which("bash") and shutil.which("perl"), "needs bash and perl")

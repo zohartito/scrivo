@@ -158,9 +158,13 @@ Settings can be removed with −). Copies cloned from `github.com/zohartito/sott
 keep updating (GitHub forwards the old address); the install line also points
 them at the new one.
 
-Later, `sotto.py` became `scrivo.py`. A `Scrivo.app` built before that runs the
-old path, so the first update after it builds `Scrivo.app` again; macOS treats
-the rebuilt app as new and asks for the Microphone and Accessibility once more.
+Later, `sotto.py` became `scrivo.py`. A copy from before mid-October 2026 can
+no longer update itself (Update Now stops with an error, or Scrivo does not
+come back): quit it if it is still running, then paste the install line again
+(on Windows, the `irm` line). If that run also stops with "can't open file
+… sotto.py", paste it once more. It finishes the update in the same folder and
+keeps your data. macOS treats the rebuilt `Scrivo.app` as new and asks for the
+Microphone and Accessibility once more.
 The `SOTTO_*` variables below still work under their old names (`SCRIVO_*` wins
 when both are set), and the log moved from `logs/sotto.log` to `logs/scrivo.log`.
 A source archive now extracts to `scrivo-alpha/`: run its installer and it takes

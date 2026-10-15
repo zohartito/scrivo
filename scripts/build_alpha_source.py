@@ -98,7 +98,6 @@ PUBLIC_TEST_FILES = (
 # docs and tests, plus the shared dictionary/settings modules it imports.
 WINDOWS_FILES = (
     'scrivo_win.py',
-    'sotto_win.py',
     'win_asr.py',
     'win_capture.py',
     'win_hotkey.py',
@@ -146,7 +145,6 @@ WINDOWS_FILES = (
 )
 
 PUBLIC_FILES = sorted(set(RUNTIME_SOURCE_FILES) | set(PUBLIC_TEST_FILES) | set(WINDOWS_FILES) | {
-    'sotto.py',  # the stand-in for scrivo.py
     'README.md', 'LICENSE', 'AGENTS.md', 'pyproject.toml', 'requirements-alpha.txt', 'constraints-alpha.txt',
     'docs/images/demo.gif', 'docs/images/step1-terminal.png', 'docs/images/step2-switch.png',
     'docs/images/step3-pill.png',
