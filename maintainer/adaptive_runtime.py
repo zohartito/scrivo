@@ -1,4 +1,4 @@
-"""Integration layer for Sotto's human-grounded adaptive English runtime.
+"""Integration layer for Scrivo's human-grounded adaptive English runtime.
 
 The statistical protocol remains in :mod:`adaptive_learning`; this module
 connects it to durable history, local model receipts, and the priority lease.
@@ -1112,7 +1112,7 @@ class AdaptiveRuntime:
         ids = [WHISPER_ID, PARAKEET_ID] + ([WHISPER_GLOSSARY_ID] if terms else [])
         results = []
         for ident in ids:
-            receipt = self.backends.preflight(ident, warm, hf_home=os.environ.get("SOTTO_HF_HOME"), glossary_terms=terms)
+            receipt = self.backends.preflight(ident, warm, hf_home=os.environ.get("SCRIVO_HF_HOME"), glossary_terms=terms)
             receipt["warmup"] = "synthetic_non_speech" if synthetic else "retained_history_audio"
             self.receipts.save(ident, receipt); results.append({"stable_id": ident, "backend": receipt["backend"], "success": True})
         self.reconcile()

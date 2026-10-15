@@ -15,7 +15,7 @@ import numpy as np
 
 MODEL_ID = "nvidia/nemotron-speech-streaming-en-0.6b"
 SPEC_PATH = Path(__file__).resolve().parent / "config/nemotron-runtime.json"
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 INSTALL_ROOT = DATA_DIR / "nemotron"
 

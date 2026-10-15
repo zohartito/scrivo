@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-import sotto
+import scrivo
 from audio_codec import encode_pcm16
 from speech_config import resolve_speech_config
 
@@ -82,17 +82,17 @@ def open_history(base: Path, *, tolerate_unreadable=False):
     from learning import LearningStore
     store = HistoryStore(base, tolerate_unreadable=tolerate_unreadable)
     learning = LearningStore(base, tolerate_unreadable=tolerate_unreadable)
-    return store, sotto.history_coordinator(store, learning)
+    return store, scrivo.history_coordinator(store, learning)
 
 
 def recover(spool, store, coordinator, logs):
-    return sotto.recover_capture_spool(spool, store, coordinator, model=WHISPER.model_repo,
+    return scrivo.recover_capture_spool(spool, store, coordinator, model=WHISPER.model_repo,
                                        speech_config=WHISPER, glossary_terms=(), log=logs.append)
 
 
 class TemporaryData(unittest.TestCase):
     def setUp(self):
-        folder = tempfile.TemporaryDirectory(prefix="sotto-spool-")
+        folder = tempfile.TemporaryDirectory(prefix="scrivo-spool-")
         self.addCleanup(folder.cleanup)
         self.base = Path(folder.name) / "data"
         self.base.mkdir()
@@ -139,7 +139,7 @@ class CaptureSpoolTests(TemporaryData):
         self.assertEqual(spooled(self.base), [])
         self.assertIsNone(spool._writer, "an idle Scrivo started the spool writer")
 
-    def test_n9b_a_second_sotto_on_the_same_data_folder_neither_spools_nor_recovers(self):
+    def test_n9b_a_second_scrivo_on_the_same_data_folder_neither_spools_nor_recovers(self):
         from history import CaptureSpool
         first = new_spool(self.base)
         first.submit(uuid.uuid4().hex, speech(1.0), 48000.0, time.time())
@@ -184,7 +184,7 @@ class RecoveryTests(TemporaryData):
                 time.sleep(0.01)
             os._exit(0)  # no drain, no teardown, no History row
         """)
-        env = dict(os.environ, SOTTO_DATA_DIR=str(self.base), SOTTO_HF_HOME=str(self.base / "hf"))
+        env = dict(os.environ, SCRIVO_DATA_DIR=str(self.base), SCRIVO_HF_HOME=str(self.base / "hf"))
         done = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True,
                               timeout=60)
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -225,7 +225,7 @@ class RecoveryTests(TemporaryData):
         store, coordinator = open_history(self.base)
         from audio_codec import prepare_canonical
         coordinator.append_live("Please call me back at four",
-                                prepare_canonical(sotto.prepare_for_whisper(raw, 48000.0)), 1.2,
+                                prepare_canonical(scrivo.prepare_for_whisper(raw, 48000.0)), 1.2,
                                 WHISPER.model_repo, ts=captured_ts, raw_samples=raw,
                                 raw_sample_rate=48000.0, provenance="live", adaptive=False)
         recover(new_spool(self.base), store, coordinator, [])
@@ -244,15 +244,15 @@ class RecoveryTests(TemporaryData):
 
 
 def closures(names, namespace):
-    """Compile the named functions defined in sotto.run() into ``namespace``,
+    """Compile the named functions defined in scrivo.run() into ``namespace``,
     whose entries stand in for the closure variables they read (as in
     test_mac_lifecycle)."""
-    source = Path(sotto.__file__).read_text(encoding="utf-8")
+    source = Path(scrivo.__file__).read_text(encoding="utf-8")
     run = next(node for node in ast.parse(source).body
                if isinstance(node, ast.FunctionDef) and node.name == "run")
     found = {node.name: node for node in ast.walk(run) if isinstance(node, ast.FunctionDef)}
     module = ast.Module(body=[found[name] for name in names], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
+    exec(compile(module, scrivo.__file__, "exec"), namespace)
     return namespace
 
 
@@ -263,7 +263,7 @@ class MacKeyUpTests(TemporaryData):
         spool = new_spool(self.base)
         capture = types.SimpleNamespace(end=lambda include_stream=False: (raw, None),
                                         release_soon=lambda: None, native_rate=48000.0)
-        namespace = {"shutdown": sotto.ShutdownBoundary(), "capture": capture, "log": lambda line: None,
+        namespace = {"shutdown": scrivo.ShutdownBoundary(), "capture": capture, "log": lambda line: None,
                      "status_ui": None, "jobs": jobs, "time": time, "uuid": uuid, "spool": spool,
                      "current_speech_config": lambda: WHISPER,
                      "worker": types.SimpleNamespace(keep_untranscribed=lambda job: None)}
@@ -363,12 +363,12 @@ class MacWorkerReleaseTests(TemporaryData):
 
 @unittest.skipUnless(sys.platform == "win32", "the Windows app — Windows-only")
 class WindowsAppTests(TemporaryData):
-    """sotto_win.run end to end with the fake key, microphone and model of test_sotto_win."""
+    """scrivo_win.run end to end with the fake key, microphone and model of test_scrivo_win."""
 
     def run_app(self, drive, whisper):
         import contextlib
-        import sotto_win
-        import test_sotto_win as win_tests
+        import scrivo_win
+        import test_scrivo_win as win_tests
         hooks, boundaries, controllers, logs, delivered = [], [], [], [], []
         rate = 16_000
         voiced = (np.sin(np.arange(rate) / 3) * 0.2).astype(np.float32)
@@ -388,11 +388,11 @@ class WindowsAppTests(TemporaryData):
             win_tests._patched_run(stack, self.base, (whisper, FakeCapture, FakeHook), logs=logs,
                                    boundaries=boundaries, controllers=controllers)
             stack.enter_context(unittest.mock.patch.object(
-                sotto_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
-            stack.enter_context(unittest.mock.patch.object(sotto_win.win_inject, "copy_text", delivered.append))
+                scrivo_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
+            stack.enter_context(unittest.mock.patch.object(scrivo_win.win_inject, "copy_text", delivered.append))
             thread = threading.Thread(target=driver, daemon=True)
             thread.start()
-            sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+            scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
             thread.join(10)
         self.assertNotIn("error", results, (results, logs))
         return results, logs
@@ -417,7 +417,7 @@ class WindowsAppTests(TemporaryData):
                 return result
 
         def first_session(hook, results):
-            import test_sotto_win as win_tests
+            import test_scrivo_win as win_tests
             for _ in range(2):
                 hook.engine.pressed()
                 time.sleep(0.45)

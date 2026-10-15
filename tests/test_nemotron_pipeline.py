@@ -1,4 +1,4 @@
-"""Exercise the real Sotto queue/history/delivery path without OS side effects."""
+"""Exercise the real Scrivo queue/history/delivery path without OS side effects."""
 from contextlib import ExitStack
 from pathlib import Path
 import sys
@@ -12,7 +12,7 @@ import numpy as np
 
 import history
 import learning
-import sotto
+import scrivo
 from speech_config import resolve_speech_config
 from tests.test_nemotron import FakeRuntime
 
@@ -23,7 +23,7 @@ SETTLE_S = 1.5  # long enough for a transcription the fences failed to stop to l
 @unittest.skipUnless(sys.platform == 'darwin', 'Nemotron pipeline drives the AppKit runtime; macOS-only')
 class PipelineTests(unittest.TestCase):
     def _run_one_dictation(self, directory: Path, make_store, make_learning=None, drive=None):
-        """sotto.run with one streamed dictation, then Quit; History comes from
+        """scrivo.run with one streamed dictation, then Quit; History comes from
         ``make_store(**kwargs)``, the learning store from ``make_learning(**kwargs)``
         (default: one opened on ``directory``). ``drive(app)`` replaces the
         dictation-then-Quit loop; ``app`` holds the menu ``callbacks``, the
@@ -40,7 +40,7 @@ class PipelineTests(unittest.TestCase):
         status.set_history_callbacks.side_effect = callbacks.update
         audio = np.sin(np.arange(32000, dtype=np.float32) / 37) * .002
 
-        class Capture(sotto.CaptureService):
+        class Capture(scrivo.CaptureService):
             def __init__(self):
                 super().__init__()
                 captures.append(self)
@@ -74,12 +74,12 @@ class PipelineTests(unittest.TestCase):
             def sampleRate(self):
                 return 16000
 
-        class RecordingBoundary(sotto.ShutdownBoundary):
+        class RecordingBoundary(scrivo.ShutdownBoundary):
             def __init__(self):
                 super().__init__()
                 boundaries.append(self)
 
-        class RecordingEngine(sotto.GestureEngine):
+        class RecordingEngine(scrivo.GestureEngine):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 engines.append(self)
@@ -113,10 +113,10 @@ class PipelineTests(unittest.TestCase):
                 def make_learning(**_kwargs):
                     return learning_store
             replacements = {
-                "sotto.CaptureService": Capture,
-                "sotto.ShutdownBoundary": RecordingBoundary,
-                "sotto.GestureEngine": RecordingEngine,
-                "sotto.inject": inject,
+                "scrivo.CaptureService": Capture,
+                "scrivo.ShutdownBoundary": RecordingBoundary,
+                "scrivo.GestureEngine": RecordingEngine,
+                "scrivo.inject": inject,
                 "nemotron_backend.NemotronRuntime": lambda: runtime,
                 "history.HistoryStore": make_store,
                 "learning.LearningStore": make_learning,
@@ -135,7 +135,7 @@ class PipelineTests(unittest.TestCase):
             }
             for name, replacement in replacements.items():
                 stack.enter_context(patch(name, replacement))
-            sotto.run("right-option", speech_config=resolve_speech_config("nemotron-en"))
+            scrivo.run("right-option", speech_config=resolve_speech_config("nemotron-en"))
             # Let the event-only shutdown watchers observe their fence before
             # removing mocked OS boundaries. No real event tap or mic exists.
             time.sleep(.15)
@@ -178,7 +178,7 @@ class PipelineTests(unittest.TestCase):
             started = time.monotonic()
             _status, pasted, captures, runtime = self._run_one_dictation(
                 Path(directory), lambda **kwargs: store, drive=drive)
-            self.assertLess(time.monotonic() - started, sotto.APP_DRAIN_TIMEOUT + 2)
+            self.assertLess(time.monotonic() - started, scrivo.APP_DRAIN_TIMEOUT + 2)
             self.assertEqual(pasted, [])
             self.assertEqual(runtime.retries, [])
             self.assertEqual([(row["id"], row["revision"]) for row in store.entries()], [(kept["id"], 0)])
@@ -281,7 +281,7 @@ class PipelineTests(unittest.TestCase):
                 while not saved and time.monotonic() < deadline:
                     time.sleep(.01)
 
-            with patch("delivery.NSPasteboard", pasteboard), patch("sotto.save_audio_copy", save_audio_copy):
+            with patch("delivery.NSPasteboard", pasteboard), patch("scrivo.save_audio_copy", save_audio_copy):
                 self._run_one_dictation(root, lambda **kwargs: store, drive=drive)
             board = pasteboard.generalPasteboard.return_value
             self.assertEqual(board.setString_forType_.call_args.args[0], "copy these words")
@@ -301,7 +301,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(pasted, ["Complete final transcript."])
             self.assertEqual(index.read_bytes(), before)
             alerts = [call.args for call in status.show_error.call_args_list]
-            self.assertEqual([title for title, _ in alerts], [sotto.HISTORY_UNREADABLE_TITLE])
+            self.assertEqual([title for title, _ in alerts], [scrivo.HISTORY_UNREADABLE_TITLE])
             self.assertIn(str(index), alerts[0][1])
 
     def test_a_damaged_learning_set_still_launches_pastes_and_alerts_once(self):
@@ -320,5 +320,5 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(pasted, ["Complete final transcript."])
             self.assertEqual(damaged.read_bytes(), before)
             alerts = [call.args for call in status.show_error.call_args_list]
-            self.assertEqual([title for title, _ in alerts], [sotto.LEARNING_UNREADABLE_TITLE])
+            self.assertEqual([title for title, _ in alerts], [scrivo.LEARNING_UNREADABLE_TITLE])
             self.assertIn(str(damaged), alerts[0][1])

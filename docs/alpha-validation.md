@@ -12,8 +12,8 @@ arm64 Python 3.12 environment installed with `requirements-alpha.txt`:
 ```bash
 venv-alpha/bin/python -m pip check
 venv-alpha/bin/python scripts/test_alpha.py
-SOTTO_DATA_DIR="$PWD/.alpha-state" SOTTO_HF_HOME="$PWD/.alpha-cache" \
-  SOTTO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+SCRIVO_DATA_DIR="$PWD/.alpha-state" SCRIVO_HF_HOME="$PWD/.alpha-cache" \
+  SCRIVO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   venv-alpha/bin/python tests/gesture_check.py
 venv-alpha/bin/python -m compileall -q *.py scripts tests
 python3 benchmark.py tests/fixtures/benchmark_gate/manifest.jsonl --dry-run
@@ -26,7 +26,7 @@ venv-alpha/bin/python scripts/build_alpha_source.py /absolute/output/sotto-alpha
 folder and sets every offline flag; it refuses a checkout below a world-writable
 or foreign-owned folder, because Scrivo's privacy guards reject such paths.
 Inference in the suite is mocked or fixture-based. Five calibration integration
-checks need separately provisioned `SOTTO_CALIBRATION_FIXTURES` and are skipped
+checks need separately provisioned `SCRIVO_CALIBRATION_FIXTURES` and are skipped
 otherwise. The sealed LaunchAgent integration needs Python 3.14 and is skipped
 on 3.12. Windows-only tests are skipped on macOS (and vice versa) with reasons.
 Windows steps are in [windows-alpha.md](windows-alpha.md).

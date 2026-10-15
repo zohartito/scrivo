@@ -13,4 +13,4 @@ if not exist venv\Scripts\python.exe (
         venv\Scripts\python -m pip install -r requirements-alpha-windows.txt || exit /b 1
     )
 )
-venv\Scripts\python sotto_win.py %*
+venv\Scripts\python scrivo_win.py %*

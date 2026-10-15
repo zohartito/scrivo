@@ -1,7 +1,7 @@
 """Windows trigger-key hook: edge-detected, feeding the shared GestureEngine.
 
 pynput runs the WH_KEYBOARD_LL listener on its own thread; this module only
-consumes edges and feeds sotto.GestureEngine, exactly like the macOS
+consumes edges and feeds scrivo.GestureEngine, exactly like the macOS
 CGEventTap callback.  Auto-repeat presses are filtered by the same down-state
 guard the Mac uses, and ``physically_down`` (GetAsyncKeyState) drives the
 lost-release recovery poller.

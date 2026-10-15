@@ -1,6 +1,6 @@
 """Headless, supervised autonomous-silver worker.
 
-This module deliberately imports neither Sotto's UI nor any ML package.  It
+This module deliberately imports neither Scrivo's UI nor any ML package.  It
 can be run once by launchd or retained as a small service; expensive model work
 is performed without HistoryStore, SilverStore, adaptive, or scheduler locks.
 """
@@ -603,7 +603,7 @@ class AdaptiveWorker:
             def cycle_body() -> None:
                 try: self.run_once()
                 finally: done.set()
-            cycle=threading.Thread(target=cycle_body,daemon=True,name="sotto-worker-cycle")
+            cycle=threading.Thread(target=cycle_body,daemon=True,name="scrivo-worker-cycle")
             cycle.start()
             while not done.wait(.05):
                 if self.stop.is_set():
@@ -696,7 +696,7 @@ def sealed_readiness_status(base_dir: Path | str) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Sotto headless autonomous-silver worker")
+    parser = argparse.ArgumentParser(description="Scrivo headless autonomous-silver worker")
     parser.add_argument("--base-dir", required=True)
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--status", action="store_true", help="print strict content-free sealed readiness JSON")

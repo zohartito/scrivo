@@ -100,7 +100,7 @@ def icon_image(state: str):
 def update_report(data_dir=None) -> str | None:
     """The outcome of the last tray update, reported once at the next start."""
     from pathlib import Path
-    from sotto_paths import DATA_DIR
+    from scrivo_paths import DATA_DIR
     path = Path(data_dir or DATA_DIR) / "update-status.txt"
     try:
         line = path.read_text(encoding="utf-8-sig").strip()
@@ -127,7 +127,7 @@ class DialogHost:
             if self._stopped:
                 return
             if self._thread is None:
-                self._thread = threading.Thread(target=self._run, daemon=True, name="sotto-dialogs")
+                self._thread = threading.Thread(target=self._run, daemon=True, name="scrivo-dialogs")
                 self._thread.start()
         self._queue.put(build)
 
@@ -195,9 +195,9 @@ class TrayApp:
 
     # lifecycle ---------------------------------------------------------------
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, daemon=True, name="sotto-tray")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="scrivo-tray")
         self._thread.start()
-        threading.Thread(target=self._apply_changes, daemon=True, name="sotto-tray-icon").start()
+        threading.Thread(target=self._apply_changes, daemon=True, name="scrivo-tray-icon").start()
         self._ready.wait(5)
 
     def _run(self) -> None:
@@ -215,7 +215,7 @@ class TrayApp:
             self._ready.set()
             self._changed.set()  # anything that changed before the icon existed
 
-        self._icon = Icon("sotto", self._image("starting"), self._title(),
+        self._icon = Icon("scrivo", self._image("starting"), self._title(),
                           menu=pystray.Menu(self.items))
         try:
             self._icon.run(setup=setup)

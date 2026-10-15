@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""sotto — hold a key, speak, release; the words land at your cursor. All local.
+"""scrivo — hold a key, speak, release; the words land at your cursor. All local.
 
 Gestures (on whichever trigger key you pick; right Option by default):
     hold        push-to-talk — release to transcribe
     double-tap  hands-free — records until the next single tap
     lone tap    ignored (no accidental blips)
 
-    python sotto.py run                      # menu bar app with the pill
-    python sotto.py run --trigger fn         # another trigger key
-    python sotto.py doctor                   # permission + device checks
+    python scrivo.py run                      # menu bar app with the pill
+    python scrivo.py run --trigger fn         # another trigger key
+    python scrivo.py doctor                   # permission + device checks
 
 The installed Scrivo.app asks for the Microphone and Accessibility itself; a
 terminal run needs both granted to the terminal. Speech engines (Whisper via
@@ -36,25 +36,25 @@ import numpy as np
 
 import pipeline
 # The output guards live in pipeline.py (shared with Windows); these names stay
-# importable from sotto for existing callers.
+# importable from scrivo for existing callers.
 from pipeline import (LOOP_MAX_UNIT_WORDS, LOOP_MIN_PREFIX_CHARS, LOOP_MIN_REPEATS,  # noqa: F401
                       NO_SPEECH_TEXT, _find_repetition_loop, apply_voice_cleanup,
                       finalize_primary_live_delivery, looks_hallucinated, reads_as_no_speech,
                       salvage_repetition_loop, screen)
 # The decode options live in speech_config.py (shared with Windows).
 from speech_config import transcription_kwargs as _transcription_kwargs
-# The log and its rotation live in sotto_log.py (it imports nothing from sotto);
-# these names stay importable from sotto for existing callers.
-from sotto_log import keep_app_log_small, log, route_app_logs  # noqa: F401
+# The log and its rotation live in scrivo_log.py (it imports nothing from scrivo);
+# these names stay importable from scrivo for existing callers.
+from scrivo_log import keep_app_log_small, log, route_app_logs  # noqa: F401
 # Delivery to the frontmost app lives in delivery.py (it imports nothing from
-# sotto); these names stay importable from sotto for existing callers.
+# scrivo); these names stay importable from scrivo for existing callers.
 from delivery import (DELIVERY_POLL_S, DELIVERY_WAIT_MAX_S, NOT_IN_HISTORY_EITHER,  # noqa: F401
-                      RESTORE_DELAY_S, SOTTO_EVENT_TAG, TRANSIENT_PASTEBOARD_TYPE, DeliveryQueue,
+                      RESTORE_DELAY_S, SCRIVO_EVENT_TAG, TRANSIENT_PASTEBOARD_TYPE, DeliveryQueue,
                       PendingDeliveries, character_before_caret, compose_insertion, flush_clipboard_restore,
                       frontmost_pid, inject, is_own_event, own_window_without_text_field, post_command_key,
                       post_own_event, secure_input_active, set_clipboard_text, type_text)
 # Shutdown, restart and the drains live in lifecycle.py (it imports nothing
-# from sotto); these names stay importable from sotto for existing callers.
+# from scrivo); these names stay importable from scrivo for existing callers.
 from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAUNCHD_EXIT_TIMEOUT_S,  # noqa: F401
                        LAUNCHD_LABEL, QUIT_DRAIN_S, RESTART_DRAIN_DEADLINE_S, RESTART_FAILED_EXIT,
                        RESTART_RELEASE_WAIT_S, SIGTERM_DRAIN_S, SIGTERM_KEEP_RESERVE_S, SIGTERM_RESTORE_WAIT_S,
@@ -63,20 +63,20 @@ from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAU
                        UPDATE_DRAIN_DEADLINE_S, main_thread_dispatch, relaunch_app_after_exit,
                        shutdown_signal_handlers, wait_until_idle)
 # The trigger-key gesture engine lives in gestures.py (it imports nothing from
-# sotto); these names stay importable from sotto for existing callers.
+# scrivo); these names stay importable from scrivo for existing callers.
 from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, GestureEngine  # noqa: F401
 # Microphone capture and its CoreAudio helpers live in capture.py (it imports
-# nothing from sotto); these names stay importable from sotto for existing callers.
+# nothing from scrivo); these names stay importable from scrivo for existing callers.
 from capture import (HEADPHONE_OUTPUT_TERMINALS, HEADSET_INPUT_TERMINALS, HEADSET_NAME_HINTS,  # noqa: F401
                      IDLE_STOP_S, PREROLL_S, RING_S, SAMPLE_RATE, SILENCE_RESTART_AFTER_S, CaptureService,
                      doctor_input_probe, join_capture_blocks)
 # The trigger/hotkey tables and the event-tap listener live in hotkey.py (it
-# imports nothing from sotto; run() hands it Quartz as an adapter); these
-# names stay importable from sotto for existing callers.
+# imports nothing from scrivo; run() hands it Quartz as an adapter); these
+# names stay importable from scrivo for existing callers.
 from hotkey import (ALL_MODIFIERS, KEYCODES, MODIFIER_FLAGS, TRIGGER_LABELS, TRIGGERS,  # noqa: F401
                     HotkeyListener, hands_free_hint, hotkey_release_held_seconds, parse_hotkey,
                     trigger_down_in)
-# The menu-bar actions live in app_controller.py (it imports nothing from sotto).
+# The menu-bar actions live in app_controller.py (it imports nothing from scrivo).
 from app_controller import AppController
 try:  # Keep content-free CLI/admin helpers importable on non-macOS test hosts.
     import Quartz
@@ -97,12 +97,12 @@ MODEL_REWARM_AFTER_S = 240.0
 
 # Scrivo keeps its small, required Whisper model on the Mac itself.  The general
 # Hugging Face cache may live on removable storage, but dictation must still
-# start when that drive is absent.  Set SOTTO_HF_HOME to override this location.
-from sotto_paths import MODEL_CACHE_DIR
+# start when that drive is absent.  Set SCRIVO_HF_HOME to override this location.
+from scrivo_paths import MODEL_CACHE_DIR
 
-SOTTO_HF_HOME = MODEL_CACHE_DIR
-os.environ["HF_HOME"] = str(SOTTO_HF_HOME)
-os.environ["HF_HUB_CACHE"] = str(SOTTO_HF_HOME / "hub")
+SCRIVO_HF_HOME = MODEL_CACHE_DIR
+os.environ["HF_HOME"] = str(SCRIVO_HF_HOME)
+os.environ["HF_HUB_CACHE"] = str(SCRIVO_HF_HOME / "hub")
 # No telemetry (README): the Hub client otherwise adds the torch version and
 # the calling agent to the user agent of every model download.
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -113,15 +113,15 @@ def glossary_source(explicit: str | None) -> Path | None:
     (which takes no arguments) can be taught names and terms too."""
     if explicit:
         return Path(explicit)
-    from sotto_paths import DATA_DIR
+    from scrivo_paths import DATA_DIR
     candidate = DATA_DIR / "glossary.txt"
     return candidate if candidate.is_file() else None
 
 
-def sotto_icon_path() -> Path | None:
+def scrivo_icon_path() -> Path | None:
     """Scrivo.app's icon, found from the launcher that started this process
     (named after it: Scrivo.icns, or Sotto.icns in an app built before the rename)."""
-    executable = os.environ.get("SOTTO_APP_EXECUTABLE", "").strip()
+    executable = os.environ.get("SCRIVO_APP_EXECUTABLE", "").strip()
     icon = (Path(executable).parent.parent / "Resources" / f"{Path(executable).name}.icns"
             if executable else None)
     return icon if icon is not None and icon.is_file() else None
@@ -152,7 +152,7 @@ def explain_permission(title: str, message: str, pane: str, *, granted=None, reg
     import ui
     return ui.permission_dialog(
         title, message, f"x-apple.systempreferences:com.apple.preference.security?{pane}",
-        granted=granted, register=register, icon_path=sotto_icon_path())
+        granted=granted, register=register, icon_path=scrivo_icon_path())
 
 
 def persist_engine_and_restart(mode: str, restart, on_failure=None) -> None:
@@ -196,7 +196,7 @@ def microphone_permission(*, request: bool = False) -> bool:
 
 def totals_path():
     import progress
-    from sotto_paths import DATA_DIR
+    from scrivo_paths import DATA_DIR
     return DATA_DIR / progress.TOTALS_NAME
 
 
@@ -317,13 +317,13 @@ def resolve_pinned_snapshot(repo: str, allow_patterns: list, complete) -> str:
     from huggingface_hub import snapshot_download
     from speech_config import MODEL_REVISIONS
     options = {"repo_id": repo, "revision": MODEL_REVISIONS.get(repo),
-               "cache_dir": str(SOTTO_HF_HOME / "hub"), "allow_patterns": allow_patterns}
+               "cache_dir": str(SCRIVO_HF_HOME / "hub"), "allow_patterns": allow_patterns}
     try:
         return complete(snapshot_download(**options, local_files_only=True))
     except FileNotFoundError:
         if offline_requested():
             raise ModelUnavailable(
-                f"{repo} is not downloaded yet. Run once without SOTTO_OFFLINE, "
+                f"{repo} is not downloaded yet. Run once without SCRIVO_OFFLINE, "
                 "HF_HUB_OFFLINE and TRANSFORMERS_OFFLINE to download it.") from None
     try:
         return complete(snapshot_download(**options))
@@ -336,7 +336,7 @@ def resolve_pinned_snapshot(repo: str, allow_patterns: list, complete) -> str:
 def parakeet_cached() -> bool:
     """Is the pinned Parakeet snapshot fully downloaded? (a path check only)"""
     from speech_config import MODEL_PROFILES, pinned_snapshot_cached
-    return pinned_snapshot_cached(MODEL_PROFILES["parakeet"].repo, SOTTO_HF_HOME / "hub",
+    return pinned_snapshot_cached(MODEL_PROFILES["parakeet"].repo, SCRIVO_HF_HOME / "hub",
                                   ("config.json", "model.safetensors"))
 
 
@@ -1030,7 +1030,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     # and let macOS open the grant prompt for whatever binary is running us.
     if app_mode():
         import ui
-        ui.use_app_icon(sotto_icon_path())
+        ui.use_app_icon(scrivo_icon_path())
     if app_mode() and not ApplicationServices.AXIsProcessTrusted():
         # Scrivo.app: explain, open the right pane, and continue once granted.
         if not explain_permission(
@@ -1395,12 +1395,12 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         binding=binding, rebind=hotkeys.rebind, restart=restart, language_lock=language_lock,
         language_state=language_state, save_language_mode=save_language_mode, parakeet_cached=parakeet_cached,
         persist_engine_and_restart=persist_engine_and_restart, run_installer=run_installer, triggers=TRIGGERS,
-        trigger_labels=TRIGGER_LABELS, sotto_script=Path(__file__).resolve(), engine=engine, capture=capture,
+        trigger_labels=TRIGGER_LABELS, scrivo_script=Path(__file__).resolve(), engine=engine, capture=capture,
         on_finish=on_finish, started_from=started_from)
 
     # Built here, after inject_when_clear / undo_when_clear exist: the worker
     # holds its collaborators instead of resolving them late like the closure
-    # did. Imported inside run() so transcription.py can bind sotto's helpers
+    # did. Imported inside run() so transcription.py can bind scrivo's helpers
     # at import time without a cycle at module load.
     from transcription import TranscriptionWorker
     worker = TranscriptionWorker(
@@ -1533,7 +1533,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             shutdown.discard_queued(jobs)
 
     threading.Thread(target=shutdown_watcher, daemon=True).start()
-    threading.Thread(target=lifecycle.watch_signals, daemon=True, name="sotto-signals").start()
+    threading.Thread(target=lifecycle.watch_signals, daemon=True, name="scrivo-signals").start()
 
     if status_ui is not None:
         # menu actions + system lifecycle hooks
@@ -1586,7 +1586,7 @@ def doctor() -> None:
     # SIGSEGV, not a catchable exception) in sessions with no usable audio
     # context, and a diagnostic must survive the conditions it diagnoses.
     # The probe is doctor_input_probe: the capture path's own pin + input bus.
-    probe = "import sotto; raise SystemExit(sotto.doctor_input_probe())"
+    probe = "import scrivo; raise SystemExit(scrivo.doctor_input_probe())"
     try:
         result = subprocess.run([sys.executable, "-c", probe],
                                 capture_output=True, text=True, timeout=30,
@@ -1636,7 +1636,7 @@ def move_from_legacy_app(*, hand_off=None, retire=None) -> bool:
     Side effects: may open Scrivo.app, rewrite login items, delete the old
     app; logs."""
     import mac_app
-    executable = os.environ.get("SOTTO_APP_EXECUTABLE", "")
+    executable = os.environ.get("SCRIVO_APP_EXECUTABLE", "")
     script = Path(__file__).resolve()
     try:
         opened = (hand_off or mac_app.hand_off)(executable, script)
@@ -1683,7 +1683,7 @@ def main() -> None:
     if (args.command in LANE_COMMANDS or (args.command == "run" and args.adaptive)) and not maintainer_lane_available():
         parser.error("this needs the maintainer lane (maintainer/), which this copy of Scrivo does not include")
     if app_mode() and args.command == "run":
-        from sotto_paths import DATA_DIR
+        from scrivo_paths import DATA_DIR
         route_app_logs(DATA_DIR)
         if move_from_legacy_app():
             return  # exit 0: a login item's KeepAlive leaves a clean exit alone
@@ -1703,7 +1703,7 @@ def main() -> None:
         except ModelUnavailable as exc:
             print(f"✗ {exc}")
             sys.exit(1)
-        print(f"✓ {engine} model ready ({Path(path).name[:12]}) in {SOTTO_HF_HOME}")
+        print(f"✓ {engine} model ready ({Path(path).name[:12]}) in {SCRIVO_HF_HOME}")
         from offline_runtime import offline_requested
         import vad
         try:

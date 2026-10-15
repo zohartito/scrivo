@@ -45,7 +45,7 @@ def _canonicalize_wav(data: bytes) -> bytes | None:
 
     VoxPopuli's parquet stores format-3 float WAVs, which :mod:`wave` rejects.
     This intentionally avoids ffmpeg/resampling variation; clipping and
-    float->PCM16 conversion are exactly Sotto's canonical encoder.
+    float->PCM16 conversion are exactly Scrivo's canonical encoder.
     """
     import numpy as np
     if len(data)<44 or data[:4]!=b"RIFF" or data[8:12]!=b"WAVE": return None
@@ -247,7 +247,7 @@ def derive_plan_with_reader(test_parquet: Path, validation_parquet: Path, reader
         raise RuntimeError("pinned VoxPopuli source mismatch")
     reader=Path(reader_python).resolve()
     if not reader.is_absolute() or reader.is_symlink() or not reader.is_file() or not os.access(reader,os.X_OK): raise RuntimeError("unsafe parquet reader interpreter")
-    root=Path(tempfile.mkdtemp(prefix="sotto-calibration-reader-")); os.chmod(root,0o700); bundle=root/"bundle"
+    root=Path(tempfile.mkdtemp(prefix="scrivo-calibration-reader-")); os.chmod(root,0o700); bundle=root/"bundle"
     try:
         # Run as a module from the repo root, so the helper imports the same
         # top-level and maintainer modules a script run beside them used to.

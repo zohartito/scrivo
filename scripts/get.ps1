@@ -2,8 +2,8 @@
 #
 #   irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex
 #
-# Downloads Scrivo with git into %USERPROFILE%\sotto (or $env:SOTTO_SOURCE; the
-# folder keeps the name Scrivo had before, Sotto), or updates that copy (the new
+# Downloads Scrivo with git into %USERPROFILE%\scrivo (or $env:SCRIVO_SOURCE; the
+# folder keeps the name Scrivo had before, Scrivo), or updates that copy (the new
 # packages first, the source only after them), then runs its
 # scripts\install-windows.ps1 and starts Scrivo.
 # No admin rights. Missing tools are named with the command that installs them.
@@ -13,8 +13,8 @@
 # compared by their long names: Windows PowerShell's GetFullPath expands only
 # a path that exists and PowerShell 7's never does, so the part that exists
 # goes through GetLongPathName.
-if (-not ('SottoPaths.Native' -as [type])) {
-  Add-Type -Namespace SottoPaths -Name Native -MemberDefinition @'
+if (-not ('ScrivoPaths.Native' -as [type])) {
+  Add-Type -Namespace ScrivoPaths -Name Native -MemberDefinition @'
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 public static extern uint GetLongPathNameW(string shortPath, System.Text.StringBuilder longPath, uint size);
 '@
@@ -28,7 +28,7 @@ function Long-Path([string]$Path) {
     $existing = [IO.Path]::GetDirectoryName($existing)
   }
   $buffer = New-Object Text.StringBuilder 32768
-  if (-not $existing -or [SottoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
+  if (-not $existing -or [ScrivoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
   if ($rest) { return $buffer.ToString().TrimEnd('\') + $rest }
   return $buffer.ToString()
 }
@@ -48,16 +48,16 @@ function Test-SameRepo([string]$First, [string]$Second) {
 # exit code only when the script runs as a file.
 function Fail-Install([string]$Text) {
   Write-Host "X $Text" -ForegroundColor Red
-  $script:SottoInstallFailed = $true
+  $script:ScrivoInstallFailed = $true
 }
 
-function Install-Sotto {
+function Install-Scrivo {
   $ErrorActionPreference = 'Stop'
   # This project, and its URL from before the rename (Scrivo was called Sotto).
   $scrivoRepo = 'https://github.com/zohartito/scrivo.git'
   $legacyRepo = 'https://github.com/zohartito/sotto.git'
-  $repo = if ($env:SOTTO_REPO) { $env:SOTTO_REPO } else { $scrivoRepo }
-  $dest = if ($env:SOTTO_SOURCE) { $env:SOTTO_SOURCE } else { Join-Path $env:USERPROFILE 'sotto' }
+  $repo = if ($env:SCRIVO_REPO) { $env:SCRIVO_REPO } else { $scrivoRepo }
+  $dest = if ($env:SCRIVO_SOURCE) { $env:SCRIVO_SOURCE } else { Join-Path $env:USERPROFILE 'scrivo' }
   $shortcutDir = [Environment]::GetFolderPath('Programs')
 
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -72,7 +72,7 @@ function Install-Sotto {
       # A copy made before the rename follows the old URL (GitHub redirects
       # it): the same project, moved to the new URL below.
       if (-not ((Test-SameRepo $repo $scrivoRepo) -and (Test-SameRepo $origin $legacyRepo))) {
-        Fail-Install "$dest is a git copy of $origin, not Scrivo. Choose another folder with `$env:SOTTO_SOURCE."
+        Fail-Install "$dest is a git copy of $origin, not Scrivo. Choose another folder with `$env:SCRIVO_SOURCE."
         return
       }
       $renamed = $origin -replace 'zohartito/sotto', 'zohartito/scrivo'  # same form: https or ssh
@@ -99,7 +99,7 @@ function Install-Sotto {
     # Ask the update's own installer whether it will run here (its Start Menu
     # check) before the source moves: a refusal after the pull would leave new
     # source on old packages.
-    $check = Join-Path ([IO.Path]::GetTempPath()) "sotto-get-$PID"
+    $check = Join-Path ([IO.Path]::GetTempPath()) "scrivo-get-$PID"
     Remove-Item -LiteralPath $check -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $check | Out-Null
     try {
@@ -129,7 +129,7 @@ function Install-Sotto {
     git -C $dest merge --ff-only --quiet '@{u}'
     if ($LASTEXITCODE -ne 0) { Fail-Install "Could not update $dest (local changes?)."; return }
   } elseif (Test-Path -LiteralPath $dest) {
-    Fail-Install "$dest exists and is not a copy of Scrivo. Choose another folder with `$env:SOTTO_SOURCE."
+    Fail-Install "$dest exists and is not a copy of Scrivo. Choose another folder with `$env:SCRIVO_SOURCE."
     return
   } else {
     Write-Host "== Downloading Scrivo into $dest"
@@ -137,7 +137,7 @@ function Install-Sotto {
     if ($LASTEXITCODE -ne 0) { Fail-Install 'Could not download Scrivo.'; return }
   }
 
-  if ($env:SOTTO_GET_DRY_RUN) { "dry run: would run $dest\scripts\install-windows.ps1"; return }
+  if ($env:SCRIVO_GET_DRY_RUN) { "dry run: would run $dest\scripts\install-windows.ps1"; return }
   # The installer checks Windows, Python 3.13 and the GPU, and says what is missing.
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dest 'scripts\install-windows.ps1') -ShortcutDir $shortcutDir
   if ($LASTEXITCODE -ne 0) { Fail-Install 'The installer stopped; see the messages above.'; return }
@@ -145,13 +145,13 @@ function Install-Sotto {
   if (Test-Path -LiteralPath $shortcut) { Start-Process -FilePath $shortcut }
 }
 
-$script:SottoInstallFailed = $false
-Install-Sotto
-if ($script:SottoInstallFailed) {
+$script:ScrivoInstallFailed = $false
+Install-Scrivo
+if ($script:ScrivoInstallFailed) {
   $global:LASTEXITCODE = 1
   # Only when run as a file (powershell -File get.ps1): a function defined from
   # text pasted through iex has no file, and there exit would close the shell.
-  if (${function:Install-Sotto}.File) { exit 1 }
+  if (${function:Install-Scrivo}.File) { exit 1 }
 } else {
   $global:LASTEXITCODE = 0
 }

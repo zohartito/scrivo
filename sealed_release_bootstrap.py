@@ -1,4 +1,4 @@
-"""Stdlib-only verified entrypoint for a sealed Sotto release.
+"""Stdlib-only verified entrypoint for a sealed Scrivo release.
 
 It is intentionally executable by ``/usr/bin/python3`` before the pinned
 external runtime is trusted.  It never imports application code from a mutable
@@ -98,7 +98,7 @@ def _verify_runtime(runtime: dict) -> Path:
         if [_sealed_import_root(Path(str(row.get("root","")))) for row in roots] != roots: raise RuntimeError
         ff_configured=Path(ffmpeg["configured_path"]); ff_resolved=Path(ffmpeg["resolved_path"])
         if not ff_configured.is_absolute() or ff_configured.resolve(strict=True) != ff_resolved or _sha_external(ff_resolved) != ffmpeg["sha256"]: raise RuntimeError
-        result=subprocess.run([str(ff_resolved),"-version"],shell=False,check=False,text=True,capture_output=True,env={"PATH":"/usr/bin:/bin","SOTTO_OFFLINE":"1","HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1"},timeout=10)
+        result=subprocess.run([str(ff_resolved),"-version"],shell=False,check=False,text=True,capture_output=True,env={"PATH":"/usr/bin:/bin","SCRIVO_OFFLINE":"1","HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1"},timeout=10)
         first=result.stdout.splitlines()[0] if result.returncode==0 and result.stdout.splitlines() else ""
         if first != ffmpeg["version_first_line"] or hashlib.sha256(first.encode()).hexdigest() != ffmpeg["version_sha256"]: raise RuntimeError
     except (KeyError,OSError,ValueError,subprocess.SubprocessError,RuntimeError) as exc: raise RuntimeError("sealed runtime closure changed") from exc
@@ -250,7 +250,7 @@ print(json.dumps({'python':{'version':sys.version,'executable':sys.executable,'i
     try:
         result=subprocess.run([str(interpreter),"-I","-S","-B","-c",code],shell=False,check=False,text=True,capture_output=True,
                               input=json.dumps({"policy":{"distributions":policy["distributions"],"roots":policy["roots"],"excluded":policy["excluded"]},"expected":expected,"import_roots":import_roots or []},sort_keys=True,separators=(",",":")),
-                              env={"PATH":"/usr/bin:/bin","SOTTO_OFFLINE":"1","HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1","PYTHONDONTWRITEBYTECODE":"1"},timeout=120)
+                              env={"PATH":"/usr/bin:/bin","SCRIVO_OFFLINE":"1","HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1","PYTHONDONTWRITEBYTECODE":"1"},timeout=120)
         if result.returncode or len(result.stdout)>32*1024*1024: raise RuntimeError
         return json.loads(result.stdout)
     except (OSError,ValueError,json.JSONDecodeError,subprocess.SubprocessError) as exc:
@@ -272,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     if not _canonical_isolation(): raise RuntimeError("sealed bootstrap isolation is required")
     # A sealed process is unconditionally offline: force the flags here so a
     # manual invocation without the launchd environment cannot reach the Hub.
-    for name in ("SOTTO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE","PYTHONDONTWRITEBYTECODE"): os.environ[name]="1"
+    for name in ("SCRIVO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE","PYTHONDONTWRITEBYTECODE"): os.environ[name]="1"
     parser=argparse.ArgumentParser(); parser.add_argument("--release-root",required=True); parser.add_argument("--entry",required=True); args,rest=parser.parse_known_args(argv)
     releases=Path(args.release_root); bundle,manifest=verify(releases); runtime=_verify_runtime(manifest["runtime"])
     # The runtime closure above was verified for THIS release only.  Pin the

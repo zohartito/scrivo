@@ -6,12 +6,12 @@ event tap: its callback turns trigger edges, chords and hotkey presses into
 GestureEngine calls, and its resync poller revives a tap macOS disabled
 silently and synthesizes a release the tap missed.
 
-Moved out of sotto.py (restructure step 6): the tables and helpers verbatim,
-the tap closures of run() as HotkeyListener methods. sotto re-exports the
-public names, so ``sotto.TRIGGERS is hotkey.TRIGGERS``. Quartz is never
+Moved out of scrivo.py (restructure step 6): the tables and helpers verbatim,
+the tap closures of run() as HotkeyListener methods. scrivo re-exports the
+public names, so ``scrivo.TRIGGERS is hotkey.TRIGGERS``. Quartz is never
 imported here: run() passes the real module as the ``quartz`` adapter, tests
 pass a fake, so the tap's decisions are testable without macOS. Imports
-nothing from sotto.
+nothing from scrivo.
 """
 from __future__ import annotations
 

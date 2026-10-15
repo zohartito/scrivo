@@ -11,7 +11,7 @@ VAD ~0%, while real whispered dictations produced 240+ chars at VAD 0%.
 import unittest
 import unittest.mock
 
-from sotto import reads_as_no_speech
+from scrivo import reads_as_no_speech
 
 
 class ReadsAsNoSpeechTest(unittest.TestCase):

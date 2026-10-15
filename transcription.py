@@ -5,12 +5,12 @@ the model (or the clipboard cycle) concurrently, and results arrive in capture
 order. Jobs are tuples whose first element names the kind: ``live``,
 ``retry``, ``warmup``, ``stream-audio`` and ``stream-close``.
 
-This is ``run().transcribe_worker`` from sotto.py moved into a class with its
+This is ``run().transcribe_worker`` from scrivo.py moved into a class with its
 collaborators injected (History coordinator, delivery and UI callbacks, model
 handles), so tests can build it with fakes; the golden master in
 tests/test_transcription_worker.py pins its observable behaviour.
 
-Imports: the helpers below are bound from sotto at import time, and sotto
+Imports: the helpers below are bound from scrivo at import time, and scrivo
 imports ``TranscriptionWorker`` inside ``run()`` rather than at module scope,
 so there is no cycle at load whichever module is imported first.
 """
@@ -23,7 +23,7 @@ import time
 
 from pipeline import TRANSCRIPTION_FAILED_TEXT, finalize_primary_live_delivery, move_detected_language, screen
 from speech_config import transcription_kwargs
-from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
+from scrivo import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
                    adaptive_live_transcribe_prepared, append_untranscribed_capture,
                    asr_skip_reason, collapse_silence, discard_staged_adaptive_live_audio,
                    prepare_for_whisper, transcribe_canonical_samples,
@@ -33,7 +33,7 @@ from sotto import (DEAD_ROUTE_TEXT, LONG_CAPTURE_S, SAMPLE_RATE, LocalWhisper,
 # pipeline.TRANSCRIPTION_FAILED_TEXT (shared with Windows), so Retry can
 # transcribe it again.
 # A live capture Scrivo stopped before transcribing (N9) is kept the same way,
-# under sotto.NOT_TRANSCRIBED_TEXT (shared with the N9b spool recovery).
+# under scrivo.NOT_TRANSCRIBED_TEXT (shared with the N9b spool recovery).
 # How long the teardown's keep waits for a History append of the same capture
 # that is already under way, before leaving that capture to it.
 APPEND_WAIT_S = 1.0

@@ -1,6 +1,6 @@
 """Offline, nonconstructing backup and anti-rollback restore tooling.
 
-This module deliberately does not import or instantiate any Sotto store.  It
+This module deliberately does not import or instantiate any Scrivo store.  It
 works on explicit fixture/user roots only; callers must never pass a live root
 without arranging their own operational downtime.
 """
@@ -338,7 +338,7 @@ def restore(bundle: Path | str, target: Path | str) -> Path:
 
 
 def main() -> None:
-    parser=argparse.ArgumentParser(description="offline Sotto backup/restore")
+    parser=argparse.ArgumentParser(description="offline Scrivo backup/restore")
     parser.add_argument("command",choices=("backup","verify","restore")); parser.add_argument("--source"); parser.add_argument("--bundle",required=True); parser.add_argument("--target")
     args=parser.parse_args()
     if args.command=="backup":

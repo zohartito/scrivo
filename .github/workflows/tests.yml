@@ -46,7 +46,7 @@ jobs:
 
       - name: Unit tests
         env:
-          SOTTO_DATA_DIR: ${{ runner.temp }}/sotto-data
+          SCRIVO_DATA_DIR: ${{ runner.temp }}/scrivo-data
         run: venv-alpha/bin/python -m unittest discover -s tests
 
   windows:

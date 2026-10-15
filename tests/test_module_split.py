@@ -1,5 +1,5 @@
-"""The modules split out of sotto.py: sotto still exports every moved public
-name as the very same object, and no split module imports sotto (no cycle).
+"""The modules split out of scrivo.py: scrivo still exports every moved public
+name as the very same object, and no split module imports scrivo (no cycle).
 
 Module state that is rebound at run time (the clipboard restore bookkeeping,
 the secure-input probe, the log rotation state) is deliberately not
@@ -11,15 +11,15 @@ import importlib
 import unittest
 from pathlib import Path
 
-import sotto
+import scrivo
 
 ROOT = Path(__file__).resolve().parents[1]
 
 MOVED = {
-    "sotto_log": ("keep_app_log_small", "log", "route_app_logs"),
+    "scrivo_log": ("keep_app_log_small", "log", "route_app_logs"),
     "delivery": (
         "DELIVERY_POLL_S", "DELIVERY_WAIT_MAX_S", "NOT_IN_HISTORY_EITHER", "RESTORE_DELAY_S",
-        "SOTTO_EVENT_TAG", "TRANSIENT_PASTEBOARD_TYPE", "DeliveryQueue", "PendingDeliveries",
+        "SCRIVO_EVENT_TAG", "TRANSIENT_PASTEBOARD_TYPE", "DeliveryQueue", "PendingDeliveries",
         "character_before_caret", "compose_insertion", "flush_clipboard_restore", "frontmost_pid",
         "inject", "is_own_event", "own_window_without_text_field", "post_command_key", "post_own_event",
         "secure_input_active", "set_clipboard_text", "type_text"),
@@ -36,19 +36,19 @@ MOVED = {
         "HEADPHONE_OUTPUT_TERMINALS", "HEADSET_INPUT_TERMINALS", "HEADSET_NAME_HINTS", "IDLE_STOP_S",
         "PREROLL_S", "RING_S", "SAMPLE_RATE", "SILENCE_RESTART_AFTER_S", "CaptureService",
         "doctor_input_probe", "join_capture_blocks"),
-    # Shared with Windows (restructure step 7), which no longer reaches into sotto for it.
+    # Shared with Windows (restructure step 7), which no longer reaches into scrivo for it.
     "pipeline": ("finalize_primary_live_delivery",),
     "hotkey": (
         "ALL_MODIFIERS", "KEYCODES", "MODIFIER_FLAGS", "TRIGGER_LABELS", "TRIGGERS", "HotkeyListener",
         "hands_free_hint", "hotkey_release_held_seconds", "parse_hotkey", "trigger_down_in"),
 }
 NOT_REEXPORTED = {
-    "sotto_log": ("_app_log", "_app_log_lock", "_point_output_at", "_rotate_if_large"),
+    "scrivo_log": ("_app_log", "_app_log_lock", "_point_output_at", "_rotate_if_large"),
     "delivery": ("_pending_restore", "_restore_generation", "_secure_input_probe", "_restore_clipboard"),
     "lifecycle": (),
     "gestures": (),
     # Private CoreAudio helpers CaptureService reads from capture: without a
-    # sotto copy, a patch aimed at sotto fails loudly instead of missing.
+    # scrivo copy, a patch aimed at scrivo fails loudly instead of missing.
     "capture": ("_audio_devices", "_builtin_input_device", "_pin_input_to_builtin", "_select_input_device"),
     "pipeline": (),
     "hotkey": (),
@@ -56,18 +56,18 @@ NOT_REEXPORTED = {
 
 
 class ReexportTests(unittest.TestCase):
-    def test_sotto_exports_every_moved_name_as_the_same_object(self):
+    def test_scrivo_exports_every_moved_name_as_the_same_object(self):
         for module_name, names in MOVED.items():
             module = importlib.import_module(module_name)
             for name in names:
                 with self.subTest(module=module_name, name=name):
-                    self.assertIs(getattr(sotto, name), getattr(module, name))
+                    self.assertIs(getattr(scrivo, name), getattr(module, name))
 
-    def test_moved_names_are_defined_in_their_module_not_in_sotto(self):
-        sotto_tree = ast.parse((ROOT / "sotto.py").read_text(encoding="utf-8"))
-        defined = {node.name for node in sotto_tree.body
+    def test_moved_names_are_defined_in_their_module_not_in_scrivo(self):
+        scrivo_tree = ast.parse((ROOT / "scrivo.py").read_text(encoding="utf-8"))
+        defined = {node.name for node in scrivo_tree.body
                    if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
-        defined |= {target.id for node in sotto_tree.body if isinstance(node, ast.Assign)
+        defined |= {target.id for node in scrivo_tree.body if isinstance(node, ast.Assign)
                     for target in node.targets if isinstance(target, ast.Name)}
         for module_name, names in MOVED.items():
             for name in (*names, *NOT_REEXPORTED[module_name]):
@@ -76,24 +76,24 @@ class ReexportTests(unittest.TestCase):
                     self.assertTrue(hasattr(importlib.import_module(module_name), name))
 
     def test_the_decode_options_live_in_speech_config(self):
-        # Shared with Windows (restructure step 7); sotto keeps its old private name.
+        # Shared with Windows (restructure step 7); scrivo keeps its old private name.
         import speech_config
-        self.assertIs(sotto._transcription_kwargs, speech_config.transcription_kwargs)
-        sotto_tree = ast.parse((ROOT / "sotto.py").read_text(encoding="utf-8"))
-        self.assertNotIn("_transcription_kwargs", {node.name for node in sotto_tree.body
+        self.assertIs(scrivo._transcription_kwargs, speech_config.transcription_kwargs)
+        scrivo_tree = ast.parse((ROOT / "scrivo.py").read_text(encoding="utf-8"))
+        self.assertNotIn("_transcription_kwargs", {node.name for node in scrivo_tree.body
                                                    if isinstance(node, ast.FunctionDef)})
 
     def test_rebound_module_state_is_not_reexported(self):
         for module_name, names in NOT_REEXPORTED.items():
             for name in names:
                 with self.subTest(module=module_name, name=name):
-                    self.assertFalse(hasattr(sotto, name))
+                    self.assertFalse(hasattr(scrivo, name))
 
 
 class NoCycleTests(unittest.TestCase):
-    def test_no_split_module_imports_sotto(self):
+    def test_no_split_module_imports_scrivo(self):
         # app_controller.py holds what were run()'s menu closures; run()
-        # injects every sotto helper it needs.
+        # injects every scrivo helper it needs.
         for module_name in (*MOVED, "app_controller"):
             tree = ast.parse((ROOT / f"{module_name}.py").read_text(encoding="utf-8"))
             imported = set()
@@ -103,7 +103,7 @@ class NoCycleTests(unittest.TestCase):
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     imported.add(node.module.split(".")[0])
             with self.subTest(module=module_name):
-                self.assertNotIn("sotto", imported)
+                self.assertNotIn("scrivo", imported)
 
 
 if __name__ == "__main__":

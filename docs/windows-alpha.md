@@ -56,7 +56,7 @@ sees a GPU and the CPU set otherwise (`-Cpu` / `-Cuda` override), creates the
 data folder `%LOCALAPPDATA%\sotto-alpha` (`-DataDir` overrides), downloads the
 pinned speech model (about 1.6 GB, into `huggingface\` there) and the pinned
 Silero VAD v6.2 voice detection (2.3 MB, SHA-256 checked) with
-`sotto_win.py setup` (`-SkipSetup` leaves the model to the first launch), and
+`scrivo_win.py setup` (`-SkipSetup` leaves the model to the first launch), and
 adds a Start Menu shortcut **Scrivo** that starts the tray app without a
 console window, with that data folder applied. No admin rights, services or
 scheduled tasks. Running it again is safe and updates the environment; it
@@ -88,18 +88,18 @@ venv-alpha\Scripts\python -m pip install -r requirements-alpha-windows-cuda.txt
 venv-alpha\Scripts\python -m pip check
 
 # Keep alpha history, settings and models in their own folder.
-$env:SOTTO_DATA_DIR = "$env:LOCALAPPDATA\sotto-alpha"
-$env:SOTTO_HF_HOME  = "$env:SOTTO_DATA_DIR\huggingface"
+$env:SCRIVO_DATA_DIR = "$env:LOCALAPPDATA\sotto-alpha"
+$env:SCRIVO_HF_HOME  = "$env:SCRIVO_DATA_DIR\huggingface"
 
-venv-alpha\Scripts\python sotto_win.py setup      # model + voice detection, once
-venv-alpha\Scripts\python sotto_win.py doctor
-venv-alpha\Scripts\python sotto_win.py            # console; Ctrl-C stops it
-venv-alpha\Scripts\python sotto_win.py --tray     # tray app from a console
+venv-alpha\Scripts\python scrivo_win.py setup      # model + voice detection, once
+venv-alpha\Scripts\python scrivo_win.py doctor
+venv-alpha\Scripts\python scrivo_win.py            # console; Ctrl-C stops it
+venv-alpha\Scripts\python scrivo_win.py --tray     # tray app from a console
 venv-alpha\Scripts\pythonw win_launch.py --data-dir "$env:LOCALAPPDATA\sotto-alpha"   # tray, no console
 ```
 
-In **cmd.exe** use `set SOTTO_DATA_DIR=%LOCALAPPDATA%\sotto-alpha` and
-`set SOTTO_HF_HOME=%LOCALAPPDATA%\sotto-alpha\huggingface`. Set both variables
+In **cmd.exe** use `set SCRIVO_DATA_DIR=%LOCALAPPDATA%\sotto-alpha` and
+`set SCRIVO_HF_HOME=%LOCALAPPDATA%\sotto-alpha\huggingface`. Set both variables
 again in every new console, and use the same values for the `history`
 commands below. `win_launch.py --data-dir DIR` sets them for you (models go to
 `DIR\huggingface` unless `--hf-home` says otherwise).
@@ -114,7 +114,7 @@ downloads nothing and does not open the microphone. The console run is ready whe
 right-ctrl**. To forbid any network access:
 
 ```powershell
-$env:SOTTO_OFFLINE = "1"; $env:HF_HUB_OFFLINE = "1"; $env:TRANSFORMERS_OFFLINE = "1"
+$env:SCRIVO_OFFLINE = "1"; $env:HF_HUB_OFFLINE = "1"; $env:TRANSFORMERS_OFFLINE = "1"
 ```
 
 Offline with no cached model, Scrivo stops with a one-line explanation (in the
@@ -187,7 +187,7 @@ off): "new line", "new paragraph", and **"scratch that"** said on its own,
 which undoes your last dictation with the app's own Ctrl+Z. It only undoes
 Scrivo's own insert: within a minute of it, while the same window is still in
 front, and only if you have not typed since; otherwise nothing happens and
-`sotto.log` says why. A "scratch that" finished from the tray undoes nothing
+`scrivo.log` says why. A "scratch that" finished from the tray undoes nothing
 (the menu has the focus), and a notification says so.
 
 ## Settings
@@ -303,7 +303,7 @@ languages. Use Accurate if Fast makes mistakes in yours.
 
 ## Launch at login
 
-Settings → **Launch Scrivo when I sign in** adds one per-user value, `Sotto`
+Settings → **Launch Scrivo when I sign in** adds one per-user value, `Scrivo`
 (the name Scrivo had before; kept so existing entries keep working),
 under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, which starts the
 tray app with pythonw and the same data folder. Turning it off removes that
@@ -327,10 +327,10 @@ newest 200 dictations, so older activity drops out of these numbers.
 | Setting | Behavior |
 | --- | --- |
 | default (`auto`) | Try CUDA float16; if the GPU, driver, cuBLAS or cuDNN fails, use CPU int8 |
-| `--device cpu` or `$env:SOTTO_DEVICE = "cpu"` | CPU int8 only |
-| `--device cuda` or `$env:SOTTO_DEVICE = "cuda"` | CUDA only; stop with an error instead of falling back |
+| `--device cpu` or `$env:SCRIVO_DEVICE = "cpu"` | CPU int8 only |
+| `--device cuda` or `$env:SCRIVO_DEVICE = "cuda"` | CUDA only; stop with an error instead of falling back |
 
-`--device` wins over `SOTTO_DEVICE`. On the CPU, Accurate takes about 5
+`--device` wins over `SCRIVO_DEVICE`. On the CPU, Accurate takes about 5
 seconds per short clip and Fast about 1.5 (see Speed); on a GPU both take
 about 0.2 seconds.
 
@@ -344,13 +344,13 @@ about 0.2 seconds.
 ## History
 
 History keeps the newest 200 dictations (text plus WAV audio). Besides the
-tray menu, with the same `SOTTO_DATA_DIR` as the running app:
+tray menu, with the same `SCRIVO_DATA_DIR` as the running app:
 
 ```powershell
-venv-alpha\Scripts\python sotto_win.py history              # newest 20: id, time, length, text
-venv-alpha\Scripts\python sotto_win.py history --limit 200
-venv-alpha\Scripts\python sotto_win.py history-delete --id ENTRY_ID
-venv-alpha\Scripts\python sotto_win.py history-clear --yes
+venv-alpha\Scripts\python scrivo_win.py history              # newest 20: id, time, length, text
+venv-alpha\Scripts\python scrivo_win.py history --limit 200
+venv-alpha\Scripts\python scrivo_win.py history-delete --id ENTRY_ID
+venv-alpha\Scripts\python scrivo_win.py history-clear --yes
 ```
 
 Delete removes the entry, its audio and any linked local learning material.
@@ -367,8 +367,8 @@ Everything Scrivo writes lives in the data folder
 | `history.jsonl`, `audio\`, `audio-raw\` | Transcripts/metadata and WAV audio (capped at 200) |
 | `dictionary.txt`, `settings.json`, `language-mode` | Your rules and preferences |
 | `learning\`, `adaptive-learning\` | Local learning and revocation bookkeeping (no worker runs on Windows) |
-| `sotto.log` (+ `sotto.log.1`) | Timings, devices, character counts — no transcript text |
-| `huggingface\` | Model cache (`SOTTO_HF_HOME`) |
+| `scrivo.log` (+ `scrivo.log.1`) | Timings, devices, character counts — no transcript text |
+| `huggingface\` | Model cache (`SCRIVO_HF_HOME`) |
 | `models\silero_vad.onnx` | Pinned Silero VAD v6.2, installed by `setup` |
 
 Without the variables (or the installer's shortcut), Scrivo uses
@@ -426,7 +426,7 @@ History copies are separate.
 ## Troubleshooting
 
 - **No tray icon:** check the hidden-icons area (^) on the taskbar; the icon is
-  grey while the model loads. `sotto.log` in the data folder says what it is
+  grey while the model loads. `scrivo.log` in the data folder says what it is
   doing.
 - **"Scrivo is already running":** another Scrivo (tray or console) is running
   in this Windows sign-in; quit it from its tray menu or its console.
@@ -444,7 +444,7 @@ History copies are separate.
   the download resumes. Clear the offline variables only when you intend to
   download.
 - **"not in … and offline mode is on":** run once without the offline variables,
-  or point `SOTTO_HF_HOME` at the folder that already holds the model.
+  or point `SCRIVO_HF_HOME` at the folder that already holds the model.
 - **No text appears:** click into a normal text field first, release the key,
   check that the target is not elevated, and try Settings → Type. History
   shows what was recognized; `! not pasted (…)` in the log means the text was
@@ -483,7 +483,7 @@ command, the `doctor` output and a short reproduction. Redact usernames/paths.
 Do not attach recordings, transcripts, the dictionary, caches or the data
 folder.
 
-`scripts\sotto-win.bat` is a developer shortcut that creates `.\venv` and uses
+`scripts\scrivo-win.bat` is a developer shortcut that creates `.\venv` and uses
 the default `%APPDATA%\sotto` data folder; testers should use the installer.
 
 [Alpha release notes](alpha-release-notes.md) · [macOS instructions](../README.md)

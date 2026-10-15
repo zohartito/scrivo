@@ -5,7 +5,7 @@ import os
 from collections.abc import Mapping
 
 
-OFFLINE_FLAGS=("SOTTO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE")
+OFFLINE_FLAGS=("SCRIVO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE")
 
 
 def _truthy(value: object) -> bool:

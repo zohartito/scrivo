@@ -72,8 +72,8 @@ class SpeechConfigTests(unittest.TestCase):
     def test_text_glossary_deduplicates_and_skips_comments(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "terms.txt"
-            path.write_text("# comment\n Sotto \n\n東京\nSotto\n", encoding="utf-8")
-            self.assertEqual(load_glossary(path), ("Sotto", "東京"))
+            path.write_text("# comment\n Scrivo \n\n東京\nScrivo\n", encoding="utf-8")
+            self.assertEqual(load_glossary(path), ("Scrivo", "東京"))
 
     def test_json_glossary_and_bounds_are_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -85,11 +85,11 @@ class SpeechConfigTests(unittest.TestCase):
             self.assertLessEqual(len(", ".join(terms)), MAX_GLOSSARY_CHARACTERS)
 
     def test_long_capture_disables_prompt_with_reason(self) -> None:
-        prompt = glossary_prompt(("Sotto", "الدار البيضاء"), GLOSSARY_MAX_CAPTURE_SECONDS + 0.01)
+        prompt = glossary_prompt(("Scrivo", "الدار البيضاء"), GLOSSARY_MAX_CAPTURE_SECONDS + 0.01)
         self.assertIsNone(prompt.prompt)
         self.assertIn("exceeds", prompt.reason or "")
-        enabled = glossary_prompt(("Sotto",), 30)
-        self.assertEqual(enabled.prompt, "Speech context: Sotto.")
+        enabled = glossary_prompt(("Scrivo",), 30)
+        self.assertEqual(enabled.prompt, "Speech context: Scrivo.")
         self.assertIsNone(enabled.reason)
 
     def test_benchmark_dry_run_does_not_import_mlx_whisper(self) -> None:

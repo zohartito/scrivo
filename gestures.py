@@ -5,18 +5,18 @@ finishes; a watchdog finishes a forgotten one after HANDS_FREE_MAX_S), a lone
 tap is discarded after DOUBLE_TAP_WINDOW_S. Shared by the Mac event tap and
 the Windows keyboard hook.
 
-Moved verbatim out of sotto.py (restructure step 3); sotto re-exports the
-public names, so ``sotto.GestureEngine is gestures.GestureEngine``. The engine
+Moved verbatim out of scrivo.py (restructure step 3); scrivo re-exports the
+public names, so ``scrivo.GestureEngine is gestures.GestureEngine``. The engine
 reads its timing constants from this module: patch or override them here
-(``gestures.HOLD_THRESHOLD_S``), never through sotto. Imports nothing from
-sotto.
+(``gestures.HOLD_THRESHOLD_S``), never through scrivo. Imports nothing from
+scrivo.
 """
 from __future__ import annotations
 
 import threading
 import time
 
-from sotto_log import log
+from scrivo_log import log
 
 
 HOLD_THRESHOLD_S = 0.35

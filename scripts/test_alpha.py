@@ -28,10 +28,10 @@ if os.name == 'posix' and (blocked := unsafe_ancestor(root)) is not None:
 
 with tempfile.TemporaryDirectory(prefix='sotto-alpha-tests-') as temporary:
     state = Path(temporary)
-    env = dict(os.environ, SOTTO_DATA_DIR=str(state/'data'), SOTTO_HF_HOME=str(state/'huggingface'),
+    env = dict(os.environ, SCRIVO_DATA_DIR=str(state/'data'), SCRIVO_HF_HOME=str(state/'huggingface'),
                HF_HOME=str(state/'huggingface'), HF_HUB_CACHE=str(state/'huggingface/hub'),
                XDG_CACHE_HOME=str(state/'cache'), NUMBA_CACHE_DIR=str(state/'numba'),
-               SOTTO_OFFLINE='1', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+               SCRIVO_OFFLINE='1', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
     result = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', *sys.argv[1:]],
                             cwd=root, env=env)
     raise SystemExit(result.returncode)

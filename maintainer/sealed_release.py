@@ -1,4 +1,4 @@
-"""Offline construction and verification of private sealed Sotto releases.
+"""Offline construction and verification of private sealed Scrivo releases.
 
 This module only manipulates a caller-supplied release root.  It never installs
 launchd jobs, opens the application store, or starts a process.
@@ -247,12 +247,12 @@ def runtime_closure(*, python: Path | str | None = None, ffmpeg: Path | str | No
     layout=_probe_python_layout(configured); import_roots=[_sealed_import_root(Path(root)) for root in layout["roots"]]
     policy = _runtime_policy()
     packages = _probe_runtime(configured, policy=policy, import_roots=import_roots)
-    raw_ffmpeg = Path(ffmpeg or os.environ.get("SOTTO_FFMPEG", "/opt/homebrew/bin/ffmpeg"))
+    raw_ffmpeg = Path(ffmpeg or os.environ.get("SCRIVO_FFMPEG", "/opt/homebrew/bin/ffmpeg"))
     if not raw_ffmpeg.is_absolute(): raise RuntimeError("release ffmpeg is not absolute")
     try:
         resolved_ffmpeg = raw_ffmpeg.resolve(strict=True); ff_info = os.lstat(resolved_ffmpeg)
         completed = subprocess.run([str(resolved_ffmpeg), "-version"], shell=False, check=False, text=True, capture_output=True,
-                                   env={"PATH":"/usr/bin:/bin", "SOTTO_OFFLINE":"1", "HF_HUB_OFFLINE":"1", "TRANSFORMERS_OFFLINE":"1"}, timeout=10)
+                                   env={"PATH":"/usr/bin:/bin", "SCRIVO_OFFLINE":"1", "HF_HUB_OFFLINE":"1", "TRANSFORMERS_OFFLINE":"1"}, timeout=10)
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError("release ffmpeg is unavailable") from exc
     first = completed.stdout.splitlines()[0] if isinstance(completed.stdout, str) and completed.stdout.splitlines() else ""
@@ -360,7 +360,7 @@ print(json.dumps({'python':{'version':sys.version,'executable':sys.executable,'i
     try:
         run = subprocess.run([str(interpreter), "-I", "-S", "-B", "-c", code], shell=False, check=False, text=True, capture_output=True,
                              input=_compact({"policy": {"distributions": policy["distributions"], "roots": policy["roots"], "excluded": policy["excluded"]}, "expected": expected, "import_roots": import_roots or []}).decode("utf-8"),
-                             env={"PATH":"/usr/bin:/bin", "SOTTO_OFFLINE":"1", "HF_HUB_OFFLINE":"1", "TRANSFORMERS_OFFLINE":"1", "PYTHONDONTWRITEBYTECODE":"1"}, timeout=120)
+                             env={"PATH":"/usr/bin:/bin", "SCRIVO_OFFLINE":"1", "HF_HUB_OFFLINE":"1", "TRANSFORMERS_OFFLINE":"1", "PYTHONDONTWRITEBYTECODE":"1"}, timeout=120)
         if run.returncode or len(run.stdout) > 32 * 1024 * 1024: raise RuntimeError("release runtime probe failed")
         value = json.loads(run.stdout)
     except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
@@ -372,7 +372,7 @@ print(json.dumps({'python':{'version':sys.version,'executable':sys.executable,'i
 
 def _release_body(source: dict[str, Any], runtime: dict[str, Any]) -> dict[str, Any]:
     return {"schema": RELEASE_SCHEMA, "source_manifest": source, "runtime": runtime,
-            "entrypoints": {"app": "sotto.py", "worker": "maintainer/adaptive_worker.py", "bootstrap": "sealed_release_bootstrap.py",
+            "entrypoints": {"app": "scrivo.py", "worker": "maintainer/adaptive_worker.py", "bootstrap": "sealed_release_bootstrap.py",
                             "teacher_provision": "maintainer/teacher_provision.py",
                             "calibration_manifest": "maintainer/calibration_manifest_builder.py",
                             "calibration_worker": "maintainer/calibration_worker.py"}}

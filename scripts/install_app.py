@@ -38,10 +38,10 @@ static volatile pid_t child = 0;
 static void forward(int sig) { if (child > 0) kill(child, sig); }
 
 int main(void) {
-    setenv("SOTTO_DATA_DIR", %(data_dir)s, 1);
-    setenv("SOTTO_HF_HOME", %(hf_home)s, 1);
-    setenv("SOTTO_LAUNCHER", "app", 1);
-    setenv("SOTTO_APP_EXECUTABLE", %(app_executable)s, 1);
+    setenv("SCRIVO_DATA_DIR", %(data_dir)s, 1);
+    setenv("SCRIVO_HF_HOME", %(hf_home)s, 1);
+    setenv("SCRIVO_LAUNCHER", "app", 1);
+    setenv("SCRIVO_APP_EXECUTABLE", %(app_executable)s, 1);
     char *argv[] = {%(python)s, "-u", %(script)s, "run", "--idle-release", "0", NULL};
     /* Block the forwarded signals until the child PID is known, so a quit
        that arrives during the spawn is delivered to it, never lost. */
@@ -144,7 +144,7 @@ def build(*, applications: Path, data_dir: Path, hf_home: Path, python: Path, co
         raise SystemExit(f"{app} was not made by Scrivo's installer, so it is left alone. "
                          "Move or rename it, then run the installer again.")
     executable = app / "Contents" / "MacOS" / EXECUTABLE
-    source = launcher_source(python=python, script=ROOT / "sotto.py", data_dir=data_dir,
+    source = launcher_source(python=python, script=ROOT / "scrivo.py", data_dir=data_dir,
                              hf_home=hf_home, app_executable=executable)
     version = "0.1.0-alpha"
     with tempfile.TemporaryDirectory() as temporary:
@@ -226,7 +226,7 @@ def uninstall(folders: list[Path]) -> bool:
     import login_item
     import mac_app
     login_item.disable(unload=True)
-    old = mac_app.remove_legacy(ROOT / "sotto.py", folders=folders)  # an old Sotto.app of this folder
+    old = mac_app.remove_legacy(ROOT / "scrivo.py", folders=folders)  # an old Sotto.app of this folder
     return bool(remove_copies(folders)) or bool(old)
 
 
@@ -235,7 +235,7 @@ def main() -> None:
     parser.add_argument("--applications", type=Path, default=None,
                         help="install folder (default: /Applications if writable, else ~/Applications)")
     parser.add_argument("--data-dir", type=Path,
-                        default=Path(os.environ.get("SOTTO_DATA_DIR", "").strip() or
+                        default=Path(os.environ.get("SCRIVO_DATA_DIR", "").strip() or
                                      Path.home() / "Library/Application Support/sotto-alpha"))
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args()

@@ -39,8 +39,8 @@ $ErrorActionPreference = 'Continue'
 # compared by their long names: Windows PowerShell's GetFullPath expands only
 # a path that exists and PowerShell 7's never does, so the part that exists
 # goes through GetLongPathName.
-if (-not ('SottoPaths.Native' -as [type])) {
-  Add-Type -Namespace SottoPaths -Name Native -MemberDefinition @'
+if (-not ('ScrivoPaths.Native' -as [type])) {
+  Add-Type -Namespace ScrivoPaths -Name Native -MemberDefinition @'
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 public static extern uint GetLongPathNameW(string shortPath, System.Text.StringBuilder longPath, uint size);
 '@
@@ -54,7 +54,7 @@ function Long-Path([string]$Path) {
     $existing = [IO.Path]::GetDirectoryName($existing)
   }
   $buffer = New-Object Text.StringBuilder 32768
-  if (-not $existing -or [SottoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
+  if (-not $existing -or [ScrivoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
   if ($rest) { return $buffer.ToString().TrimEnd('\') + $rest }
   return $buffer.ToString()
 }
@@ -106,7 +106,7 @@ function Points-Here([string]$Command) {
 
 # Start this copy again: through the Start Menu shortcut only when it starts
 # this copy (it can belong to another one), else with this copy's launcher.
-function Start-Sotto {
+function Start-Scrivo {
   if (Test-Path -LiteralPath $Shortcut -PathType Leaf) {
     $link = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
     if (Points-Here $link.Arguments) {
@@ -131,7 +131,7 @@ function Finish([bool]$Ok, [string]$Text) {
     # Run from get.ps1 in a console: say it there too.
     if ($Ok) { Write-Host "OK updated to $Text" } else { Write-Host "X $Text (details: $Log)" -ForegroundColor Red }
   } else {
-    Start-Sotto
+    Start-Scrivo
   }
   if ($Ok) { exit 0 }
   exit 1
@@ -201,7 +201,7 @@ if ($flavor -eq 'cuda') { $Requirements = 'requirements-alpha-windows-cuda.txt';
 else { $Requirements = 'requirements-alpha-windows.txt'; $FlavorSwitch = '-Cpu' }
 Say "== $version, dependency set: $flavor"
 
-$Next = Join-Path ([IO.Path]::GetTempPath()) "sotto-update-$PID"
+$Next = Join-Path ([IO.Path]::GetTempPath()) "scrivo-update-$PID"
 Remove-Item -LiteralPath $Next -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Next | Out-Null
 $lists = @('requirements-alpha-windows.txt', 'requirements-alpha-windows-cuda.txt',

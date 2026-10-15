@@ -4,12 +4,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import delivery
-import sotto
+import scrivo
 
 
 class ComposeInsertionTests(unittest.TestCase):
     def test_smart_adds_a_leading_space_only_when_words_would_touch(self):
-        compose = sotto.compose_insertion
+        compose = scrivo.compose_insertion
         self.assertEqual(compose("world.", "smart", "o"), " world.")
         self.assertEqual(compose("world.", "smart", " "), "world.")
         self.assertEqual(compose("world.", "smart", ""), "world.")       # start of the field
@@ -19,7 +19,7 @@ class ComposeInsertionTests(unittest.TestCase):
         self.assertEqual(compose("Γεια", "smart", "a"), " Γεια")
 
     def test_unknown_context_and_other_modes(self):
-        compose = sotto.compose_insertion
+        compose = scrivo.compose_insertion
         self.assertEqual(compose("Hi", "smart", None), "Hi ")            # falls back to trailing
         self.assertEqual(compose("Hi", "trailing", "x"), "Hi ")
         self.assertEqual(compose("Hi ", "trailing", None), "Hi ")
@@ -37,7 +37,7 @@ class TypingTests(unittest.TestCase):
              patch.object(delivery.Quartz, "CGEventPost"), patch.object(delivery.time, "sleep"), \
              patch.object(delivery, "NSPasteboard") as pasteboard, \
              patch.object(delivery, "secure_input_active", return_value=False):
-            sotto.inject("Hello 😀 world, this is typed", insert_mode="type", spacing="none")
+            scrivo.inject("Hello 😀 world, this is typed", insert_mode="type", spacing="none")
         chunks = [chunk for _units, chunk in posted[::2]]  # key-down and key-up carry the same chunk
         self.assertEqual("".join(chunks), "Hello 😀 world, this is typed")
         self.assertTrue(all(len(chunk) <= 16 for chunk in chunks))
@@ -47,25 +47,25 @@ class TypingTests(unittest.TestCase):
     def test_secure_input_blocks_both_modes(self):
         with patch.object(delivery, "secure_input_active", return_value=True), \
              patch.object(delivery, "type_text") as typed, patch.object(delivery, "NSPasteboard") as pasteboard:
-            sotto.inject("secret", insert_mode="type")
-            sotto.inject("secret", insert_mode="paste")
+            scrivo.inject("secret", insert_mode="type")
+            scrivo.inject("secret", insert_mode="paste")
         typed.assert_not_called()
         pasteboard.generalPasteboard.assert_not_called()
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS Accessibility (ApplicationServices) caret lookup")
     def test_caret_lookup_failure_is_unknown_not_an_error(self):
         with patch("ApplicationServices.AXUIElementCreateSystemWide", side_effect=RuntimeError("no AX")):
-            self.assertIsNone(sotto.character_before_caret())
+            self.assertIsNone(scrivo.character_before_caret())
 
 
 
 class SecureInputProbeTests(unittest.TestCase):
     def test_probe_calls_carbon_and_fails_open_only_when_unavailable(self):
-        self.assertIsInstance(sotto.secure_input_active(), bool)
+        self.assertIsInstance(scrivo.secure_input_active(), bool)
         with patch.object(delivery, "_secure_input_probe", lambda: True):
-            self.assertTrue(sotto.secure_input_active())
+            self.assertTrue(scrivo.secure_input_active())
         with patch.object(delivery, "_secure_input_probe", side_effect=OSError("gone")):
-            self.assertFalse(sotto.secure_input_active())
+            self.assertFalse(scrivo.secure_input_active())
 
 
 if __name__ == "__main__":

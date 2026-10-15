@@ -8,16 +8,16 @@
   nvidia-smi sees a GPU; a re-run or update keeps the set recorded at
   install; -Cpu / -Cuda override), prepares the alpha data
   folder, downloads the pinned speech model and voice detection into it
-  (sotto_win.py setup; -SkipSetup leaves that to the first launch), and adds a
+  (scrivo_win.py setup; -SkipSetup leaves that to the first launch), and adds a
   Start Menu shortcut "Scrivo" that starts the tray app without a console
-  window, with SOTTO_DATA_DIR applied.
+  window, with SCRIVO_DATA_DIR applied.
 
   Nothing is installed system-wide: no admin rights, services or scheduled
   tasks. Python itself is never installed for you; the script says exactly
   what to install instead. Re-running is safe. It refuses to run while Scrivo
   runs from this environment (Windows would swap its packages underneath it)
   and never replaces a Start Menu "Scrivo" shortcut that starts another copy;
-  the "Sotto" entry of earlier versions (Scrivo's former name) is removed
+  the "Scrivo" entry of earlier versions (Scrivo's former name) is removed
   when it starts this copy.
   -Uninstall removes only what
   this script recorded creating (and the login entry the Settings window may
@@ -58,8 +58,8 @@ $ErrorActionPreference = 'Stop'
 # compared by their long names: Windows PowerShell's GetFullPath expands only
 # a path that exists and PowerShell 7's never does, so the part that exists
 # goes through GetLongPathName.
-if (-not ('SottoPaths.Native' -as [type])) {
-  Add-Type -Namespace SottoPaths -Name Native -MemberDefinition @'
+if (-not ('ScrivoPaths.Native' -as [type])) {
+  Add-Type -Namespace ScrivoPaths -Name Native -MemberDefinition @'
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 public static extern uint GetLongPathNameW(string shortPath, System.Text.StringBuilder longPath, uint size);
 '@
@@ -73,7 +73,7 @@ function Long-Path([string]$Path) {
     $existing = [IO.Path]::GetDirectoryName($existing)
   }
   $buffer = New-Object Text.StringBuilder 32768
-  if (-not $existing -or [SottoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
+  if (-not $existing -or [ScrivoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
   if ($rest) { return $buffer.ToString().TrimEnd('\') + $rest }
   return $buffer.ToString()
 }
@@ -140,11 +140,11 @@ function Points-Here([string]$Command) {
   return $false
 }
 
-# The Start Menu entry of earlier versions ("Sotto"), only when it starts this copy.
+# The Start Menu entry of earlier versions ("Scrivo"), only when it starts this copy.
 function Remove-LegacyShortcut {
   if (-not (Test-Path -LiteralPath $LegacyShortcut -PathType Leaf)) { return }
   $link = (New-Object -ComObject WScript.Shell).CreateShortcut($LegacyShortcut)
-  if ((Points-Here $link.Arguments) -and $PSCmdlet.ShouldProcess($LegacyShortcut, 'Remove the Start Menu shortcut "Sotto" of earlier versions')) {
+  if ((Points-Here $link.Arguments) -and $PSCmdlet.ShouldProcess($LegacyShortcut, 'Remove the Start Menu shortcut "Scrivo" of earlier versions')) {
     Remove-Item -LiteralPath $LegacyShortcut -Force
     Say "removed the old Start Menu shortcut $LegacyShortcut (Sotto is now called Scrivo)"
   }
@@ -176,7 +176,7 @@ if ($Uninstall) {
     } else { Say "kept $Shortcut (it does not start this copy of Scrivo)" }
   }
   Remove-LegacyShortcut
-  # The login entry keeps the value name 'Sotto' from before the rename.
+  # The login entry keeps the value name 'Scrivo' from before the rename.
   $run = Get-ItemProperty -Path $RunKey -Name 'Sotto' -ErrorAction SilentlyContinue
   if ($run -and (Points-Here $run.Sotto)) {
     if ($PSCmdlet.ShouldProcess("$RunKey\Sotto", 'Remove launch-at-login entry')) {
@@ -327,14 +327,14 @@ if (Test-Path -LiteralPath $DataDir) {
 if (-not $SkipSetup -and $PSCmdlet.ShouldProcess($DataDir, 'Download the pinned speech model (about 1.6 GB, once) and voice detection')) {
   # Set only for the setup child and put back afterwards: a script run from an
   # interactive shell must not leave them in that shell.
-  $savedData, $savedHf = $env:SOTTO_DATA_DIR, $env:SOTTO_HF_HOME
+  $savedData, $savedHf = $env:SCRIVO_DATA_DIR, $env:SCRIVO_HF_HOME
   try {
-    $env:SOTTO_DATA_DIR = $DataDir
-    $env:SOTTO_HF_HOME = Join-Path $DataDir 'huggingface'
-    Native { & $VenvPython (Join-Path $Root 'sotto_win.py') setup }
+    $env:SCRIVO_DATA_DIR = $DataDir
+    $env:SCRIVO_HF_HOME = Join-Path $DataDir 'huggingface'
+    Native { & $VenvPython (Join-Path $Root 'scrivo_win.py') setup }
     $setupExit = $LASTEXITCODE
   } finally {
-    $env:SOTTO_DATA_DIR, $env:SOTTO_HF_HOME = $savedData, $savedHf
+    $env:SCRIVO_DATA_DIR, $env:SCRIVO_HF_HOME = $savedData, $savedHf
   }
   if ($setupExit -ne 0) {
     Say '! The model download did not finish; Scrivo downloads it on first launch (or run this script again).'
@@ -364,8 +364,8 @@ Say 'Scrivo is installed. Start it from the Start Menu: Scrivo (a tray icon appe
 Say '"Ready" notification; if the model was not downloaded above, the first launch does it).'
 Say 'Settings (tray menu) can turn on launch at login.'
 Say 'Console run and checks, in PowerShell:'
-Say "  `$env:SOTTO_DATA_DIR = `"$DataDir`"; `$env:SOTTO_HF_HOME = `"$DataDir\huggingface`""
-Say "  & `"$VenvPython`" `"$(Join-Path $Root 'sotto_win.py')`" doctor"
-Say "  & `"$VenvPython`" `"$(Join-Path $Root 'sotto_win.py')`""
+Say "  `$env:SCRIVO_DATA_DIR = `"$DataDir`"; `$env:SCRIVO_HF_HOME = `"$DataDir\huggingface`""
+Say "  & `"$VenvPython`" `"$(Join-Path $Root 'scrivo_win.py')`" doctor"
+Say "  & `"$VenvPython`" `"$(Join-Path $Root 'scrivo_win.py')`""
 Say "Remove: powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Uninstall"
 exit 0

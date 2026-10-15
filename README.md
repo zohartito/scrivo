@@ -110,7 +110,7 @@ See [Python for macOS](https://www.python.org/downloads/macos/) and
 
 ## Install as an app (recommended)
 
-One line in Terminal downloads Scrivo into `~/sotto` and installs it:
+One line in Terminal downloads Scrivo into `~/scrivo` and installs it:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
@@ -132,7 +132,7 @@ downloads the speech model once, and builds `Scrivo.app` in `/Applications` (or 
 is built on your Mac, so macOS does not block it, and it asks for the
 Microphone and Accessibility as **Scrivo**. Scrivo lives in the menu bar; choose
 **Start Scrivo when I log in** under **Settings…**. Its log (counts and timings,
-never your words) is `logs/sotto.log` in the data folder.
+never your words) is `logs/scrivo.log` in the data folder.
 
 - Update: **Check for Updates…** in Scrivo's menu lists what is new and updates
   a git clone on request, then restarts. It contacts GitHub only when you click
@@ -145,13 +145,13 @@ never your words) is `logs/sotto.log` in the data folder.
 
 ### Scrivo was called Sotto
 
-If you installed it as Sotto, nothing moves: the folder stays `~/sotto`, and your
+If you installed it as Scrivo, nothing moves: the folder stays `~/scrivo`, and your
 History, dictionary, settings and models stay in the same data folder. Choose
-**Check for Updates…** → **Update Now** in Sotto's menu (or paste the install
-line again). The update builds `Scrivo.app`; Sotto restarts once, opens Scrivo
+**Check for Updates…** → **Update Now** in Scrivo's menu (or paste the install
+line again). The update builds `Scrivo.app`; Scrivo restarts once, opens Scrivo
 and quits, and Scrivo then removes the old `Sotto.app` and moves **Start when I
 log in** over. Scrivo is a new app to macOS, so it asks for the Microphone and
-Accessibility again: allow **Scrivo** (the old **Sotto** entries in System
+Accessibility again: allow **Scrivo** (the old **Scrivo** entries in System
 Settings can be removed with −). Copies cloned from `github.com/zohartito/sotto`
 keep updating (GitHub forwards the old address); the install line also points
 them at the new one.
@@ -164,20 +164,20 @@ with any source install; keep it in a folder only you control.
 To run Scrivo from a terminal instead of the app:
 
 ```bash
-git clone https://github.com/zohartito/scrivo.git sotto
-cd sotto
+git clone https://github.com/zohartito/scrivo.git scrivo
+cd scrivo
 python3.12 -m venv venv-alpha
 venv-alpha/bin/python -m pip install pip==26.2.1
 venv-alpha/bin/python -m pip install -r requirements-alpha.txt
 venv-alpha/bin/python -m pip check
 
 # Keep alpha preferences, recordings and models separate from any installed Scrivo.
-export SOTTO_DATA_DIR="$HOME/Library/Application Support/sotto-alpha"
-export SOTTO_HF_HOME="$SOTTO_DATA_DIR/huggingface"
+export SCRIVO_DATA_DIR="$HOME/Library/Application Support/sotto-alpha"
+export SCRIVO_HF_HOME="$SCRIVO_DATA_DIR/huggingface"
 
-venv-alpha/bin/python sotto.py setup   # downloads the pinned models once
-venv-alpha/bin/python sotto.py doctor
-venv-alpha/bin/python sotto.py run --idle-release 0
+venv-alpha/bin/python scrivo.py setup   # downloads the pinned models once
+venv-alpha/bin/python scrivo.py doctor
+venv-alpha/bin/python scrivo.py run --idle-release 0
 ```
 
 Nothing in these commands installs a LaunchAgent or enables adaptive
@@ -203,8 +203,8 @@ revision is cached, later launches use it without contacting Hugging Face. To
 forbid network access entirely (for example, to confirm offline use):
 
 ```bash
-SOTTO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-  venv-alpha/bin/python sotto.py run --idle-release 0
+SCRIVO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  venv-alpha/bin/python scrivo.py run --idle-release 0
 ```
 
 Click a plain text field in Notes or TextEdit, hold **right Option** (or the key
@@ -287,11 +287,11 @@ whisper flow => Wispr Flow
 
 Matching ignores case and only replaces whole words or phrases; edits apply to
 the next dictation. History keeps what the model originally heard next to the
-rewritten text. `venv-alpha/bin/python sotto.py dictionary` lists the rules.
+rewritten text. `venv-alpha/bin/python scrivo.py dictionary` lists the rules.
 
 To help Whisper hear names and terms in the first place, list them one per line
 in `glossary.txt` in the same data folder (up to 100 terms; lines starting with
-`#` are ignored) and restart Scrivo. `config/sotto-glossary.txt` is an example.
+`#` are ignored) and restart Scrivo. `config/scrivo-glossary.txt` is an example.
 The glossary is used with Whisper on captures up to 30 seconds; a terminal run
 can pass its own file with `--glossary FILE`.
 
@@ -305,7 +305,7 @@ Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak,
 Slovenian, Spanish, Swedish and Ukrainian. It does **not** understand other
 languages (it pastes a Latin-letter guess for them): use Whisper for those.
 Download it once from **Settings → Download Parakeet (2.5 GB)** (or
-`venv-alpha/bin/python sotto.py setup --profile parakeet`), then choose it
+`venv-alpha/bin/python scrivo.py setup --profile parakeet`), then choose it
 while idle; Scrivo restarts on the new engine. The model is pinned to one
 commit, loaded from the local copy, and never needs ffmpeg. Glossary prompts
 do not apply; your dictionary still does. If it cannot load, Scrivo returns to
@@ -321,7 +321,7 @@ venv-alpha/bin/python scripts/setup_nemotron.py
 
 This downloads the pinned NeMo-Speech.cpp 0.1.0 Metal libraries and Q8 model,
 checks SHA-256 values and retains upstream notices under
-`$SOTTO_DATA_DIR/nemotron/0.1.0`. Choose **Speech engine → Nemotron (English
+`$SCRIVO_DATA_DIR/nemotron/0.1.0`. Choose **Speech engine → Nemotron (English
 streaming)** while idle. Audio is decoded during capture; only finalized,
 validated text is pasted after release. While you talk, the pill at the top of
 the screen shows the words so far; only the finished text is pasted. Other
@@ -333,8 +333,8 @@ Explicit profiles override saved engine choice and disable engine switching
 in that run:
 
 ```bash
-venv-alpha/bin/python sotto.py run --profile nemotron-en
-venv-alpha/bin/python sotto.py run --profile auto
+venv-alpha/bin/python scrivo.py run --profile nemotron-en
+venv-alpha/bin/python scrivo.py run --profile auto
 ```
 
 Nemotron is experimental and is not established as more accurate than Whisper
@@ -353,7 +353,7 @@ With the commands above, all Scrivo-managed alpha state lives under
 | `dictionary.txt` | Your personal spelling rules |
 | `models/silero_vad.onnx` | Voice-detection model (Silero v6.2, MIT) used to drop silence phrases |
 | `learning/`, `adaptive-learning/` | Consented corrections and experimental state/receipts |
-| `huggingface/` | Whisper model cache (the exported `SOTTO_HF_HOME`) |
+| `huggingface/` | Whisper model cache (the exported `SCRIVO_HF_HOME`) |
 | `nemotron/` | Optional native runtime, model and notices |
 
 Recovery-pinned entries may outlive normal history retention. History can
@@ -410,7 +410,7 @@ Deletion cannot guarantee erasure from backups or SSD snapshots.
   Use Whisper for languages Parakeet and Nemotron do not cover. Switching
   languages does not load a second model.
 - **"Thank you." appears when you said nothing:** Whisper invents short stock
-  phrases for silence. `sotto.py setup` (run by the installer) adds the small
+  phrases for silence. `scrivo.py setup` (run by the installer) adds the small
   Silero voice-detection model, which keeps those out of the text field (they
   stay in History). It never blocks real dictation, including whispers.
 - **Restart / engine switch fails:** use the reported error, Quit and rerun.

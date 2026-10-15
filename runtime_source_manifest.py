@@ -22,7 +22,7 @@ RUNTIME_SOURCE_SCHEMA = 1
 RUNTIME_SOURCE_FILES = (
     "requirements.txt",
     "runtime_dependency_policy.json",
-    "config/sotto-glossary.txt",
+    "config/scrivo-glossary.txt",
     "config/nemotron-runtime.json",
     "runtime_source_manifest.py",
     "maintainer/__init__.py",
@@ -31,7 +31,7 @@ RUNTIME_SOURCE_FILES = (
     "maintainer/offline_backup.py",
     "storage_lock.py",
     "offline_runtime.py",
-    "sotto_paths.py",
+    "scrivo_paths.py",
     "dictionary.py",
     "settings.py",
     "settings_window.py",
@@ -42,7 +42,7 @@ RUNTIME_SOURCE_FILES = (
     "voice_commands.py",
     "pipeline.py",
     "transcription.py",
-    "sotto_log.py",
+    "scrivo_log.py",
     "delivery.py",
     "lifecycle.py",
     "gestures.py",
@@ -75,9 +75,9 @@ RUNTIME_SOURCE_FILES = (
     "maintainer/teachers/qwen3_adapter.py",
     "maintainer/teachers/granite_adapter.py",
     "ui.py",
-    "sotto.py",
-    "launchd/com.zohartito.sotto.adaptive-silver.plist",
-    "launchd/com.zohartito.sotto.app.plist",
+    "scrivo.py",
+    "launchd/com.zohartito.scrivo.adaptive-silver.plist",
+    "launchd/com.zohartito.scrivo.app.plist",
 )
 
 

@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 class StorageLockTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="sotto-lock-test-")
+        self._tmp = tempfile.TemporaryDirectory(prefix="scrivo-lock-test-")
         self.root = Path(self._tmp.name) / "store"
 
     def tearDown(self) -> None:

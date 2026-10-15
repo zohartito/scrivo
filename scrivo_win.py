@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""sotto on Windows — hold right-ctrl, speak, release; the words land at your cursor.
+"""scrivo on Windows — hold right-ctrl, speak, release; the words land at your cursor.
 
-Same pipeline as sotto.py — the pure logic (GestureEngine, VAD, pipeline.screen's
+Same pipeline as scrivo.py — the pure logic (GestureEngine, VAD, pipeline.screen's
 guards and cleanup, the "scratch that" rule, the drains, history/learning
 stores, dictionary, settings) is imported and shared — with Windows I/O:
   * trigger   pynput low-level keyboard hook (win_hotkey)
@@ -10,13 +10,13 @@ stores, dictionary, settings) is imported and shared — with Windows I/O:
   * insert    paste (clipboard restored) or type (SendInput Unicode) (win_inject)
   * tray      system-tray menu, Settings and History dialogs (win_ui, --tray)
 
-    python sotto_win.py                          # console run (tests, headless)
-    python sotto_win.py --tray                   # tray app (win_launch.py for pythonw)
-    python sotto_win.py --trigger left-ctrl
-    python sotto_win.py --device cpu             # or SOTTO_DEVICE=cpu
-    python sotto_win.py setup                    # download the pinned model + VAD now
-    python sotto_win.py doctor                   # device + model + mic checks
-    python sotto_win.py history                  # history-delete / history-clear
+    python scrivo_win.py                          # console run (tests, headless)
+    python scrivo_win.py --tray                   # tray app (win_launch.py for pythonw)
+    python scrivo_win.py --trigger left-ctrl
+    python scrivo_win.py --device cpu             # or SCRIVO_DEVICE=cpu
+    python scrivo_win.py setup                    # download the pinned model + VAD now
+    python scrivo_win.py doctor                   # device + model + mic checks
+    python scrivo_win.py history                  # history-delete / history-clear
 
 No overlay, no adaptive/silver lane, no Nemotron.  Nothing leaves the machine;
 each pinned model downloads once, on its first run.  Logs hold timings and
@@ -42,19 +42,19 @@ import time
 import uuid
 
 if sys.platform != "win32":
-    raise ImportError("sotto_win is Windows-only")
+    raise ImportError("scrivo_win is Windows-only")
 
 import dictionary
 import pipeline
 import progress
 import settings as user_settings
-import sotto
+import scrivo
 import voice_commands
 # The drains and their constants are the Mac's (lifecycle.py); Windows keeps
 # its own gate policy (Restart waits RESTART_DRAIN_CAP_S, Update refuses while busy).
 from lifecycle import DRAIN_POLL_S, QUIT_DRAIN_S, end_capture_now, wait_until_idle
 from offline_runtime import offline_requested
-from sotto_paths import DATA_DIR, MODEL_CACHE_DIR
+from scrivo_paths import DATA_DIR, MODEL_CACHE_DIR
 from speech_config import (SpeechConfig, automatic_languages, get_profile, load_glossary,
                            load_language_mode, normalize_language, save_language_mode,
                            transcription_kwargs, with_language)
@@ -71,7 +71,7 @@ INSERT_WAIT_S = 120.0  # insert once modifiers are released; after this, History
 # hands-free watchdog) plus time to transcribe it on the CPU, then goes ahead
 # anyway, so a wedged CUDA/CT2 call cannot block recovery for good.
 RESTART_TRANSCRIBE_S = 300.0  # a long CPU dictation transcribes well inside this
-RESTART_DRAIN_CAP_S = sotto.HANDS_FREE_MAX_S + RESTART_TRANSCRIBE_S
+RESTART_DRAIN_CAP_S = scrivo.HANDS_FREE_MAX_S + RESTART_TRANSCRIBE_S
 # Quit finishes the dictation in flight up to lifecycle.QUIT_DRAIN_S, the
 # Mac's, the owner's choice for both; a drain re-checks every DRAIN_POLL_S.
 UNREAD_PASTE = "a paste the app has not read yet"  # in_flight()'s words for it
@@ -82,9 +82,9 @@ LOG_ROTATE_BYTES = 5 * 1024 * 1024
 
 
 class _ConsoleLog:
-    """stderr to the console (when there is one) AND ``DATA_DIR/sotto.log``.
+    """stderr to the console (when there is one) AND ``DATA_DIR/scrivo.log``.
 
-    sotto.log() prints to sys.stderr; teeing it here gives a durable log.
+    scrivo.log() prints to sys.stderr; teeing it here gives a durable log.
     Under pythonw there is no console (sys.stderr is None): file only.  It
     holds timings and character counts, never transcript text.
 
@@ -93,7 +93,7 @@ class _ConsoleLog:
     silently drops a low-level hook that is slow to return, so a log line must
     never wait for the disk there.  drain() (also at exit) writes what is left.
     A log that grows past LOG_ROTATE_BYTES while Scrivo runs moves to
-    sotto.log.1 and a fresh sotto.log starts (the Mac's keep_app_log_small).
+    scrivo.log.1 and a fresh scrivo.log starts (the Mac's keep_app_log_small).
     """
 
     def __init__(self) -> None:
@@ -107,7 +107,7 @@ class _ConsoleLog:
         self._pending: queue.SimpleQueue = queue.SimpleQueue()
         self._draining = False
         self._writer = threading.Thread(target=self._write_pending, daemon=True,
-                                        name="sotto-log")
+                                        name="scrivo-log")
         self._writer.start()
         atexit.register(self.drain)
 
@@ -163,17 +163,17 @@ class _ConsoleLog:
                 self._file = None
 
     def _open_file(self) -> None:
-        """Open DATA_DIR/sotto.log for appending, first moving one past
-        LOG_ROTATE_BYTES to sotto.log.1 (replacing the older one).
+        """Open DATA_DIR/scrivo.log for appending, first moving one past
+        LOG_ROTATE_BYTES to scrivo.log.1 (replacing the older one).
 
-        Side effects: may replace sotto.log.1; sets self._file and self._size.
+        Side effects: may replace scrivo.log.1; sets self._file and self._size.
         """
-        path = DATA_DIR / "sotto.log"
+        path = DATA_DIR / "scrivo.log"
         if path.is_file() and path.stat().st_size > LOG_ROTATE_BYTES:
             try:
-                path.replace(path.with_name("sotto.log.1"))
+                path.replace(path.with_name("scrivo.log.1"))
             except OSError:
-                pass  # sotto.log.1 is held open elsewhere: keep appending, retry next time
+                pass  # scrivo.log.1 is held open elsewhere: keep appending, retry next time
         self._file = open(path, "a", encoding="utf-8", buffering=1)
         self._size = path.stat().st_size
 
@@ -231,8 +231,8 @@ def delivery_prefs(saved: dict) -> DeliveryPrefs:
 def instance_name() -> str:
     """One dictation app per Windows session: two hooks on one key would
     insert every dictation twice, whatever their data folders.  Tests give
-    each run its own name through SOTTO_INSTANCE_KEY."""
-    key = os.environ.get("SOTTO_INSTANCE_KEY", "").strip() or "dictation"
+    each run its own name through SCRIVO_INSTANCE_KEY."""
+    key = os.environ.get("SCRIVO_INSTANCE_KEY", "").strip() or "dictation"
     return "Local\\sotto-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
 
 
@@ -274,7 +274,7 @@ def spawn_restart() -> None:
 
 def setup(profile: str, model: str | None, speed: str = "accurate") -> int:
     """Download the pinned model and the pinned Silero VAD now (the Mac's
-    ``sotto.py setup``), so the first launch is ready.  Offline: nothing is
+    ``scrivo.py setup``), so the first launch is ready.  Offline: nothing is
     fetched."""
     repo = resolve_config(profile, model, "auto", speed).model_repo
     try:
@@ -309,7 +309,7 @@ def doctor(profile: str, model: str | None, device: str, speed: str = "accurate"
         + "; the first startup transcription decides")
     if device == "cuda" and count == 0:
         ok = False
-        log("✗ --device cuda / SOTTO_DEVICE=cuda requested, but no CUDA device is visible")
+        log("✗ --device cuda / SCRIVO_DEVICE=cuda requested, but no CUDA device is visible")
     try:
         repo = resolve_config(profile, model, "auto", speed).model_repo
         if Path(repo).expanduser().is_dir():
@@ -352,7 +352,7 @@ def doctor(profile: str, model: str | None, device: str, speed: str = "accurate"
                 and hashlib.sha256(vad.MODEL_PATH.read_bytes()).hexdigest() == vad.MODEL_SHA256):
             log(f"✓ VAD model: {vad.MODEL_PATH} (Silero v6.2)")
         else:
-            log(f"! VAD model missing: run `sotto_win.py setup` (it installs {vad.MODEL_PATH}); "
+            log(f"! VAD model missing: run `scrivo_win.py setup` (it installs {vad.MODEL_PATH}); "
                 "transcription still works, but silence can type a stock phrase")
     except Exception as exc:
         log(f"! VAD: {str(exc)[:120]}")
@@ -418,9 +418,9 @@ def history_command(command: str, *, limit: int, entry_id: str | None,
         return 0
     if command == "history-delete":
         if not entry_id:
-            log("history-delete requires --id ID (see `sotto_win.py history`)")
+            log("history-delete requires --id ID (see `scrivo_win.py history`)")
             return 2
-        if not sotto.nonadaptive_delete(dependency_guard, coordinator, entry_id):
+        if not scrivo.nonadaptive_delete(dependency_guard, coordinator, entry_id):
             log(f"no history entry {entry_id}")
             return 1
         log(f"deleted {entry_id} and its audio")
@@ -429,7 +429,7 @@ def history_command(command: str, *, limit: int, entry_id: str | None,
         log("history-clear deletes every transcript and recording; "
             "run again with --yes to confirm")
         return 2
-    sotto.nonadaptive_clear(dependency_guard, coordinator)
+    scrivo.nonadaptive_clear(dependency_guard, coordinator)
     log("history cleared")
     return 0
 
@@ -535,18 +535,18 @@ class Controller:
 
     def delete(self, entry_id: str) -> None:
         if not self.shutdown.requested():
-            sotto.nonadaptive_delete(self.dependency_guard, self.coordinator, entry_id)
+            scrivo.nonadaptive_delete(self.dependency_guard, self.coordinator, entry_id)
 
     def clear(self) -> None:
         if not self.shutdown.requested():
-            sotto.nonadaptive_clear(self.dependency_guard, self.coordinator)
+            scrivo.nonadaptive_clear(self.dependency_guard, self.coordinator)
             log("history cleared from the tray")
 
     def correct(self, entry_id: str, before: str, after: str, revision: int | None) -> list:
         """Save a correction; returns dictionary rules it suggests (never added here)."""
         if self.shutdown.requested():
             raise RuntimeError("Scrivo is shutting down")
-        if sotto.nonadaptive_correct(self.dependency_guard, self.coordinator, entry_id, after,
+        if scrivo.nonadaptive_correct(self.dependency_guard, self.coordinator, entry_id, after,
                                      expected_revision=revision) is None:
             raise ValueError("The recording changed or no longer exists; open Correct again.")
         log("✓ correction saved")
@@ -609,7 +609,7 @@ class Controller:
         entries = self.store.entries(limit=self.store.keep)
         rules = len(dictionary.load(dictionary.DICTIONARY_PATH))
         return progress.lines(progress.summarize(entries, rules=rules),
-                              progress.load_totals(sotto.totals_path()))
+                              progress.load_totals(scrivo.totals_path()))
 
     def open_dictionary(self) -> None:
         path = dictionary.ensure_file(dictionary.DICTIONARY_PATH)
@@ -740,7 +740,7 @@ class Controller:
             finally:
                 self.shutdown.request()
 
-        threading.Thread(target=finish_then_stop, daemon=True, name="sotto-quit").start()
+        threading.Thread(target=finish_then_stop, daemon=True, name="scrivo-quit").start()
 
     def console_stop(self, *_signal) -> None:
         """Ctrl-C, Ctrl-Break or SIGTERM in a console run: the first one
@@ -793,7 +793,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         with language_lock:
             return with_language(speech_config, language_state["mode"])
 
-    shutdown = sotto.ShutdownBoundary()
+    shutdown = scrivo.ShutdownBoundary()
     ui = None
     if tray:
         import win_ui
@@ -815,7 +815,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         log(f"warming up {model_repo.split('/')[-1]} from {model_dir} ...")
         status("Warming up the speech model…")
         started = time.monotonic()
-        sotto.warm_speech_runtime(
+        scrivo.warm_speech_runtime(
             adaptive=False, model=model_repo, speech_config=speech_config,
             mlx_whisper=win_asr.LanguageRestricted(
                 whisper, delivery_prefs(user_settings.load()).languages))
@@ -836,25 +836,25 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
     # untouched, the user is told once.
     store = HistoryStore(tolerate_unreadable=True)
     learning_store = LearningStore(tolerate_unreadable=True)
-    coordinator = sotto.history_coordinator(store, learning_store)
+    coordinator = scrivo.history_coordinator(store, learning_store)
     # N9b: each finished capture waits on disk until its History row exists;
     # what a crash, a killed process or a sign-out left there becomes rows now.
     spool = CaptureSpool(store.base_dir, log=log)
     spool_waiting = 0
     if spool.claim():
-        spool_waiting = sotto.recover_capture_spool(spool, store, coordinator, model=model_repo,
+        spool_waiting = scrivo.recover_capture_spool(spool, store, coordinator, model=model_repo,
                                                     speech_config=current_speech_config(),
                                                     glossary_terms=glossary_terms, log=log)
-    unreadable_alert = sotto.unreadable_store_alert(store, learning_store)
+    unreadable_alert = scrivo.unreadable_store_alert(store, learning_store)
     if unreadable_alert is not None:
         title, message = unreadable_alert
-        message += sotto.spool_waiting_note(spool_waiting)
+        message += scrivo.spool_waiting_note(spool_waiting)
         what = "History" if store.unreadable is not None else "Learning set"
         log(f"! {what} unreadable ({store.unreadable or learning_store.unreadable}): {message}")
         if ui is not None:  # a toast truncates this long a message; the box blocks only its thread
             threading.Thread(target=win_ui.message_box, args=(title, message),
                              kwargs={"error": True}, daemon=True).start()
-    sotto.seed_totals(store)
+    scrivo.seed_totals(store)
     from adaptive_learning import AdaptiveLearning
     # The same always-on revocation guard the Mac menu passes.
     dependency_guard = AdaptiveLearning(store.base_dir)
@@ -874,7 +874,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
     # Restart, Update and Quit close the gate (the reason goes in lifecycle);
     # on_start decides and begins a capture under it, so a closer either sees
     # that capture as in flight or the capture is refused.
-    capture_gate = sotto.CaptureGate()
+    capture_gate = scrivo.CaptureGate()
     lifecycle: dict = {"closed": None}
     # Captures between capture.end() and their enqueue still count as busy.
     finishing_lock = threading.Lock()
@@ -901,12 +901,12 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         # keyboard-hook thread).
         prefs = delivery_prefs(user_settings.load())
         started = time.monotonic()
-        samples = sotto.prepare_for_whisper(raw, native_rate)
-        seconds = len(samples) / sotto.SAMPLE_RATE
+        samples = scrivo.prepare_for_whisper(raw, native_rate)
+        seconds = len(samples) / scrivo.SAMPLE_RATE
         if seconds < 0.2:
             log("○ sub-0.2s capture dropped (key-tap artifact)")
             return
-        skip = sotto.asr_skip_reason(samples)
+        skip = scrivo.asr_skip_reason(samples)
         if skip:
             # Exact zeros never reach Whisper — a dead capture path, not a
             # quiet room (same guard as the Mac).
@@ -914,7 +914,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             prepared = prepare_canonical(samples)
             if shutdown.requested():
                 return
-            text = sotto.DEAD_ROUTE_TEXT
+            text = scrivo.DEAD_ROUTE_TEXT
             _, attempt_metadata = transcription_kwargs(job_config, glossary_terms, seconds)
             attempt_metadata.update({
                 "vad": {"available": False, "speech_fraction": 0.0, "span_count": 0},
@@ -960,23 +960,23 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         if speech_spans and seconds > 10:
             before = seconds
             samples = vad.trim_to_speech(samples, speech_spans)
-            trimmed = before - len(samples) / sotto.SAMPLE_RATE
+            trimmed = before - len(samples) / scrivo.SAMPLE_RATE
             preprocessing["vad_trimmed"] = trimmed > 0
             if trimmed > 1:
                 log(f"  trimmed {trimmed:.0f}s of non-speech (VAD)")
-        if len(samples) / sotto.SAMPLE_RATE > sotto.LONG_CAPTURE_S:
+        if len(samples) / scrivo.SAMPLE_RATE > scrivo.LONG_CAPTURE_S:
             before = len(samples)
-            samples = sotto.collapse_silence(samples)
+            samples = scrivo.collapse_silence(samples)
             preprocessing["silence_collapsed"] = len(samples) < before
             if len(samples) < before:
-                log(f"  trimmed {(before - len(samples)) / sotto.SAMPLE_RATE:.0f}s of dead air")
+                log(f"  trimmed {(before - len(samples)) / scrivo.SAMPLE_RATE:.0f}s of dead air")
         from audio_codec import prepare_canonical
         prepared = prepare_canonical(samples)
         if shutdown.requested():
             return
         restricted = win_asr.LanguageRestricted(whisper, prefs.languages)
         try:
-            text, attempt_metadata = sotto.transcribe_prepared(
+            text, attempt_metadata = scrivo.transcribe_prepared(
                 restricted, prepared, job_config, glossary_terms)
         except Exception as exc:
             keep_failed_capture(exc, capture_id, prepared, raw, native_rate, captured_ts, job_config,
@@ -993,7 +993,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             "vad": vad_metadata, "preprocessing": preprocessing,
             "latency": {"queue_wait_seconds": round(started - queued_at, 4),
                         "asr_seconds": round(elapsed, 4)}})
-        prepared_seconds = len(prepared.asr_samples) / sotto.SAMPLE_RATE
+        prepared_seconds = len(prepared.asr_samples) / scrivo.SAMPLE_RATE
         # The guards, then the user's dictionary and English cleanup on text
         # that passed them: pipeline.screen, the Mac's live and Retry path.
         screened = pipeline.screen(
@@ -1025,7 +1025,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             appended = None
             history_append_failed(exc, deliver)
         if appended is not None and text and not reason and voice_action is None:
-            sotto.record_totals(text, len(raw) / max(native_rate, 1.0))
+            scrivo.record_totals(text, len(raw) / max(native_rate, 1.0))
         log(f"→ {attempt_metadata['latency']['release_to_text_seconds']:.2f}s after release "
             f"(speech model {elapsed:.2f}s) · {len(text)} chars")
 
@@ -1053,7 +1053,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         log(f"! transcription failed: {str(exc)[:160]} — the recording is kept in History")
         if shutdown.requested():
             return
-        prepared_seconds = len(prepared.asr_samples) / sotto.SAMPLE_RATE
+        prepared_seconds = len(prepared.asr_samples) / scrivo.SAMPLE_RATE
         _, attempt_metadata = transcription_kwargs(job_config, glossary_terms,
                                                          prepared_seconds)
         preprocessing.update({"outcome": "suspect", "transcription_error": type(exc).__name__})
@@ -1109,10 +1109,10 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         if snapshot is None:
             log("↻ retry skipped — entry deleted")
             return
-        prepared_seconds = len(snapshot.samples) / sotto.SAMPLE_RATE
+        prepared_seconds = len(snapshot.samples) / scrivo.SAMPLE_RATE
         # Retry uses the immutable canonical decode from its snapshot; it
         # must never re-trim or re-collapse persisted inference input.
-        if sotto.asr_skip_reason(snapshot.samples):
+        if scrivo.asr_skip_reason(snapshot.samples):
             _, attempt_metadata = transcription_kwargs(job_config, glossary_terms,
                                                              prepared_seconds)
             attempt_metadata.update({
@@ -1120,7 +1120,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
                 "preprocessing": {"retry_canonical": True, "outcome": "suspect"},
                 "latency": {"queue_wait_seconds": round(time.monotonic() - queued_at, 4),
                             "asr_seconds": 0.0}})
-            coordinator.commit_retry(entry_id, sotto.DEAD_ROUTE_TEXT, snapshot.expected_revision,
+            coordinator.commit_retry(entry_id, scrivo.DEAD_ROUTE_TEXT, snapshot.expected_revision,
                                      model=model_repo, provenance="retry", **attempt_metadata)
             log("↻ retry skipped — dead microphone (all-zero capture)")
             return
@@ -1128,7 +1128,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         if shutdown.requested():
             return
         restricted = win_asr.LanguageRestricted(whisper, prefs.languages)
-        text, attempt_metadata = sotto.transcribe_canonical_samples(
+        text, attempt_metadata = scrivo.transcribe_canonical_samples(
             restricted, snapshot.samples, job_config, glossary_terms)
         model_activity["last_finished"] = time.monotonic()
         if shutdown.requested():
@@ -1179,7 +1179,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
                     continue
                 if job[0] == "warmup":
                     try:
-                        sotto.warm_speech_runtime(
+                        scrivo.warm_speech_runtime(
                             adaptive=False, model=model_repo,
                             speech_config=current_speech_config(),
                             mlx_whisper=win_asr.LanguageRestricted(
@@ -1197,7 +1197,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             except Exception as exc:
                 log(f"! transcription failed: {str(exc)[:160]}")
                 if ui is not None and job[0] in ("live", "retry"):
-                    ui.notify("A dictation could not be transcribed; see sotto.log in the data folder.")
+                    ui.notify("A dictation could not be transcribed; see scrivo.log in the data folder.")
             finally:
                 if job[0] == "live" and not shutdown.requested():
                     spool.release(job[5])  # handled: saved, delivered, or the user told (N9b)
@@ -1226,7 +1226,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         now = time.monotonic()
         # CPU int8 needs no rewarm, and one decode there costs about as much
         # as a dictation, which would sit in the queue ahead of this capture.
-        if whisper.device != "cpu" and sotto.model_rewarm_due(
+        if whisper.device != "cpu" and scrivo.model_rewarm_due(
                 model_activity["last_finished"], now,
                 rewarming=bool(model_activity["rewarming"]),
                 queue_idle=jobs.empty(), adaptive=False):
@@ -1293,7 +1293,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         if ui is not None:
             ui.notify(MIC_FAILED_TEXT)
 
-    engine = sotto.GestureEngine(on_start, on_finish, on_discard)
+    engine = scrivo.GestureEngine(on_start, on_finish, on_discard)
     capture.on_start_failed = on_mic_failed
     hook = win_hotkey.TriggerHook(engine, trigger=trigger)
     hook.start()
@@ -1441,7 +1441,7 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
             shutdown.discard_queued(deliveries)  # their text is already in History
             with hook_lock:
                 hook.stop()
-            transcription_thread.join(sotto.APP_DRAIN_TIMEOUT)
+            transcription_thread.join(scrivo.APP_DRAIN_TIMEOUT)
             if transcription_thread.is_alive():
                 log("  an in-flight transcription was abandoned (never pasted or saved)")
             # Its audio stays spooled for the next launch (N9b), which may
@@ -1488,7 +1488,7 @@ def main(argv: list[str] | None = None) -> None:
                         help="local CTranslate2 model directory, or org/name@<commit>")
     parser.add_argument("--device", choices=win_asr.DEVICE_CHOICES, default=None,
                         help="ASR device: auto (CUDA, else CPU), cuda or cpu; "
-                             "default: SOTTO_DEVICE, else auto")
+                             "default: SCRIVO_DEVICE, else auto")
     parser.add_argument("--language", default=None,
                         help="auto or a language code (en, he, …); default: the saved choice")
     parser.add_argument("--glossary", help="local UTF-8 text or JSON glossary")

@@ -140,7 +140,7 @@ class SpeechBackendTests(unittest.TestCase):
                  patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **_: self.fail("download"))}):
                 with self.assertRaises(RuntimeError): manager.preflight(WHISPER_ID, np.zeros(8), hf_home=root)
             with patch("maintainer.speech_backends.resolve_snapshot", side_effect=[FileNotFoundError("missing"),("rev",snapshot)]), \
-                 patch.dict(os.environ, {"HF_HUB_OFFLINE": "0", "SOTTO_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0"}, clear=False), \
+                 patch.dict(os.environ, {"HF_HUB_OFFLINE": "0", "SCRIVO_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0"}, clear=False), \
                  patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(snapshot_download=lambda **_: str(snapshot))}):
                 manager.preflight(WHISPER_ID, np.zeros(8), hf_home=root)
             self.assertEqual(seen[-1]["snapshot_path"], str(snapshot.resolve()))
@@ -190,9 +190,9 @@ class SpeechBackendTests(unittest.TestCase):
             root=Path(directory)
             class Manager(LocalBackendManager):
                 def transcribe(self,*_args,**_kwargs): self.fail('must not warm/download offline')
-            for flag in ('SOTTO_OFFLINE','HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE'):
+            for flag in ('SCRIVO_OFFLINE','HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE'):
                 with self.subTest(flag=flag), patch('maintainer.speech_backends.resolve_snapshot',side_effect=FileNotFoundError('missing')), \
-                     patch.dict(os.environ,{'SOTTO_OFFLINE':'0','HF_HUB_OFFLINE':'0','TRANSFORMERS_OFFLINE':'0',flag:'true'},clear=False), \
+                     patch.dict(os.environ,{'SCRIVO_OFFLINE':'0','HF_HUB_OFFLINE':'0','TRANSFORMERS_OFFLINE':'0',flag:'true'},clear=False), \
                      patch.dict(sys.modules,{'huggingface_hub':types.SimpleNamespace(snapshot_download=lambda **_: self.fail('download'))}):
                     with self.assertRaisesRegex(RuntimeError,'offline preflight'):
                         Manager(root).preflight(WHISPER_ID,np.zeros(8),hf_home=root)
@@ -236,7 +236,7 @@ class SpeechBackendTests(unittest.TestCase):
             runtime={"runtime":"projection"}; manifest = candidate_manifest(WHISPER_ID, revision="rev",runtime_identity=runtime)
             receipt_store.save(WHISPER_ID, self._schema3_receipt(manifest,snap,runtime))
             promoted = {**manifest, "generation_id": "g", "promotion_dependency_digests": ["d"], "invalid": False}
-            glossary = candidate_manifest(WHISPER_GLOSSARY_ID, revision="rev", glossary_terms=("sotto",),runtime_identity=runtime)
+            glossary = candidate_manifest(WHISPER_GLOSSARY_ID, revision="rev", glossary_terms=("scrivo",),runtime_identity=runtime)
             receipt_store.save(WHISPER_GLOSSARY_ID, self._schema3_receipt(glossary,snap,runtime))
             frozen = {**glossary, "development_dependency_digests": ["private"], "generation_id": "g"}
             with patch("maintainer.speech_backends.resolve_snapshot",return_value=("rev",snap)), patch.object(receipt_store,"_current_runtime_identity",return_value=runtime):
@@ -249,7 +249,7 @@ class SpeechBackendTests(unittest.TestCase):
     def test_candidate_runtime_identity_rotation_invalidates_receipt(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); snapshot=root/'rev'; snapshot.mkdir(); (snapshot/'model').write_text('x')
-            ffmpeg=root/'ffmpeg'; ffmpeg.write_text('#!/bin/sh\nprintf "ffmpeg version Sotto-one\\n"\n'); os.chmod(ffmpeg,0o700)
+            ffmpeg=root/'ffmpeg'; ffmpeg.write_text('#!/bin/sh\nprintf "ffmpeg version Scrivo-one\\n"\n'); os.chmod(ffmpeg,0o700)
             packages=_package_versions()
             identity=_candidate_runtime_identity(WHISPER_ID,ffmpeg_path=ffmpeg,package_versions=packages)
             manifest=candidate_manifest(WHISPER_ID,revision='rev',package_versions=packages,runtime_identity=identity)
@@ -267,7 +267,7 @@ class SpeechBackendTests(unittest.TestCase):
                     current=json.loads(json.dumps(identity)); mutate(current)
                     self.assertFalse(receipts.valid_manifest(manifest))
                 current=identity; self.assertTrue(receipts.valid_manifest(manifest))
-            ffmpeg.write_text('#!/bin/sh\nprintf "ffmpeg version Sotto-two\\n"\n'); os.chmod(ffmpeg,0o700)
+            ffmpeg.write_text('#!/bin/sh\nprintf "ffmpeg version Scrivo-two\\n"\n'); os.chmod(ffmpeg,0o700)
             rotated=_candidate_runtime_identity(WHISPER_ID,ffmpeg_path=ffmpeg,package_versions=packages)
             self.assertNotEqual(identity['ffmpeg']['sha256'],rotated['ffmpeg']['sha256'])
             self.assertNotEqual(identity['ffmpeg']['version_sha256'],rotated['ffmpeg']['version_sha256'])
@@ -298,7 +298,7 @@ class SpeechBackendTests(unittest.TestCase):
             # A receipt may name neither an arbitrary sibling nor a symlinked
             # cache root, even if its leaf happens to be a valid directory.
             (external/'rev').mkdir()
-            with patch.dict(os.environ,{'SOTTO_HF_HOME':str(home)},clear=False), \
+            with patch.dict(os.environ,{'SCRIVO_HF_HOME':str(home)},clear=False), \
                  patch.object(receipts,'_current_runtime_identity',return_value=identity):
                 self.assertFalse(receipts.valid_manifest(manifest))
                 manager=LocalBackendManager(root)

@@ -1,4 +1,4 @@
-"""sotto_win: config resolution, delivery wiring, tray actions, CLI, shutdown.
+"""scrivo_win: config resolution, delivery wiring, tray actions, CLI, shutdown.
 
 No model load, no microphone, no real hotkey, no keystrokes: ``run`` is driven
 with fakes, subprocess checks stop before the model loads, and every one of
@@ -21,11 +21,11 @@ import unittest
 from unittest import mock
 
 if sys.platform == "win32":
-    os.environ.setdefault("SOTTO_INSTANCE_KEY", f"sotto-tests-{os.getpid()}")
+    os.environ.setdefault("SCRIVO_INSTANCE_KEY", f"scrivo-tests-{os.getpid()}")
     import dictionary
     import settings as user_settings
-    import sotto
-    import sotto_win
+    import scrivo
+    import scrivo_win
     import win_asr
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,8 +35,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class ResolveConfigTest(unittest.TestCase):
     def _resolve(self, profile, model, language, speed="accurate"):
         # The persisted language-mode file must not leak into the test.
-        with mock.patch.object(sotto_win, "load_language_mode", return_value="auto"):
-            return sotto_win.resolve_config(profile, model, language, speed)
+        with mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"):
+            return scrivo_win.resolve_config(profile, model, language, speed)
 
     def test_auto_profile_maps_to_ct2_repo(self):
         config = self._resolve("auto", None, None)
@@ -69,10 +69,10 @@ class ResolveConfigTest(unittest.TestCase):
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
 class DeliveryLogicTest(unittest.TestCase):
     def test_prefs_come_from_settings_with_the_shared_automatic_default(self):
-        prefs = sotto_win.delivery_prefs(user_settings.DEFAULTS)
+        prefs = scrivo_win.delivery_prefs(user_settings.DEFAULTS)
         self.assertEqual((prefs.insert_mode, prefs.spacing, prefs.languages),
                          ("paste", "smart", ("en",)))
-        prefs = sotto_win.delivery_prefs(dict(user_settings.DEFAULTS, insert_mode="type",
+        prefs = scrivo_win.delivery_prefs(dict(user_settings.DEFAULTS, insert_mode="type",
                                               spacing="none", languages=["fr", "xx", "de"]))
         self.assertEqual((prefs.insert_mode, prefs.spacing, prefs.languages), ("type", "none", ("fr", "de")))
 
@@ -81,7 +81,7 @@ class DeliveryLogicTest(unittest.TestCase):
         for text in ("Hi", "Hi ", "", "Γεια", "end.\n"):
             for spacing in ("smart", "trailing", "none"):
                 self.assertEqual(win_inject.spaced(text, spacing),
-                                 sotto.compose_insertion(text, spacing, None), (text, spacing))
+                                 scrivo.compose_insertion(text, spacing, None), (text, spacing))
 
     def test_automatic_uses_the_macs_language_choice_rule(self):
         cases = [({"en": 0.6, "pt": 0.3, "fr": 0.1}, ("en", "pt")),
@@ -92,7 +92,7 @@ class DeliveryLogicTest(unittest.TestCase):
                  ({"de": 0.4, "en": 0.3, "pt": 0.3}, ("pt", "en"))]
         for probabilities, allowed in cases:
             self.assertEqual(win_asr.choose_language(probabilities, allowed),
-                             sotto.choose_language(probabilities, allowed), (probabilities, allowed))
+                             scrivo.choose_language(probabilities, allowed), (probabilities, allowed))
 
     def test_shared_policy_is_imported_not_copied(self):
         # Restructure step 7: live dictation and Retry both call
@@ -101,9 +101,9 @@ class DeliveryLogicTest(unittest.TestCase):
         import lifecycle
         for name in ("screen_transcript", "move_detected_language", "TRANSCRIPTION_FAILED_TEXT",
                      "drain_until_idle"):
-            self.assertFalse(hasattr(sotto_win, name), name)
+            self.assertFalse(hasattr(scrivo_win, name), name)
         for name in ("wait_until_idle", "end_capture_now", "QUIT_DRAIN_S", "DRAIN_POLL_S"):
-            self.assertIs(getattr(sotto_win, name), getattr(lifecycle, name), name)
+            self.assertIs(getattr(scrivo_win, name), getattr(lifecycle, name), name)
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
@@ -111,13 +111,13 @@ class SetupCommandTest(unittest.TestCase):
     def test_setup_fetches_the_pinned_model_and_vad_and_never_downloads_offline(self):
         import vad
         for offline in (False, True):
-            with mock.patch.object(sotto_win, "offline_requested", return_value=offline), \
-                    mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
-                    mock.patch.object(sotto_win.win_asr, "resolve_model_dir",
+            with mock.patch.object(scrivo_win, "offline_requested", return_value=offline), \
+                    mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
+                    mock.patch.object(scrivo_win.win_asr, "resolve_model_dir",
                                       return_value=Path("C:/models/small")) as resolve, \
                     mock.patch.object(vad, "install", return_value=Path("C:/data/models/x.onnx")) as install, \
-                    mock.patch.object(sotto_win, "log") as log:
-                self.assertEqual(sotto_win.setup("auto", None, "fast"), 0)
+                    mock.patch.object(scrivo_win, "log") as log:
+                self.assertEqual(scrivo_win.setup("auto", None, "fast"), 0)
             self.assertEqual(resolve.call_args.args[0], win_asr.FAST_REPO)
             self.assertEqual(resolve.call_args.kwargs["offline"], offline)
             install.assert_called_once_with(allow_download=not offline)
@@ -125,51 +125,51 @@ class SetupCommandTest(unittest.TestCase):
 
     def test_a_vad_failure_is_advisory(self):
         import vad
-        with mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=Path("C:/m")), \
-                mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
+        with mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=Path("C:/m")), \
+                mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
                 mock.patch.object(vad, "install", side_effect=RuntimeError("no network")), \
-                mock.patch.object(sotto_win, "log") as log:
-            self.assertEqual(sotto_win.setup("auto", None), 0)
+                mock.patch.object(scrivo_win, "log") as log:
+            self.assertEqual(scrivo_win.setup("auto", None), 0)
         self.assertTrue(any("voice detection not installed" in call.args[0] for call in log.call_args_list))
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
 class ProcessTest(unittest.TestCase):
     def test_one_dictation_app_per_session(self):
-        with mock.patch.dict(os.environ, {"SOTTO_INSTANCE_KEY": f"one-per-session-{os.getpid()}"}):
-            first = sotto_win.single_instance()
+        with mock.patch.dict(os.environ, {"SCRIVO_INSTANCE_KEY": f"one-per-session-{os.getpid()}"}):
+            first = scrivo_win.single_instance()
             self.assertIsNotNone(first)
             try:
-                self.assertIsNone(sotto_win.single_instance())
+                self.assertIsNone(scrivo_win.single_instance())
             finally:
-                sotto_win.release_instance(first)
-            again = sotto_win.single_instance()
+                scrivo_win.release_instance(first)
+            again = scrivo_win.single_instance()
             self.assertIsNotNone(again)
-            sotto_win.release_instance(again)
-        with mock.patch.dict(os.environ, {"SOTTO_INSTANCE_KEY": ""}):
-            self.assertEqual(sotto_win.instance_name(), sotto_win.instance_name())
-            self.assertTrue(sotto_win.instance_name().startswith("Local\\sotto-"))
+            scrivo_win.release_instance(again)
+        with mock.patch.dict(os.environ, {"SCRIVO_INSTANCE_KEY": ""}):
+            self.assertEqual(scrivo_win.instance_name(), scrivo_win.instance_name())
+            self.assertTrue(scrivo_win.instance_name().startswith("Local\\sotto-"))
 
     def test_restart_uses_the_same_arguments_without_a_console(self):
-        with mock.patch.object(sys, "argv", ["C:/sotto/win_launch.py", "--data-dir", "D:/x"]):
-            command = sotto_win.restart_command()
+        with mock.patch.object(sys, "argv", ["C:/scrivo/win_launch.py", "--data-dir", "D:/x"]):
+            command = scrivo_win.restart_command()
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         self.assertEqual(Path(command[0]), pythonw if pythonw.is_file() else Path(sys.executable))
-        self.assertEqual(command[1:], ["C:/sotto/win_launch.py", "--data-dir", "D:/x"])
+        self.assertEqual(command[1:], ["C:/scrivo/win_launch.py", "--data-dir", "D:/x"])
 
     def test_restart_finds_a_script_started_by_a_relative_path(self):
-        # [F36] `python sotto-copy\sotto_win.py --tray` from another folder: the
+        # [F36] `python scrivo-copy\scrivo_win.py --tray` from another folder: the
         # restart runs in the repository folder, so a relative path must not reach it.
-        with tempfile.TemporaryDirectory(prefix="sotto-win-cwd-") as folder, \
-                mock.patch.object(sys, "argv", ["sotto-copy\\sotto_win.py", "--tray"]):
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-cwd-") as folder, \
+                mock.patch.object(sys, "argv", ["scrivo-copy\\scrivo_win.py", "--tray"]):
             previous = os.getcwd()
             os.chdir(folder)
             try:
-                command = sotto_win.restart_command()
+                command = scrivo_win.restart_command()
             finally:
                 os.chdir(previous)
         self.assertTrue(Path(command[1]).is_absolute(), command)
-        self.assertEqual(Path(command[1]).resolve(), (Path(folder) / "sotto-copy" / "sotto_win.py").resolve())
+        self.assertEqual(Path(command[1]).resolve(), (Path(folder) / "scrivo-copy" / "scrivo_win.py").resolve())
         self.assertEqual(command[2:], ["--tray"])
 
 
@@ -184,10 +184,10 @@ class RestartTest(unittest.TestCase):
         capture.is_active.return_value = False
         engine = mock.Mock()
         engine.force_finish.return_value = False  # nothing is recording
-        return sotto_win.Controller(shutdown=sotto.ShutdownBoundary(), capture=capture,
+        return scrivo_win.Controller(shutdown=scrivo.ShutdownBoundary(), capture=capture,
                                     jobs=jobs, deliveries=deliveries, finishing=lambda: False,
                                     engine=engine, on_finish=mock.Mock(),
-                                    capture_gate=sotto.CaptureGate(),
+                                    capture_gate=scrivo.CaptureGate(),
                                     lifecycle={"closed": None}), jobs
 
     def test_a_model_rewarm_alone_is_not_dictation_in_flight(self):
@@ -204,7 +204,7 @@ class RestartTest(unittest.TestCase):
 
     def test_restart_waits_for_in_flight_work_and_quit_cancels_it(self):
         controller, jobs = self.controller(busy=True)
-        with mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win, "log"):
             self.assertIn("after the current dictation", controller.restart())
             time.sleep(0.3)
             self.assertFalse(controller.shutdown.requested(), "a queued dictation is never dropped")
@@ -216,12 +216,12 @@ class RestartTest(unittest.TestCase):
         self.assertTrue(controller.shutdown.requested())
         self.assertTrue(controller.restart_requested)
         idle, _jobs = self.controller(busy=False)
-        with mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win, "log"):
             self.assertEqual(idle.restart(), "Restarting…")
         self.assertTrue(idle.shutdown.requested())
         waiting, _jobs = self.controller(busy=True)
         self.virtual_clock(waiting)
-        with mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win, "log"):
             waiting.restart()
             waiting.quit()
             self.assertTrue(waiting.shutdown.event.wait(5))
@@ -229,11 +229,11 @@ class RestartTest(unittest.TestCase):
 
     def test_restart_and_speed_change_never_abandon_a_slow_dictation(self):
         # [F30] A long dictation on the CPU outlasts the Mac's 20 s restart
-        # deadline (sotto.RESTART_DRAIN_DEADLINE_S, which sotto_win never
+        # deadline (scrivo.RESTART_DRAIN_DEADLINE_S, which scrivo_win never
         # reads); Restart and a Speed change must still wait for it.  [N44]
         # This used to patch that unread constant and wait 0.8 s of real
         # time; it now runs the drain on the controller's virtual clock.
-        slow_s = 3 * sotto.RESTART_DRAIN_DEADLINE_S
+        slow_s = 3 * scrivo.RESTART_DRAIN_DEADLINE_S
         for start in ("restart", "speed"):
             controller, jobs = self.controller(busy=True)
             controller.speed = "accurate"
@@ -246,8 +246,8 @@ class RestartTest(unittest.TestCase):
                     jobs.task_done()
 
             clock = self.virtual_clock(controller, on_sleep)
-            with mock.patch.object(sotto_win.user_settings, "save"), \
-                    mock.patch.object(sotto_win, "log"):
+            with mock.patch.object(scrivo_win.user_settings, "save"), \
+                    mock.patch.object(scrivo_win, "log"):
                 message = controller.restart() if start == "restart" else controller.set_speed("fast")
                 self.assertIn("after the current dictation", message)
                 self.assertTrue(controller.shutdown.event.wait(5), f"{start}: restarts once idle")
@@ -261,7 +261,7 @@ class RestartTest(unittest.TestCase):
         # [N22] The 300 s cap was shorter than the 600 s hands-free watchdog,
         # so Restart abandoned a long hands-free dictation still recording.
         controller, jobs = self.controller(busy=True)
-        slow_s = sotto.HANDS_FREE_MAX_S + 200.0  # recorded to the max, then a slow CPU decode
+        slow_s = scrivo.HANDS_FREE_MAX_S + 200.0  # recorded to the max, then a slow CPU decode
         stopped_while_busy = []
 
         def on_sleep(now):
@@ -272,12 +272,12 @@ class RestartTest(unittest.TestCase):
 
         self.virtual_clock(controller, on_sleep)
         logs: list = []
-        with mock.patch.object(sotto_win, "log", logs.append):
+        with mock.patch.object(scrivo_win, "log", logs.append):
             controller.restart()
             self.assertTrue(controller.shutdown.event.wait(5))
         self.assertFalse(any(stopped_while_busy), "the dictation was abandoned")
         self.assertFalse([line for line in logs if "abandoned" in line], logs)
-        self.assertGreater(sotto_win.RESTART_DRAIN_CAP_S, sotto.HANDS_FREE_MAX_S)
+        self.assertGreater(scrivo_win.RESTART_DRAIN_CAP_S, scrivo.HANDS_FREE_MAX_S)
 
     @staticmethod
     def virtual_clock(controller, on_sleep=lambda now: None) -> dict:
@@ -305,7 +305,7 @@ class RestartTest(unittest.TestCase):
                 jobs.task_done()
 
         clock, logs = self.virtual_clock(controller, on_sleep), []
-        with mock.patch.object(sotto_win, "log", logs.append):
+        with mock.patch.object(scrivo_win, "log", logs.append):
             self.assertIn("after the current dictation", controller.restart())
             self.assertTrue(controller.shutdown.event.wait(5), "restarts once the dictation is done")
         self.assertTrue(stopped_while_busy, "the drain polls on the controller's clock")
@@ -319,13 +319,13 @@ class RestartTest(unittest.TestCase):
         # capture until the user quit: past the cap, the restart goes ahead.
         controller, jobs = self.controller(busy=True)
         clock, logs = self.virtual_clock(controller), []
-        with mock.patch.object(sotto_win, "log", logs.append):
+        with mock.patch.object(scrivo_win, "log", logs.append):
             controller.restart()
             self.assertTrue(controller.shutdown.event.wait(5), "a wedged dictation still restarts")
         self.assertTrue(controller.restart_requested)
         self.assertEqual(jobs.unfinished_tasks, 1, "the dictation never finished")
-        self.assertAlmostEqual(clock["now"], sotto_win.RESTART_DRAIN_CAP_S, delta=1.0)
-        self.assertGreaterEqual(sotto_win.RESTART_DRAIN_CAP_S, 2 * 60, "minutes, not seconds")
+        self.assertAlmostEqual(clock["now"], scrivo_win.RESTART_DRAIN_CAP_S, delta=1.0)
+        self.assertGreaterEqual(scrivo_win.RESTART_DRAIN_CAP_S, 2 * 60, "minutes, not seconds")
         abandoned = [line for line in logs if "abandoned" in line]
         self.assertEqual(len(abandoned), 1, logs)
         self.assertIn("1 transcription job(s)", abandoned[0])
@@ -357,7 +357,7 @@ class QuitAndUpdateTest(unittest.TestCase):
         controller, jobs = self.controller(busy=True)
         clock, polls = self.drain_polls(controller, {jobs: 3.0})
         logs: list = []
-        with mock.patch.object(sotto_win, "log", logs.append):
+        with mock.patch.object(scrivo_win, "log", logs.append):
             controller.quit()  # the tray's menu thread: it returns at once
             self.assertTrue(controller.shutdown.event.wait(5), "Quit stops once the dictation is done")
         self.assertTrue(polls, "Quit waits for the dictation in flight")
@@ -375,9 +375,9 @@ class QuitAndUpdateTest(unittest.TestCase):
         controller.deliveries.put("text")
         clock, polls = self.drain_polls(controller, {controller.deliveries: 2.0})
         unread_until = 4.0
-        with mock.patch.object(sotto_win.win_inject, "paste_settling", create=True,
+        with mock.patch.object(scrivo_win.win_inject, "paste_settling", create=True,
                                new=lambda: clock["now"] < unread_until), \
-                mock.patch.object(sotto_win, "log"):
+                mock.patch.object(scrivo_win, "log"):
             controller.quit()
             self.assertTrue(controller.shutdown.event.wait(5))
         self.assertTrue(polls, "Quit waits for the insertion")
@@ -387,14 +387,14 @@ class QuitAndUpdateTest(unittest.TestCase):
     def test_quit_stops_waiting_after_the_macs_quit_drain(self):
         controller, _jobs = self.controller(busy=True)  # a model call that never returns
         clock, logs = self.virtual_clock(controller), []
-        with mock.patch.object(sotto_win, "log", logs.append):
+        with mock.patch.object(scrivo_win, "log", logs.append):
             controller.quit()
             self.assertTrue(controller.shutdown.event.wait(5))
         anyway = [line for line in logs if "quitting anyway" in line]
         self.assertEqual(len(anyway), 1, logs)
         self.assertIn("1 transcription job(s)", anyway[0])
-        self.assertEqual(sotto_win.QUIT_DRAIN_S, 10.0, "the Mac's QUIT_DRAIN_S")
-        self.assertAlmostEqual(clock["now"], sotto_win.QUIT_DRAIN_S, delta=0.5)
+        self.assertEqual(scrivo_win.QUIT_DRAIN_S, 10.0, "the Mac's QUIT_DRAIN_S")
+        self.assertAlmostEqual(clock["now"], scrivo_win.QUIT_DRAIN_S, delta=0.5)
 
     def test_quit_ends_the_recording_in_progress_even_an_orphan(self):
         for orphan in (False, True):
@@ -415,7 +415,7 @@ class QuitAndUpdateTest(unittest.TestCase):
             controller.engine.force_finish.side_effect = force_finish
             controller.capture.is_active.return_value = orphan
             controller.on_finish.side_effect = end_capture
-            with mock.patch.object(sotto_win, "log"):
+            with mock.patch.object(scrivo_win, "log"):
                 controller.quit()
                 self.assertTrue(controller.shutdown.event.wait(5))
             # Ended like the tray's Finish: the menu took the focus, so it is
@@ -432,7 +432,7 @@ class QuitAndUpdateTest(unittest.TestCase):
         controller.capture.is_active.return_value = True  # an orphan capture
         controller.on_finish.side_effect = RuntimeError("the capture could not be ended")
         logs: list = []
-        with mock.patch.object(sotto_win, "log", logs.append):
+        with mock.patch.object(scrivo_win, "log", logs.append):
             controller.quit()
             self.assertTrue(controller.shutdown.event.wait(5), "Quit always stops Scrivo")
         failed = [line for line in logs if "could not be ended" in line]
@@ -442,7 +442,7 @@ class QuitAndUpdateTest(unittest.TestCase):
     def test_a_restart_is_refused_while_quitting(self):
         controller, jobs = self.controller(busy=True)
         clock, _polls = self.drain_polls(controller, {jobs: 1.0})
-        with mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win, "log"):
             controller.quit()
             message = controller.restart()
             self.assertTrue(controller.shutdown.event.wait(5))
@@ -461,8 +461,8 @@ class QuitAndUpdateTest(unittest.TestCase):
                 presses.append(may_start)
             return mock.Mock()
 
-        with mock.patch.object(sotto_win.subprocess, "Popen", side_effect=launch), \
-                mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win.subprocess, "Popen", side_effect=launch), \
+                mock.patch.object(scrivo_win, "log"):
             self.assertIn("Updating", controller.update_and_restart())
             self.assertTrue(controller.shutdown.event.wait(5))
         self.assertEqual(presses, [False], "no recording starts once the update is under way")
@@ -477,8 +477,8 @@ class QuitAndUpdateTest(unittest.TestCase):
             jobs.put("retry")
             return mock.Mock()
 
-        with mock.patch.object(sotto_win.subprocess, "Popen", side_effect=launch), \
-                mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win.subprocess, "Popen", side_effect=launch), \
+                mock.patch.object(scrivo_win, "log"):
             controller.update_and_restart()
             self.assertTrue(controller.shutdown.event.wait(5))
         self.assertTrue(polls, "the update's quit waits for the work in flight")
@@ -489,14 +489,14 @@ class QuitAndUpdateTest(unittest.TestCase):
         # A Ctrl+V into a window that never reads it holds Update for up to
         # RENDER_WAIT_S: "finish the current dictation" was the wrong advice.
         controller, _jobs = self.controller(busy=False)
-        with mock.patch.object(sotto_win.win_inject, "paste_settling", return_value=True), \
-                mock.patch.object(sotto_win.subprocess, "Popen") as popen, \
-                mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win.win_inject, "paste_settling", return_value=True), \
+                mock.patch.object(scrivo_win.subprocess, "Popen") as popen, \
+                mock.patch.object(scrivo_win, "log"):
             message = controller.update_and_restart()
         popen.assert_not_called()
         self.assertNotIn("Finish the current dictation", message)
         self.assertIn("paste", message)
-        self.assertIn(f"{sotto_win.win_inject.RENDER_WAIT_S:.0f} seconds", message)
+        self.assertIn(f"{scrivo_win.win_inject.RENDER_WAIT_S:.0f} seconds", message)
         with controller.capture_gate.starting() as may_start:
             self.assertTrue(may_start, "dictation works meanwhile")
 
@@ -518,8 +518,8 @@ class QuitAndUpdateTest(unittest.TestCase):
                 raise OSError("no powershell")
 
             controller.finishing = quit_chosen_meanwhile if refused == "busy" else lambda: False
-            with mock.patch.object(sotto_win.subprocess, "Popen", side_effect=launch), \
-                    mock.patch.object(sotto_win, "log"):
+            with mock.patch.object(scrivo_win.subprocess, "Popen", side_effect=launch), \
+                    mock.patch.object(scrivo_win, "log"):
                 if refused == "busy":
                     self.assertIn("Finish the current dictation", controller.update_and_restart())
                     work["left"] = False
@@ -545,7 +545,7 @@ class QuitAndUpdateTest(unittest.TestCase):
                 jobs.task_done()
 
         self.virtual_clock(controller, on_sleep)
-        with mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win, "log"):
             accepted = controller.retry("before")
             self.assertEqual(jobs.unfinished_tasks, 2, "Retry works while the gate is open")
             controller.quit()
@@ -558,13 +558,13 @@ class QuitAndUpdateTest(unittest.TestCase):
 
     def test_a_refused_or_failed_update_reopens_the_gate_but_not_a_restarts(self):
         busy, _jobs = self.controller(busy=True)
-        with mock.patch.object(sotto_win.subprocess, "Popen") as popen, \
-                mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win.subprocess, "Popen") as popen, \
+                mock.patch.object(scrivo_win, "log"):
             self.assertIn("Finish the current dictation", busy.update_and_restart())
         popen.assert_not_called()
         failed, _jobs = self.controller(busy=False)
-        with mock.patch.object(sotto_win.subprocess, "Popen", side_effect=OSError("no powershell")), \
-                mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win.subprocess, "Popen", side_effect=OSError("no powershell")), \
+                mock.patch.object(scrivo_win, "log"):
             with self.assertRaises(OSError):
                 failed.update_and_restart()
         for controller in (busy, failed):
@@ -581,8 +581,8 @@ class QuitAndUpdateTest(unittest.TestCase):
                 jobs.task_done()
 
         self.virtual_clock(restarting, on_sleep)
-        with mock.patch.object(sotto_win.subprocess, "Popen") as popen, \
-                mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win.subprocess, "Popen") as popen, \
+                mock.patch.object(scrivo_win, "log"):
             restarting.restart()
             self.assertIn("restart", restarting.update_and_restart().lower())
             with restarting.capture_gate.starting() as may_start:
@@ -600,7 +600,7 @@ class ConsoleCloseHandlerTest(unittest.TestCase):
         signals = (signal.SIGINT, signal.SIGBREAK, signal.SIGTERM)
         previous = {sig: signal.getsignal(sig) for sig in signals}
         stops = []
-        with sotto_win.console_signal_handlers(lambda *args: stops.append(args[0])):
+        with scrivo_win.console_signal_handlers(lambda *args: stops.append(args[0])):
             for sig in signals:
                 signal.getsignal(sig)(sig, None)
         self.assertEqual(stops, list(signals))
@@ -611,37 +611,37 @@ class ConsoleCloseHandlerTest(unittest.TestCase):
 class MainExitTest(unittest.TestCase):
     def test_ctrl_c_before_listening_is_a_clean_exit(self):
         # Download/warmup run before the event-only handlers are installed.
-        with mock.patch.object(sotto_win, "run", side_effect=KeyboardInterrupt), \
-                mock.patch.object(sotto_win, "_ConsoleLog", lambda: sys.stderr), \
-                mock.patch.object(sotto_win, "log") as log:
-            sotto_win.main([])  # returns normally: exit code 0
+        with mock.patch.object(scrivo_win, "run", side_effect=KeyboardInterrupt), \
+                mock.patch.object(scrivo_win, "_ConsoleLog", lambda: sys.stderr), \
+                mock.patch.object(scrivo_win, "log") as log:
+            scrivo_win.main([])  # returns normally: exit code 0
         log.assert_called_with("stopped before listening")
 
     def test_settings_trigger_and_speed_reach_run_and_the_flag_wins(self):
         saved = dict(user_settings.DEFAULTS, trigger="left-shift", speed="fast")
         for argv, trigger, locked in (([], "left-shift", False),
                                       (["--trigger", "left-ctrl"], "left-ctrl", True)):
-            with mock.patch.object(sotto_win, "run", return_value=False) as run, \
-                    mock.patch.object(sotto_win.user_settings, "load", return_value=saved), \
-                    mock.patch.object(sotto_win, "_ConsoleLog", lambda: sys.stderr):
-                sotto_win.main(argv)
+            with mock.patch.object(scrivo_win, "run", return_value=False) as run, \
+                    mock.patch.object(scrivo_win.user_settings, "load", return_value=saved), \
+                    mock.patch.object(scrivo_win, "_ConsoleLog", lambda: sys.stderr):
+                scrivo_win.main(argv)
             args, kwargs = run.call_args
             self.assertEqual((args[0], kwargs["speed"], kwargs["trigger_locked"], kwargs["tray"]),
                              (trigger, "fast", locked, False))
 
     def test_a_second_copy_exits_without_running(self):
-        held = sotto_win.single_instance()
+        held = scrivo_win.single_instance()
         try:
-            with mock.patch.object(sotto_win, "run") as run, \
-                    mock.patch.object(sotto_win, "_ConsoleLog", lambda: sys.stderr), \
-                    mock.patch.object(sotto_win, "log") as log:
+            with mock.patch.object(scrivo_win, "run") as run, \
+                    mock.patch.object(scrivo_win, "_ConsoleLog", lambda: sys.stderr), \
+                    mock.patch.object(scrivo_win, "log") as log:
                 with self.assertRaises(SystemExit) as ctx:
-                    sotto_win.main([])
+                    scrivo_win.main([])
             self.assertEqual(ctx.exception.code, 1)
             run.assert_not_called()
             log.assert_any_call("✗ Scrivo is already running")
         finally:
-            sotto_win.release_instance(held)
+            scrivo_win.release_instance(held)
 
 
 def _app_fakes(rate, captures, replies, hooks, whisper_calls):
@@ -707,7 +707,7 @@ def _app_fakes(rate, captures, replies, hooks, whisper_calls):
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
 class RunPipelineTest(unittest.TestCase):
-    """``sotto_win.run`` end to end with fake key, microphone, model and injector."""
+    """``scrivo_win.run`` end to end with fake key, microphone, model and injector."""
 
     def test_only_validated_text_is_delivered_with_dictionary_and_settings(self):
         import numpy as np
@@ -725,12 +725,12 @@ class RunPipelineTest(unittest.TestCase):
         FakeWhisper, FakeCapture, FakeHook = _app_fakes(rate, captures, replies, hooks, whisper_calls)
         saved = dict(user_settings.DEFAULTS, insert_mode="type", spacing="none", languages=["pt", "en"])
 
-        class RecordingBoundary(sotto.ShutdownBoundary):
+        class RecordingBoundary(scrivo.ShutdownBoundary):
             def __init__(self):
                 super().__init__()
                 boundaries.append(self)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-run-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-run-") as temporary:
             data = Path(temporary)
             rules_file = data / "dictionary.txt"
             # "loop" must never be rewritten: suspect rows are not delivered.
@@ -765,27 +765,27 @@ class RunPipelineTest(unittest.TestCase):
                 delivered.append((text, mode, spacing))
                 return mode
 
-            with mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=data), \
-                    mock.patch.object(sotto_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
-                    mock.patch.object(sotto_win.win_capture, "WinCapture", FakeCapture), \
-                    mock.patch.object(sotto_win.win_hotkey, "TriggerHook", FakeHook), \
-                    mock.patch.object(sotto_win.win_inject, "deliver", fake_deliver), \
-                    mock.patch.object(sotto_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
-                    mock.patch.object(sotto_win.user_settings, "load", return_value=saved), \
+            with mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=data), \
+                    mock.patch.object(scrivo_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
+                    mock.patch.object(scrivo_win.win_capture, "WinCapture", FakeCapture), \
+                    mock.patch.object(scrivo_win.win_hotkey, "TriggerHook", FakeHook), \
+                    mock.patch.object(scrivo_win.win_inject, "deliver", fake_deliver), \
+                    mock.patch.object(scrivo_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
+                    mock.patch.object(scrivo_win.user_settings, "load", return_value=saved), \
                     mock.patch.object(dictionary, "DICTIONARY_PATH", rules_file), \
-                    mock.patch.object(sotto_win, "log", logs.append), \
-                    mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary), \
+                    mock.patch.object(scrivo_win, "log", logs.append), \
+                    mock.patch.object(scrivo, "ShutdownBoundary", RecordingBoundary), \
                     mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"):
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                self.assertFalse(sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu"))
+                self.assertFalse(scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu"))
                 driver.join(5)
 
             entries = HistoryStore(data).entries(10)[::-1]
         self.assertEqual([entry["text"] for entry in entries],
-                         [sotto.DEAD_ROUTE_TEXT, "Hello, World", "[no speech detected]",
+                         [scrivo.DEAD_ROUTE_TEXT, "Hello, World", "[no speech detected]",
                           ("loop " * 60).strip()])
         self.assertEqual(delivered, [("Hello, World", "type", "none")])
         self.assertIn("Hello, World", rows_at_delivery[0], "History is written before insertion")
@@ -847,12 +847,12 @@ class RunPipelineTest(unittest.TestCase):
         delivered, hooks, boundaries, logs, whisper_calls = [], [], [], [], []
         FakeWhisper, FakeCapture, FakeHook = _app_fakes(rate, [voiced], ["hello world"], hooks, whisper_calls)
 
-        class RecordingBoundary(sotto.ShutdownBoundary):
+        class RecordingBoundary(scrivo.ShutdownBoundary):
             def __init__(self):
                 super().__init__()
                 boundaries.append(self)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-unreadable-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-unreadable-") as temporary:
             data = Path(temporary)
             index = data / relative
             index.parent.mkdir(parents=True, exist_ok=True)
@@ -873,23 +873,23 @@ class RunPipelineTest(unittest.TestCase):
                     time.sleep(0.02)
                 boundaries[0].request()
 
-            with mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=data), \
-                    mock.patch.object(sotto_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
-                    mock.patch.object(sotto_win.win_capture, "WinCapture", FakeCapture), \
-                    mock.patch.object(sotto_win.win_hotkey, "TriggerHook", FakeHook), \
-                    mock.patch.object(sotto_win.win_inject, "deliver",
+            with mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=data), \
+                    mock.patch.object(scrivo_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
+                    mock.patch.object(scrivo_win.win_capture, "WinCapture", FakeCapture), \
+                    mock.patch.object(scrivo_win.win_hotkey, "TriggerHook", FakeHook), \
+                    mock.patch.object(scrivo_win.win_inject, "deliver",
                                       lambda text, **kwargs: delivered.append(text) or kwargs["mode"]), \
-                    mock.patch.object(sotto_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
-                    mock.patch.object(sotto_win.user_settings, "load", return_value=dict(user_settings.DEFAULTS)), \
+                    mock.patch.object(scrivo_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
+                    mock.patch.object(scrivo_win.user_settings, "load", return_value=dict(user_settings.DEFAULTS)), \
                     mock.patch.object(dictionary, "DICTIONARY_PATH", data / "dictionary.txt"), \
-                    mock.patch.object(sotto_win, "log", logs.append), \
-                    mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary), \
+                    mock.patch.object(scrivo_win, "log", logs.append), \
+                    mock.patch.object(scrivo, "ShutdownBoundary", RecordingBoundary), \
                     mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"):
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                self.assertFalse(sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu"))
+                self.assertFalse(scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu"))
                 driver.join(5)
             self.assertEqual(index.read_bytes(), before, "the file is left exactly as it was")
         return delivered, logs
@@ -914,23 +914,23 @@ class ControllerTest(unittest.TestCase):
         FakeWhisper, FakeCapture, FakeHook = _app_fakes(rate, captures, replies, hooks, whisper_calls)
         results: dict = {}
 
-        class RecordingBoundary(sotto.ShutdownBoundary):
+        class RecordingBoundary(scrivo.ShutdownBoundary):
             def __init__(self):
                 super().__init__()
                 boundaries.append(self)
 
-        class RecordingController(sotto_win.Controller):
+        class RecordingController(scrivo_win.Controller):
             def __init__(self, **parts):
                 super().__init__(**parts)
                 controllers.append(self)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-ctl-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-ctl-") as temporary:
             data = Path(temporary)
             rules_file = data / "dictionary.txt"
             dictionary.add(dictionary.parse("whisper flow => Wispr Flow"), rules_file)
             settings_file = data / "settings.json"
             language_file = data / "language-mode"
-            real_save_language = sotto_win.save_language_mode
+            real_save_language = scrivo_win.save_language_mode
             real_load_settings, real_save_settings = user_settings.load, user_settings.save
 
             def wait_for(condition, what):
@@ -973,38 +973,38 @@ class ControllerTest(unittest.TestCase):
                 finally:
                     boundaries[0].request()
 
-            with mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=data), \
-                    mock.patch.object(sotto_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
-                    mock.patch.object(sotto_win.win_capture, "WinCapture", FakeCapture), \
-                    mock.patch.object(sotto_win.win_hotkey, "TriggerHook", FakeHook), \
-                    mock.patch.object(sotto_win.win_inject, "deliver",
+            with mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=data), \
+                    mock.patch.object(scrivo_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
+                    mock.patch.object(scrivo_win.win_capture, "WinCapture", FakeCapture), \
+                    mock.patch.object(scrivo_win.win_hotkey, "TriggerHook", FakeHook), \
+                    mock.patch.object(scrivo_win.win_inject, "deliver",
                                       lambda text, **kwargs: delivered.append(text)), \
-                    mock.patch.object(sotto_win.win_inject, "copy_text", copied.append), \
-                    mock.patch.object(sotto_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "Controller", RecordingController), \
-                    mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
-                    mock.patch.object(sotto_win, "save_language_mode",
+                    mock.patch.object(scrivo_win.win_inject, "copy_text", copied.append), \
+                    mock.patch.object(scrivo_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "Controller", RecordingController), \
+                    mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
+                    mock.patch.object(scrivo_win, "save_language_mode",
                                       lambda mode: real_save_language(mode, language_file)), \
-                    mock.patch.object(sotto_win.user_settings, "load",  # save() calls load(path)
+                    mock.patch.object(scrivo_win.user_settings, "load",  # save() calls load(path)
                                       lambda path=settings_file: real_load_settings(path)), \
-                    mock.patch.object(sotto_win.user_settings, "save",
+                    mock.patch.object(scrivo_win.user_settings, "save",
                                       lambda updates: real_save_settings(updates, settings_file)), \
                     mock.patch("win_startup.set_enabled") as set_enabled, \
                     mock.patch("win_startup.enabled", return_value=False), \
                     mock.patch.object(dictionary, "DICTIONARY_PATH", rules_file), \
-                    mock.patch.object(sotto_win, "log", logs.append), \
-                    mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary), \
+                    mock.patch.object(scrivo_win, "log", logs.append), \
+                    mock.patch.object(scrivo, "ShutdownBoundary", RecordingBoundary), \
                     mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"), \
                     mock.patch("updates.started_from", return_value="c2e7f0f" + "0" * 33) as started_from:
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+                scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
                 driver.join(10)
             saved = real_load_settings(settings_file)
 
         # Check for updates compares the folder with the commit this run started from.
-        started_from.assert_called_once_with(Path(sotto_win.__file__).resolve().parent)
+        started_from.assert_called_once_with(Path(scrivo_win.__file__).resolve().parent)
         self.assertEqual(controllers[0].started_from, "c2e7f0f" + "0" * 33)
 
         self.assertEqual(delivered, ["Wispr Flow works"])  # the retry never pastes
@@ -1055,12 +1055,12 @@ class LifecycleTest(unittest.TestCase):
         FakeWhisper, FakeCapture, FakeHook = _app_fakes(rate, captures, replies, hooks, whisper_calls)
         results: dict = {}
 
-        class RecordingBoundary(sotto.ShutdownBoundary):
+        class RecordingBoundary(scrivo.ShutdownBoundary):
             def __init__(self):
                 super().__init__()
                 boundaries.append(self)
 
-        class RecordingController(sotto_win.Controller):
+        class RecordingController(scrivo_win.Controller):
             def __init__(self, **parts):
                 super().__init__(**parts)
                 controllers.append(self)
@@ -1072,7 +1072,7 @@ class LifecycleTest(unittest.TestCase):
                     raise AssertionError(f"timed out waiting for {what}")
                 time.sleep(0.02)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-life-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-life-") as temporary:
             data = Path(temporary)
 
             def drive():
@@ -1099,25 +1099,25 @@ class LifecycleTest(unittest.TestCase):
                     results["error"] = exc
                     boundaries[0].request()
 
-            with mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=data), \
-                    mock.patch.object(sotto_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
-                    mock.patch.object(sotto_win.win_capture, "WinCapture", FakeCapture), \
-                    mock.patch.object(sotto_win.win_hotkey, "TriggerHook", FakeHook), \
-                    mock.patch.object(sotto_win.win_inject, "deliver",
+            with mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=data), \
+                    mock.patch.object(scrivo_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
+                    mock.patch.object(scrivo_win.win_capture, "WinCapture", FakeCapture), \
+                    mock.patch.object(scrivo_win.win_hotkey, "TriggerHook", FakeHook), \
+                    mock.patch.object(scrivo_win.win_inject, "deliver",
                                       lambda text, **kwargs: delivered.append(text)), \
-                    mock.patch.object(sotto_win.win_inject, "copy_text", copied.append), \
-                    mock.patch.object(sotto_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "Controller", RecordingController), \
-                    mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
-                    mock.patch.object(sotto_win.user_settings, "load", return_value=dict(user_settings.DEFAULTS)), \
+                    mock.patch.object(scrivo_win.win_inject, "copy_text", copied.append), \
+                    mock.patch.object(scrivo_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "Controller", RecordingController), \
+                    mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
+                    mock.patch.object(scrivo_win.user_settings, "load", return_value=dict(user_settings.DEFAULTS)), \
                     mock.patch.object(dictionary, "DICTIONARY_PATH", data / "dictionary.txt"), \
-                    mock.patch.object(sotto_win, "log", logs.append), \
-                    mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary), \
+                    mock.patch.object(scrivo_win, "log", logs.append), \
+                    mock.patch.object(scrivo, "ShutdownBoundary", RecordingBoundary), \
                     mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"):
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                restarted = sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+                restarted = scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
                 driver.join(10)
             texts = [entry["text"] for entry in HistoryStore(data).entries(10)][::-1]
 
@@ -1157,12 +1157,12 @@ class LifecycleTest(unittest.TestCase):
                 resume_begin.wait(10)  # the mic is slow to open: on_start is in flight
                 return cold
 
-        class RecordingBoundary(sotto.ShutdownBoundary):
+        class RecordingBoundary(scrivo.ShutdownBoundary):
             def __init__(self):
                 super().__init__()
                 boundaries.append(self)
 
-        class RecordingController(sotto_win.Controller):
+        class RecordingController(scrivo_win.Controller):
             def __init__(self, **parts):
                 super().__init__(**parts)
                 controllers.append(self)
@@ -1174,7 +1174,7 @@ class LifecycleTest(unittest.TestCase):
                     raise AssertionError(f"timed out waiting for {what}")
                 time.sleep(0.02)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-tray-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-tray-") as temporary:
             data = Path(temporary)
 
             def drive():
@@ -1196,25 +1196,25 @@ class LifecycleTest(unittest.TestCase):
                 finally:
                     boundaries[0].request()
 
-            with mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=data), \
-                    mock.patch.object(sotto_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
-                    mock.patch.object(sotto_win.win_capture, "WinCapture", SlowStartCapture), \
-                    mock.patch.object(sotto_win.win_hotkey, "TriggerHook", FakeHook), \
-                    mock.patch.object(sotto_win.win_inject, "deliver",
+            with mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=data), \
+                    mock.patch.object(scrivo_win.win_asr, "LocalCT2Whisper", FakeWhisper), \
+                    mock.patch.object(scrivo_win.win_capture, "WinCapture", SlowStartCapture), \
+                    mock.patch.object(scrivo_win.win_hotkey, "TriggerHook", FakeHook), \
+                    mock.patch.object(scrivo_win.win_inject, "deliver",
                                       lambda text, **kwargs: delivered.append(text)), \
-                    mock.patch.object(sotto_win.win_inject, "copy_text", copied.append), \
-                    mock.patch.object(sotto_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
-                    mock.patch.object(sotto_win, "Controller", RecordingController), \
-                    mock.patch.object(sotto_win, "load_language_mode", return_value="auto"), \
-                    mock.patch.object(sotto_win.user_settings, "load", return_value=dict(user_settings.DEFAULTS)), \
+                    mock.patch.object(scrivo_win.win_inject, "copy_text", copied.append), \
+                    mock.patch.object(scrivo_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)), \
+                    mock.patch.object(scrivo_win, "Controller", RecordingController), \
+                    mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"), \
+                    mock.patch.object(scrivo_win.user_settings, "load", return_value=dict(user_settings.DEFAULTS)), \
                     mock.patch.object(dictionary, "DICTIONARY_PATH", data / "dictionary.txt"), \
-                    mock.patch.object(sotto_win, "log", logs.append), \
-                    mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary), \
+                    mock.patch.object(scrivo_win, "log", logs.append), \
+                    mock.patch.object(scrivo, "ShutdownBoundary", RecordingBoundary), \
                     mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx"):
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                self.assertFalse(sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu"))
+                self.assertFalse(scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu"))
                 driver.join(10)
 
         self.assertNotIn("error", results, results)
@@ -1224,46 +1224,46 @@ class LifecycleTest(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "win32", "Windows-only entry point")
 class IsolatedCliTest(unittest.TestCase):
-    """Real ``sotto_win.py`` processes against a private temporary state root."""
+    """Real ``scrivo_win.py`` processes against a private temporary state root."""
 
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory(prefix="sotto-win-cli-")
+        self._tmp = tempfile.TemporaryDirectory(prefix="scrivo-win-cli-")
         root = Path(self._tmp.name)
         self.data = root / "data"
-        self.env = dict(os.environ, SOTTO_DATA_DIR=str(self.data), SOTTO_HF_HOME=str(root / "hf"),
-                        SOTTO_INSTANCE_KEY=f"cli-{root.name}")
-        for name in ("SOTTO_OFFLINE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "SOTTO_DEVICE",
+        self.env = dict(os.environ, SCRIVO_DATA_DIR=str(self.data), SCRIVO_HF_HOME=str(root / "hf"),
+                        SCRIVO_INSTANCE_KEY=f"cli-{root.name}")
+        for name in ("SCRIVO_OFFLINE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "SCRIVO_DEVICE",
                      "PYTHONIOENCODING", "PYTHONUTF8"):
             self.env.pop(name, None)
 
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _run(self, *args, extra_env=None, input_code=None, script="sotto_win.py"):
+    def _run(self, *args, extra_env=None, input_code=None, script="scrivo_win.py"):
         env = dict(self.env, **(extra_env or {}))
         command = [sys.executable, "-c", input_code] if input_code else [sys.executable, script, *args]
         return subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=120)
 
     def test_offline_missing_model_prints_a_message_not_a_traceback(self):
-        result = self._run("run", extra_env={"SOTTO_OFFLINE": "1"})
+        result = self._run("run", extra_env={"SCRIVO_OFFLINE": "1"})
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
         self.assertIn("is not in", result.stderr)
         self.assertIn("offline mode is on", result.stderr)
         self.assertNotIn("listening", result.stderr)
-        self.assertFalse((Path(self.env["SOTTO_HF_HOME"]) / "hub").exists())
+        self.assertFalse((Path(self.env["SCRIVO_HF_HOME"]) / "hub").exists())
 
     def test_offline_setup_with_an_empty_cache_downloads_nothing(self):
-        result = self._run("setup", extra_env={"SOTTO_OFFLINE": "1"})
+        result = self._run("setup", extra_env={"SCRIVO_OFFLINE": "1"})
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("offline mode is on", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
-        self.assertFalse((Path(self.env["SOTTO_HF_HOME"]) / "hub").exists())
+        self.assertFalse((Path(self.env["SCRIVO_HF_HOME"]) / "hub").exists())
         self.assertFalse((self.data / "models").exists())
 
     def test_unpinned_model_is_a_usage_error(self):
-        result = self._run("run", "--model", "org/unpinned", extra_env={"SOTTO_OFFLINE": "1"})
+        result = self._run("run", "--model", "org/unpinned", extra_env={"SCRIVO_OFFLINE": "1"})
         self.assertEqual(result.returncode, 2)
         self.assertIn("not pinned", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
@@ -1271,7 +1271,7 @@ class IsolatedCliTest(unittest.TestCase):
     def test_launcher_applies_the_data_and_model_folders(self):
         other = Path(self._tmp.name) / "launched"
         result = self._run("--data-dir", str(other), "doctor", script="win_launch.py",
-                           extra_env={"SOTTO_OFFLINE": "1"})
+                           extra_env={"SCRIVO_OFFLINE": "1"})
         self.assertIn(f"data: {other}", result.stderr)
         self.assertIn(f"model cache: {other / 'huggingface'}", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
@@ -1328,30 +1328,30 @@ def _patched_run(stack, data, fakes, *, logs, boundaries, controllers, settings=
 
     FakeWhisper, FakeCapture, FakeHook = fakes
 
-    class RecordingBoundary(sotto.ShutdownBoundary):
+    class RecordingBoundary(scrivo.ShutdownBoundary):
         def __init__(self):
             super().__init__()
             boundaries.append(self)
 
-    class RecordingController(sotto_win.Controller):
+    class RecordingController(scrivo_win.Controller):
         def __init__(self, **parts):
             super().__init__(**parts)
             controllers.append(self)
 
     for patch in (
-            mock.patch.object(sotto_win.win_asr, "resolve_model_dir", return_value=data),
-            mock.patch.object(sotto_win.win_asr, "LocalCT2Whisper", FakeWhisper),
-            mock.patch.object(sotto_win.win_capture, "WinCapture", FakeCapture),
-            mock.patch.object(sotto_win.win_hotkey, "TriggerHook", FakeHook),
-            mock.patch.object(sotto_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)),
-            mock.patch.object(sotto_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)),
-            mock.patch.object(sotto_win, "Controller", RecordingController),
-            mock.patch.object(sotto_win, "load_language_mode", return_value="auto"),
-            mock.patch.object(sotto_win.user_settings, "load",
+            mock.patch.object(scrivo_win.win_asr, "resolve_model_dir", return_value=data),
+            mock.patch.object(scrivo_win.win_asr, "LocalCT2Whisper", FakeWhisper),
+            mock.patch.object(scrivo_win.win_capture, "WinCapture", FakeCapture),
+            mock.patch.object(scrivo_win.win_hotkey, "TriggerHook", FakeHook),
+            mock.patch.object(scrivo_win, "HistoryStore", lambda **kwargs: HistoryStore(data, **kwargs)),
+            mock.patch.object(scrivo_win, "LearningStore", lambda **kwargs: LearningStore(data, **kwargs)),
+            mock.patch.object(scrivo_win, "Controller", RecordingController),
+            mock.patch.object(scrivo_win, "load_language_mode", return_value="auto"),
+            mock.patch.object(scrivo_win.user_settings, "load",
                               return_value=dict(settings or user_settings.DEFAULTS)),
             mock.patch.object(dictionary, "DICTIONARY_PATH", data / "dictionary.txt"),
-            mock.patch.object(sotto_win, "log", logs.append),
-            mock.patch.object(sotto, "ShutdownBoundary", RecordingBoundary),
+            mock.patch.object(scrivo_win, "log", logs.append),
+            mock.patch.object(scrivo, "ShutdownBoundary", RecordingBoundary),
             mock.patch.object(vad, "MODEL_PATH", data / "no-vad.onnx")):
         stack.enter_context(patch)
 
@@ -1396,7 +1396,7 @@ class FailureAndTeardownTest(unittest.TestCase):
             def notify(self, text):
                 notes.append(text)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-fail-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-fail-") as temporary:
             data = Path(temporary)
 
             def drive():
@@ -1422,11 +1422,11 @@ class FailureAndTeardownTest(unittest.TestCase):
                 _patched_run(stack, data, fakes, logs=logs, boundaries=boundaries, controllers=controllers)
                 stack.enter_context(mock.patch("win_ui.TrayApp", FakeTray))
                 stack.enter_context(mock.patch.object(
-                    sotto_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
-                stack.enter_context(mock.patch.object(sotto_win.win_inject, "copy_text", copied.append))
+                    scrivo_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
+                stack.enter_context(mock.patch.object(scrivo_win.win_inject, "copy_text", copied.append))
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu", tray=True)
+                scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu", tray=True)
                 driver.join(10)
 
         self.assertNotIn("error", results, results)
@@ -1463,7 +1463,7 @@ class FailureAndTeardownTest(unittest.TestCase):
             def alive(self):
                 return not self.stopped
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-stop-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-stop-") as temporary:
             data = Path(temporary)
 
             def drive():
@@ -1476,7 +1476,7 @@ class FailureAndTeardownTest(unittest.TestCase):
                              boundaries=boundaries, controllers=controllers)
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+                scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
                 driver.join(10)
                 time.sleep(1.5)  # longer than one poll after the hook stopped
 
@@ -1523,12 +1523,12 @@ class FailureAndTeardownTest(unittest.TestCase):
                 self.stop_event.wait(10)
                 return False
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-poll-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-poll-") as temporary:
             data = Path(temporary)
             with contextlib.ExitStack() as stack:
                 _patched_run(stack, data, (FakeWhisper, FakeCapture, DyingHook), logs=logs,
                              boundaries=boundaries, controllers=controllers)
-                sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+                scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
                 self.assertTrue(polled.wait(10), "the poller finished the poll it was in")
 
         self.assertTrue(hooks[0].stopped)
@@ -1555,13 +1555,13 @@ class QuitRunTest(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             _patched_run(stack, data, fakes, logs=logs, boundaries=boundaries, controllers=controllers)
             stack.enter_context(mock.patch.object(
-                sotto_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
-            stack.enter_context(mock.patch.object(sotto_win.win_inject, "copy_text", copied.append))
+                scrivo_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
+            stack.enter_context(mock.patch.object(scrivo_win.win_inject, "copy_text", copied.append))
             for patch in extra:
                 stack.enter_context(patch)
             driver = threading.Thread(target=guarded, daemon=True)
             driver.start()
-            results["restart"] = sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+            results["restart"] = scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
             results["delivered_at_stop"] = list(delivered)
             driver.join(10)
         self.assertNotIn("error", results, results)
@@ -1582,7 +1582,7 @@ class QuitRunTest(unittest.TestCase):
             time.sleep(0.3)
             controllers[0].quit()
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-quit-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-quit-") as temporary:
             data = Path(temporary)
             results, delivered, copied = self.run_app(fakes, drive, data, logs=logs,
                                                       boundaries=boundaries, controllers=controllers)
@@ -1629,7 +1629,7 @@ class QuitRunTest(unittest.TestCase):
             results["opened"] = FakeCapture.opened
             hook.modifiers_held = False
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-quit-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-quit-") as temporary:
             data = Path(temporary)
             results, delivered, copied = self.run_app(
                 (SlowWhisper, FakeCapture, FakeHook), drive, data, logs=logs,
@@ -1662,11 +1662,11 @@ class QuitRunTest(unittest.TestCase):
             _wait_for(lambda: any("insert deferred" in line for line in logs), "the deferred insert")
             controllers[0].quit()
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-quit-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-quit-") as temporary:
             data = Path(temporary)
             results, delivered, copied = self.run_app(
                 fakes, drive, data, logs=logs, boundaries=boundaries, controllers=controllers,
-                extra=[mock.patch.object(sotto_win, "QUIT_DRAIN_S", 0.5, create=True)])
+                extra=[mock.patch.object(scrivo_win, "QUIT_DRAIN_S", 0.5, create=True)])
             hooks[0].modifiers_held = False  # released only after the app stopped
             time.sleep(0.3)
             texts = [entry["text"] for entry in HistoryStore(data).entries(10)]
@@ -1691,7 +1691,7 @@ class QuitRunTest(unittest.TestCase):
         ready: list[float] = []
         wait_s = 2.0
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-held-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-held-") as temporary:
             data = Path(temporary)
 
             def drive():
@@ -1715,12 +1715,12 @@ class QuitRunTest(unittest.TestCase):
 
             with contextlib.ExitStack() as stack:
                 _patched_run(stack, data, fakes, logs=logs, boundaries=boundaries, controllers=controllers)
-                stack.enter_context(mock.patch.object(sotto_win, "INSERT_WAIT_S", wait_s))
+                stack.enter_context(mock.patch.object(scrivo_win, "INSERT_WAIT_S", wait_s))
                 stack.enter_context(mock.patch.object(
-                    sotto_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
+                    scrivo_win.win_inject, "deliver", lambda text, **kwargs: delivered.append(text)))
                 driver = threading.Thread(target=drive, daemon=True)
                 driver.start()
-                sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
+                scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu")
                 driver.join(10)
             texts = [entry["text"] for entry in HistoryStore(data).entries(10)][::-1]
 
@@ -1751,7 +1751,7 @@ class QuitRunTest(unittest.TestCase):
             results["restart message"] = controller.restart()
             signal.raise_signal(signum)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-signal-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-signal-") as temporary:
             data = Path(temporary)
             results, _delivered, copied = self.run_app(fakes, drive, data, logs=logs,
                                                        boundaries=boundaries,
@@ -1792,7 +1792,7 @@ class QuitRunTest(unittest.TestCase):
                 controller.console_stop()  # the second Ctrl-C
 
         RestartTest.virtual_clock(controller, on_sleep)
-        with mock.patch.object(sotto_win, "log"):
+        with mock.patch.object(scrivo_win, "log"):
             controller.console_stop()  # the first Ctrl-C
             self.assertTrue(controller.shutdown.event.wait(5))
         self.assertTrue(polls, "the first Ctrl-C waits for the dictation in flight")
@@ -1821,10 +1821,10 @@ class QuitRunTest(unittest.TestCase):
                 engine.released()
                 return mock.Mock()
 
-            with mock.patch.object(sotto_win.subprocess, "Popen", side_effect=launch):
+            with mock.patch.object(scrivo_win.subprocess, "Popen", side_effect=launch):
                 results["update"] = controller.update_and_restart()
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-gate-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-gate-") as temporary:
             results, _delivered, _copied = self.run_app(
                 fakes, drive, Path(temporary), logs=logs, boundaries=boundaries,
                 controllers=controllers)
@@ -1853,10 +1853,10 @@ class ConsoleLogTest(unittest.TestCase):
             def flush(self):
                 pass
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-log-") as temporary, \
-                mock.patch.object(sotto_win, "DATA_DIR", Path(temporary)), \
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-log-") as temporary, \
+                mock.patch.object(scrivo_win, "DATA_DIR", Path(temporary)), \
                 mock.patch.object(sys, "stderr", None):
-            sink = sotto_win._ConsoleLog()
+            sink = scrivo_win._ConsoleLog()
             sink._file.close()
             sink._file = SlowFile()
             started = time.monotonic()
@@ -1869,19 +1869,19 @@ class ConsoleLogTest(unittest.TestCase):
         print("after drain", file=sink)  # written directly once the writer has stopped
         self.assertTrue("".join(written).endswith("after drain\n"), written)
 
-    def test_a_log_that_grows_past_its_limit_rotates_while_sotto_runs(self):
-        # [N36] sotto.log rotated only at startup, so a long session grew it without bound.
+    def test_a_log_that_grows_past_its_limit_rotates_while_scrivo_runs(self):
+        # [N36] scrivo.log rotated only at startup, so a long session grew it without bound.
         line = "○ 0.98s captured · 12 chars\n"
-        with tempfile.TemporaryDirectory(prefix="sotto-win-log-") as temporary, \
-                mock.patch.object(sotto_win, "DATA_DIR", Path(temporary)), \
-                mock.patch.object(sotto_win, "LOG_ROTATE_BYTES", 200), \
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-log-") as temporary, \
+                mock.patch.object(scrivo_win, "DATA_DIR", Path(temporary)), \
+                mock.patch.object(scrivo_win, "LOG_ROTATE_BYTES", 200), \
                 mock.patch.object(sys, "stderr", None):
-            sink = sotto_win._ConsoleLog()
+            sink = scrivo_win._ConsoleLog()
             for _ in range(30):  # about 900 bytes
                 print(line, end="", file=sink)
             sink.drain(timeout=5)
             sink._file.close()
-            current, rotated = Path(temporary, "sotto.log"), Path(temporary, "sotto.log.1")
+            current, rotated = Path(temporary, "scrivo.log"), Path(temporary, "scrivo.log.1")
             self.assertTrue(rotated.is_file(), "nothing was rotated while running")
             self.assertLessEqual(current.stat().st_size, 200 + len(line.encode("utf-8")))
             self.assertLessEqual(rotated.stat().st_size, 200 + len(line.encode("utf-8")))
@@ -1944,15 +1944,15 @@ class RoundTwoRunTest(unittest.TestCase):
             stack.enter_context(mock.patch("win_ui.TrayApp", _fake_tray(app["notes"])))
             stack.enter_context(mock.patch("win_ui.message_box"))
             stack.enter_context(mock.patch.object(
-                sotto_win.win_inject, "deliver",
+                scrivo_win.win_inject, "deliver",
                 lambda text, **kwargs: app["delivered"].append(text) or kwargs["mode"]))
-            stack.enter_context(mock.patch.object(sotto_win.win_inject, "copy_text",
+            stack.enter_context(mock.patch.object(scrivo_win.win_inject, "copy_text",
                                                   app["copied"].append))
             for patch in extra:
                 stack.enter_context(patch)
             driver = threading.Thread(target=guarded, daemon=True)
             driver.start()
-            sotto_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu", tray=True)
+            scrivo_win.run("right-ctrl", "auto", None, None, None, 0.0, "cpu", tray=True)
             driver.join(10)
         self.assertNotIn("error", results, (results, app["logs"]))
         return results, app
@@ -1976,7 +1976,7 @@ class RoundTwoRunTest(unittest.TestCase):
         if settle:
             _wait_for(lambda: not controller.busy(), "the dictation to settle")
 
-    def test_scratch_that_undoes_only_sottos_own_insert_in_the_same_window(self):
+    def test_scratch_that_undoes_only_scrivos_own_insert_in_the_same_window(self):
         # [F7w] Windows sent Ctrl+Z within the minute whatever had happened:
         # to another window, after the user typed, or after an insert that
         # inserted nothing.  Now it follows the Mac's rules.
@@ -2011,11 +2011,11 @@ class RoundTwoRunTest(unittest.TestCase):
                 self.dictate(app)
                 results["undos_after"].append(len(undos))
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-scratch-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-scratch-") as temporary:
             results, app = self.run_app(fakes, drive, Path(temporary), settings=self.ENGLISH, extra=(
-                mock.patch.object(sotto_win.win_inject, "deliver", deliver),
-                mock.patch.object(sotto_win.win_inject, "send_inputs", undos.append),
-                mock.patch.object(sotto_win.win_inject, "foreground_identity",
+                mock.patch.object(scrivo_win.win_inject, "deliver", deliver),
+                mock.patch.object(scrivo_win.win_inject, "send_inputs", undos.append),
+                mock.patch.object(scrivo_win.win_inject, "foreground_identity",
                                   lambda: state["window"], create=True)))
         self.assertEqual(asked, ["first words", "second words", "third words", "fourth words"])
         self.assertEqual(results["undos_after"], [0, 0, 0, 0, 0, 0, 1, 1, 1, 1], app["logs"])
@@ -2039,7 +2039,7 @@ class RoundTwoRunTest(unittest.TestCase):
                 _wait_for(lambda count=count: len(app["copied"]) == count, "the retry")
             results["row"] = HistoryStore(data).get(entry_id)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-retry-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-retry-") as temporary:
             data = Path(temporary)
             results, app = self.run_app(fakes, drive, data, settings=self.ENGLISH)
         # Retry never undoes anything: "scratch that" keeps its words.
@@ -2060,7 +2060,7 @@ class RoundTwoRunTest(unittest.TestCase):
             for _ in range(3):
                 self.dictate(app)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-append-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-append-") as temporary:
             data = Path(temporary)
             results, app = self.run_app(fakes, drive, data, extra=(mock.patch(
                 "learning.LearningCoordinator.append_live",
@@ -2082,7 +2082,7 @@ class RoundTwoRunTest(unittest.TestCase):
         def drive(results, app):
             self.dictate(app)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-unreadable-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-unreadable-") as temporary:
             data = Path(temporary)
             (data / "history.jsonl").write_text('{"id": "abc123", "text": "cut of', encoding="utf-8")
             results, app = self.run_app(fakes, drive, data)
@@ -2113,9 +2113,9 @@ class RoundTwoRunTest(unittest.TestCase):
             hook.engine.released()
             _wait_for(lambda: not app["controllers"][0].busy(), "the release")
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-mic-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-mic-") as temporary:
             results, app = self.run_app(self.fakes([], []), drive, Path(temporary), extra=(
-                mock.patch.object(sotto_win.win_capture, "WinCapture", make_capture),))
+                mock.patch.object(scrivo_win.win_capture, "WinCapture", make_capture),))
         self.assertFalse(results["recording_after_failure"], "the gesture still records")
         self.assertEqual([note for note in app["notes"] if "Could not start the microphone" in note],
                          app["notes"])
@@ -2136,9 +2136,9 @@ class RoundTwoRunTest(unittest.TestCase):
             controller.finish_now()
             _wait_for(lambda: not controller.busy(), "the dictation to settle")
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-tray-scratch-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-tray-scratch-") as temporary:
             results, app = self.run_app(fakes, drive, Path(temporary), settings=self.ENGLISH, extra=(
-                mock.patch.object(sotto_win.win_inject, "send_inputs", undos.append),))
+                mock.patch.object(scrivo_win.win_inject, "send_inputs", undos.append),))
         self.assertEqual((undos, app["copied"], app["delivered"]), ([], [], []))
         self.assertEqual(len(app["notes"]), 1, app["notes"])
         self.assertIn("Nothing was undone", app["notes"][0])
@@ -2162,7 +2162,7 @@ class RoundTwoRunTest(unittest.TestCase):
             _wait_for(lambda: not controller.busy(), "the retry")
             results["entry_id"] = entry_id
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-retry-unreadable-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-retry-unreadable-") as temporary:
             data = Path(temporary)
             results, app = self.run_app(fakes, drive, data)
             with self.assertRaises(HistoryUnreadable):
@@ -2195,14 +2195,14 @@ class SharedPolicyRunTest(unittest.TestCase):
             for _reply in replies:
                 self.dictate(app)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-screen-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-screen-") as temporary:
             data = Path(temporary)
             (data / "dictionary.txt").write_text("hello world => Hello World\n", encoding="utf-8")
             results, app = self.run_app(fakes, drive, data, settings=self.ENGLISH, extra=(
-                mock.patch.object(sotto_win.win_inject, "send_inputs", undos.append),
-                mock.patch.object(sotto_win.win_inject, "foreground_identity", lambda: (101, 7),
+                mock.patch.object(scrivo_win.win_inject, "send_inputs", undos.append),
+                mock.patch.object(scrivo_win.win_inject, "foreground_identity", lambda: (101, 7),
                                   create=True),
-                mock.patch.object(sotto, "log", module_logs.append)))
+                mock.patch.object(scrivo, "log", module_logs.append)))
             rows = HistoryStore(data).entries(10)[::-1]
         self.assertEqual(app["delivered"], ["Hello World again", self.PREFIX, "\nSecond Hello World"])
         self.assertEqual(len(undos), 1, "the scratch undid the first dictation")
@@ -2254,12 +2254,12 @@ class SharedPolicyRunTest(unittest.TestCase):
                     hook.keydowns += 1
                 self.dictate(app)
 
-        with tempfile.TemporaryDirectory(prefix="sotto-win-scratch-reasons-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="scrivo-win-scratch-reasons-") as temporary:
             results, app = self.run_app(fakes, drive, Path(temporary), settings=self.ENGLISH, extra=(
-                mock.patch.object(sotto_win.win_inject, "deliver",
+                mock.patch.object(scrivo_win.win_inject, "deliver",
                                   lambda text, **kwargs: state["inserts"]),
-                mock.patch.object(sotto_win.win_inject, "send_inputs", lambda inputs: None),
-                mock.patch.object(sotto_win.win_inject, "foreground_identity",
+                mock.patch.object(scrivo_win.win_inject, "send_inputs", lambda inputs: None),
+                mock.patch.object(scrivo_win.win_inject, "foreground_identity",
                                   lambda: state["window"], create=True)))
         self.assertEqual([line for line in app["logs"] if "scratch that" in line], [
             "  scratch that: nothing recent to undo",

@@ -1,6 +1,6 @@
 """The lifecycle pieces the Mac and Windows apps share: the shutdown boundary,
 the capture gate, which reason holds the gate, and the in-flight check the
-drains poll. Pinned before they moved out of sotto.py; runs on both
+drains poll. Pinned before they moved out of scrivo.py; runs on both
 platforms (no AppKit, no microphone, no signal is delivered).
 """
 import queue
@@ -8,26 +8,26 @@ import signal
 import types
 import unittest
 
-import sotto
+import scrivo
 
 
 class ShutdownBoundaryTests(unittest.TestCase):
     def test_a_teardown_wait_is_its_cap_unless_sigterm_set_a_shared_deadline(self):
-        boundary = sotto.ShutdownBoundary()
+        boundary = scrivo.ShutdownBoundary()
         self.assertEqual(boundary.teardown_wait_s(2.0, 100.0), 2.0)
         boundary.request_stop(signal.SIGINT)                  # Ctrl-C: no launchd deadline
         self.assertEqual(boundary.teardown_wait_s(2.0, 1e9), 2.0)
 
-        sigterm = sotto.ShutdownBoundary()
+        sigterm = scrivo.ShutdownBoundary()
         sigterm.request_stop(signal.SIGTERM)
         at = sigterm.stop_at
-        keep_by = at + sotto.LAUNCHD_EXIT_TIMEOUT_S - sotto.SIGTERM_KEEP_RESERVE_S
+        keep_by = at + scrivo.LAUNCHD_EXIT_TIMEOUT_S - scrivo.SIGTERM_KEEP_RESERVE_S
         self.assertEqual(sigterm.teardown_wait_s(10.0, at), keep_by - at)
         self.assertEqual(sigterm.teardown_wait_s(1.0, at), 1.0)
         self.assertEqual(sigterm.teardown_wait_s(10.0, keep_by + 1.0), 0.0)
 
     def test_the_first_stop_request_drains_and_a_second_one_stops_at_once(self):
-        boundary = sotto.ShutdownBoundary()
+        boundary = scrivo.ShutdownBoundary()
         boundary.request_stop(signal.SIGTERM)
         self.assertTrue(boundary.stop_event.is_set())
         self.assertFalse(boundary.requested())
@@ -37,7 +37,7 @@ class ShutdownBoundaryTests(unittest.TestCase):
         self.assertEqual(boundary.stop_signal, signal.SIGTERM)  # the first signal is the one recorded
 
     def test_enqueue_queues_only_while_live_and_hands_refused_live_jobs_to_keep(self):
-        boundary, jobs, kept = sotto.ShutdownBoundary(), queue.Queue(), []
+        boundary, jobs, kept = scrivo.ShutdownBoundary(), queue.Queue(), []
         self.assertTrue(boundary.enqueue(jobs, ("live", 1), keep=kept.append))
         boundary.request()
         self.assertFalse(boundary.enqueue(jobs, ("live", 2), keep=kept.append))
@@ -49,34 +49,34 @@ class ShutdownBoundaryTests(unittest.TestCase):
         jobs, kept = queue.Queue(), []
         for job in (("live", "a"), ("retry", "b"), ("live", "c")):
             jobs.put(job)
-        self.assertEqual(sotto.ShutdownBoundary.discard_queued(jobs, keep=kept.append), 3)
+        self.assertEqual(scrivo.ShutdownBoundary.discard_queued(jobs, keep=kept.append), 3)
         self.assertEqual(kept, [("live", "a"), ("live", "c")])
         self.assertEqual(jobs.unfinished_tasks, 0)
-        self.assertEqual(sotto.ShutdownBoundary.discard_queued(jobs), 0)
+        self.assertEqual(scrivo.ShutdownBoundary.discard_queued(jobs), 0)
 
     def test_stop_capture_aborts_then_shuts_the_capture_down_even_if_abort_raises(self):
         calls = []
         closable = types.SimpleNamespace(abort=lambda: calls.append("abort"),
                                          shutdown=lambda: calls.append("shutdown"))
-        boundary = sotto.ShutdownBoundary()
+        boundary = scrivo.ShutdownBoundary()
         boundary.stop_capture(closable)
         self.assertTrue(boundary.requested())
         legacy = types.SimpleNamespace(abort=lambda: calls.append("abort"),
                                        release_soon=lambda: calls.append("release_soon"))
-        sotto.ShutdownBoundary().stop_capture(legacy)
+        scrivo.ShutdownBoundary().stop_capture(legacy)
 
         def broken_abort():
             raise RuntimeError("engine gone")
         failing = types.SimpleNamespace(abort=broken_abort, shutdown=lambda: calls.append("shutdown"))
         with self.assertRaises(RuntimeError):
-            sotto.ShutdownBoundary().stop_capture(failing)
+            scrivo.ShutdownBoundary().stop_capture(failing)
         self.assertEqual(calls, ["abort", "shutdown", "abort", "release_soon", "shutdown"])
 
 
 class LifecycleGateTests(unittest.TestCase):
     def make(self):
-        shutdown, gate = sotto.ShutdownBoundary(), sotto.CaptureGate()
-        lifecycle = sotto.Lifecycle(shutdown, gate, end_recording=lambda: None, busy=lambda: False)
+        shutdown, gate = scrivo.ShutdownBoundary(), scrivo.CaptureGate()
+        lifecycle = scrivo.Lifecycle(shutdown, gate, end_recording=lambda: None, busy=lambda: False)
         return shutdown, gate, lifecycle
 
     @staticmethod
@@ -120,21 +120,21 @@ class InFlightTests(unittest.TestCase):
     def test_recording_queued_jobs_and_pending_deliveries_are_in_flight_but_one_warmup_is_not(self):
         recording = {"active": False}
         capture = types.SimpleNamespace(is_active=lambda: recording["active"])
-        jobs, deliveries = queue.Queue(), sotto.PendingDeliveries()
-        self.assertFalse(sotto.dictation_in_flight(capture, jobs, deliveries))
+        jobs, deliveries = queue.Queue(), scrivo.PendingDeliveries()
+        self.assertFalse(scrivo.dictation_in_flight(capture, jobs, deliveries))
         recording["active"] = True
-        self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries))
+        self.assertTrue(scrivo.dictation_in_flight(capture, jobs, deliveries))
         recording["active"] = False
         jobs.put(("warmup",))
-        self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries))
-        self.assertFalse(sotto.dictation_in_flight(capture, jobs, deliveries, warming=True))
+        self.assertTrue(scrivo.dictation_in_flight(capture, jobs, deliveries))
+        self.assertFalse(scrivo.dictation_in_flight(capture, jobs, deliveries, warming=True))
         jobs.put(("live",))
-        self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries, warming=True))
+        self.assertTrue(scrivo.dictation_in_flight(capture, jobs, deliveries, warming=True))
         while not jobs.empty():
             jobs.get_nowait()
             jobs.task_done()
         deliveries.add()
-        self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries))
+        self.assertTrue(scrivo.dictation_in_flight(capture, jobs, deliveries))
 
 
 
@@ -146,11 +146,11 @@ class DrainHelperTests(unittest.TestCase):
 
         def sleep(seconds):
             now[0] += seconds
-        self.assertTrue(sotto.wait_until_idle(lambda: now[0] < 0.6, poll_s=0.25, deadline_s=1.0,
+        self.assertTrue(scrivo.wait_until_idle(lambda: now[0] < 0.6, poll_s=0.25, deadline_s=1.0,
                                               clock=lambda: now[0], sleep=sleep))
         self.assertEqual(now[0], 0.75)
         now[0] = 0.0
-        self.assertFalse(sotto.wait_until_idle(lambda: True, poll_s=0.25, deadline_s=1.0,
+        self.assertFalse(scrivo.wait_until_idle(lambda: True, poll_s=0.25, deadline_s=1.0,
                                                clock=lambda: now[0], sleep=sleep))
         self.assertEqual(now[0], 1.0)
 
@@ -162,9 +162,9 @@ class DrainHelperTests(unittest.TestCase):
         engine = GestureEngine(lambda: None, lambda: engine_finishes.append(1), lambda: None)
         engine.force_start()
         capture = types.SimpleNamespace(is_active=lambda: True)
-        self.assertEqual(sotto.end_capture_now(engine, capture, lambda: handed.append("copy")), "gesture")
+        self.assertEqual(scrivo.end_capture_now(engine, capture, lambda: handed.append("copy")), "gesture")
         self.assertEqual((handed, engine_finishes), (["copy"], []))
-        self.assertEqual(sotto.end_capture_now(engine, capture, lambda: handed.append("orphan")), "orphan")
+        self.assertEqual(scrivo.end_capture_now(engine, capture, lambda: handed.append("orphan")), "orphan")
         self.assertEqual(handed, ["copy", "orphan"])
 
 

@@ -54,7 +54,7 @@ def automatic_label(chosen=None) -> str:
     names = [WHISPER_LANGUAGES[code] for code in automatic_languages(chosen)]
     shown = " + ".join(names[:3]) + (f" +{len(names) - 3}" if len(names) > 3 else "")
     return f"Automatic ({shown})"
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 DEFAULT_LANGUAGE_MODE_PATH = DATA_DIR / "language-mode"
 DEFAULT_ENGINE_MODE_PATH = DEFAULT_LANGUAGE_MODE_PATH.with_name("engine-mode")
@@ -325,8 +325,8 @@ def transcription_kwargs(speech_config, glossary_terms: tuple[str, ...], duratio
     """Build MLX options and bounded, persistable attempt metadata.
 
     Shared by the Mac and Windows (Windows' CT2 adapter gets the same options
-    through ``sotto.transcribe_canonical_samples``, and both record the same
-    attempt metadata). Moved verbatim from sotto.py, which still binds it as
+    through ``scrivo.transcribe_canonical_samples``, and both record the same
+    attempt metadata). Moved verbatim from scrivo.py, which still binds it as
     ``_transcription_kwargs``."""
     if speech_config.profile.backend == "nemotron":
         from nemotron_backend import metadata

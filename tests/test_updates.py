@@ -57,7 +57,7 @@ class CheckTests(unittest.TestCase):
         available = self.check(FakeGit(counts="0 3", subjects="Add A\nFix B\n"))
         self.assertEqual((available.state, available.behind, available.changes), ("available", 3, ("Add A", "Fix B")))
         self.assertEqual(self.check(FakeGit(counts="1 2")).state, "diverged")
-        self.assertEqual(self.check(FakeGit(counts="0 2", status=" M sotto.py\n")).state, "local-changes")
+        self.assertEqual(self.check(FakeGit(counts="0 2", status=" M scrivo.py\n")).state, "local-changes")
         failed = self.check(FakeGit(fetch_code=1))
         self.assertEqual(failed.state, "failed")
         self.assertIn("unable to access", failed.detail)
@@ -88,8 +88,8 @@ class CheckTests(unittest.TestCase):
         # [N28] Owner decision 2026-10-09: Check for Updates in a terminal run
         # refuses and names the manual command; it used to rebuild Scrivo.app
         # for the alpha data folder, which that run may not use.
-        command = updates.mac_manual_update(PurePosixPath("/Users/someone/my sotto"))
-        self.assertEqual(command, "cd '/Users/someone/my sotto' && scripts/install-mac.sh --update")
+        command = updates.mac_manual_update(PurePosixPath("/Users/someone/my scrivo"))
+        self.assertEqual(command, "cd '/Users/someone/my scrivo' && scripts/install-mac.sh --update")
         title, text = updates.describe(updates.UpdateCheck("available", behind=1, changes=("Add A",)),
                                        command, self_update=False)
         self.assertEqual(title, "1 update available")
@@ -202,7 +202,7 @@ class StaleRunDialogTests(unittest.TestCase):
                          "Restart now? A dictation in progress finishes first.")
 
     def test_a_terminal_run_is_told_what_to_do(self):
-        command = updates.mac_manual_update(PurePosixPath("/Users/someone/sotto"))
+        command = updates.mac_manual_update(PurePosixPath("/Users/someone/scrivo"))
         self.assertEqual(updates.describe(stale_result(), command, self_update=False), (
             "Finish updating Scrivo",
             f"{STALE_NOTE}\n\nScrivo was started from a terminal, so it does not restart itself. "
@@ -265,7 +265,7 @@ class StartedFromRealGitTests(unittest.TestCase):
         self.git(publisher, "commit", "-m", message)
         self.git(publisher, "push", "origin", "HEAD:main")
 
-    def test_a_merge_under_a_running_sotto_is_reported(self):
+    def test_a_merge_under_a_running_scrivo_is_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             remote, publisher, user = base / "remote.git", base / "publisher", base / "user"
@@ -273,7 +273,7 @@ class StartedFromRealGitTests(unittest.TestCase):
             self.git(base, "clone", str(remote), str(publisher))
             for name in updates.PACKAGE_LISTS:
                 (publisher / name).write_text("pin==1\n")
-            self.publish(publisher, "sotto.py", "one\n", "First")
+            self.publish(publisher, "scrivo.py", "one\n", "First")
             self.git(base, "clone", "--branch", "main", str(remote), str(user))
 
             started = updates.started_from(user)  # once, at launch
@@ -282,7 +282,7 @@ class StartedFromRealGitTests(unittest.TestCase):
             self.assertEqual((current.state, current.stale), ("current", None))
 
             # The backup job: a code-only change merged under the running app.
-            self.publish(publisher, "sotto.py", "two\n", "Faster startup")
+            self.publish(publisher, "scrivo.py", "two\n", "Faster startup")
             self.git(user, "fetch", "--quiet")
             self.git(user, "merge", "--ff-only", "--quiet", "origin/main")
             moved = self.git(user, "rev-parse", "HEAD").stdout.strip()
@@ -331,7 +331,7 @@ class ApplyMacTests(unittest.TestCase):
                            "--python", "/venv/bin/python"]])
         kwargs = installer_calls[0][1]
         self.assertTrue(kwargs["start_new_session"])  # [N25] stopped as a whole group
-        self.assertEqual(kwargs["env"]["SOTTO_UPDATE_FROM_PID"], str(os.getpid()))  # [N26]
+        self.assertEqual(kwargs["env"]["SCRIVO_UPDATE_FROM_PID"], str(os.getpid()))  # [N26]
         return result
 
     def test_a_finished_update_reports_its_last_line_and_the_new_source(self):
@@ -399,9 +399,9 @@ class WindowsUpdateTests(unittest.TestCase):
         for kwargs in kwargs_seen:
             self.assertTrue(kwargs.get("creationflags", 0) & subprocess.CREATE_NO_WINDOW, kwargs)
 
-    def test_the_check_is_given_the_commit_sotto_started_from(self):
+    def test_the_check_is_given_the_commit_scrivo_started_from(self):
         import offline_runtime
-        import sotto_win
+        import scrivo_win
         seen = []
 
         def check(root, *, offline, started_from):
@@ -410,15 +410,15 @@ class WindowsUpdateTests(unittest.TestCase):
         started = "c2e7f0f" + "0" * 33
         with mock.patch.object(updates, "check", check), \
                 mock.patch.object(offline_runtime, "offline_requested", return_value=False):
-            sotto_win.Controller(started_from=started).check_updates()
-            sotto_win.Controller().check_updates()
-        root = Path(sotto_win.__file__).resolve().parent
+            scrivo_win.Controller(started_from=started).check_updates()
+            scrivo_win.Controller().check_updates()
+        root = Path(scrivo_win.__file__).resolve().parent
         self.assertEqual(seen, [(root, False, started), (root, False, "")])
 
     def test_hand_off_waits_for_quiet_and_reports_once(self):
         import queue
-        import sotto
-        import sotto_win
+        import scrivo
+        import scrivo_win
         import win_ui
         capture = mock.Mock()
         capture.is_active.return_value = False
@@ -427,20 +427,20 @@ class WindowsUpdateTests(unittest.TestCase):
 
         def lifecycle_parts():
             return dict(engine=engine, on_finish=mock.Mock(),
-                        capture_gate=sotto.CaptureGate(), lifecycle={"closed": None})
+                        capture_gate=scrivo.CaptureGate(), lifecycle={"closed": None})
 
         busy_jobs = queue.Queue()
         busy_jobs.put("live")
-        busy = sotto_win.Controller(shutdown=sotto.ShutdownBoundary(), capture=capture, jobs=busy_jobs,
+        busy = scrivo_win.Controller(shutdown=scrivo.ShutdownBoundary(), capture=capture, jobs=busy_jobs,
                                     deliveries=queue.Queue(), finishing=lambda: False,
                                     **lifecycle_parts())
         with mock.patch("subprocess.Popen") as spawn:
             self.assertIn("Finish the current dictation", busy.update_and_restart())
         spawn.assert_not_called()
-        idle = sotto_win.Controller(shutdown=sotto.ShutdownBoundary(), capture=capture, jobs=queue.Queue(),
+        idle = scrivo_win.Controller(shutdown=scrivo.ShutdownBoundary(), capture=capture, jobs=queue.Queue(),
                                     deliveries=queue.Queue(), finishing=lambda: False,
                                     **lifecycle_parts())
-        with mock.patch("subprocess.Popen") as spawn, mock.patch.object(sotto_win, "log"):
+        with mock.patch("subprocess.Popen") as spawn, mock.patch.object(scrivo_win, "log"):
             idle.update_and_restart()
             idle.shutdown.event.wait(5)  # the quit drains on its own thread
         argv = spawn.call_args.args[0]

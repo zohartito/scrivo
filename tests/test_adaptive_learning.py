@@ -32,10 +32,10 @@ class AdaptiveLearningTests(unittest.TestCase):
         """Same pinned identity with a refreshed receipt binding replaces a
         stale idle baseline; a different identity, or any refresh during
         active collection, still refuses."""
-        stale = {**manifest("base"), "snapshot_path": "/legacy/Sotto/path"}
-        fresh = {**manifest("base"), "snapshot_path": "/current/sotto/path", "snapshot_digest": "d" * 64}
+        stale = {**manifest("base"), "snapshot_path": "/legacy/Scrivo/path"}
+        fresh = {**manifest("base"), "snapshot_path": "/current/scrivo/path", "snapshot_digest": "d" * 64}
         self.store.ensure_baseline(stale)
-        self.assertEqual(self.store.champion_manifest()["snapshot_path"], "/legacy/Sotto/path")
+        self.assertEqual(self.store.champion_manifest()["snapshot_path"], "/legacy/Scrivo/path")
         self.assertEqual(self.store.ensure_baseline(fresh), fresh)
         self.assertEqual(self.store.champion_manifest(), fresh)
         with self.assertRaisesRegex(RuntimeError, "baseline identity changed"):

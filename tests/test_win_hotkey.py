@@ -2,7 +2,7 @@
 
 _on_press/_on_release are driven directly with pynput Key objects; the
 physically-down query is patched.  The live WH_KEYBOARD_LL hook is exercised
-end-to-end by sotto_win.py, not here.
+end-to-end by scrivo_win.py, not here.
 """
 from __future__ import annotations
 

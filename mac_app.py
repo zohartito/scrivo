@@ -3,7 +3,7 @@ earlier versions (macOS).
 
 Scrivo was called Sotto. Copies installed before the rename have a
 ``Sotto.app`` (bundle id ``org.sotto.alpha``) and maybe a login item with that
-label. Its compiled launcher starts this folder's sotto.py, which never moves,
+label. Its compiled launcher starts this folder's scrivo.py, which never moves,
 so the first start after an update can still come from the old app: then
 ``hand_off`` opens Scrivo.app instead, and Scrivo.app's own start
 (``retire_legacy``) removes the old app and moves the login item over. Only an
@@ -102,7 +102,7 @@ def hand_off(app_executable: str, script: Path, *, folders: list[Path] | None = 
 
 
 def legacy_login_item(script: Path, *, folders: list[Path] | None = None, home: Path | None = None) -> Path | None:
-    """The old Sotto login item's plist, when it is ours to move or remove: it
+    """The old Scrivo login item's plist, when it is ours to move or remove: it
     starts this folder's old Sotto.app, or an old Sotto.app that is gone (so
     it could only fail now)."""
     import login_item
@@ -137,7 +137,7 @@ def _drop_legacy_login_item(path: Path, run) -> None:
 
 def retire_legacy(app_executable: str, script: Path, *, folders: list[Path] | None = None,
                   home: Path | None = None, run=subprocess.run) -> list[str]:
-    """Scrivo.app's start: move an old Sotto login item over to Scrivo.app and
+    """Scrivo.app's start: move an old Scrivo login item over to Scrivo.app and
     remove the old Sotto.app, both only when this folder's installer made
     them. Returns what it did, for the log. Idempotent: a crash part way
     leaves the rest for the next start.
@@ -163,7 +163,7 @@ def retire_legacy(app_executable: str, script: Path, *, folders: list[Path] | No
 
 def remove_legacy(script: Path, *, folders: list[Path] | None = None, home: Path | None = None,
                   run=subprocess.run) -> list[Path]:
-    """Uninstall: the old Sotto login item and Sotto.app this folder's
+    """Uninstall: the old Scrivo login item and Sotto.app this folder's
     installer made. Returns the removed apps.
 
     Side effects: boots out and deletes the old login item; deletes the old app."""

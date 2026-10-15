@@ -92,8 +92,8 @@ class SealedReleaseTests(unittest.TestCase):
             self.assertEqual(value['ProgramArguments'][:4], ['/usr/bin/python3', '-I', '-S', '-B'])
             self.assertTrue(value['ProgramArguments'][4].startswith(str(home)))
             self.assertEqual(value['KeepAlive'], original['KeepAlive'])
-            self.assertEqual(value['EnvironmentVariables']['SOTTO_OFFLINE'], '1')
-            self.assertNotIn('__SOTTO_', str(value))
+            self.assertEqual(value['EnvironmentVariables']['SCRIVO_OFFLINE'], '1')
+            self.assertNotIn('__SCRIVO_', str(value))
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
     def test_activation_lkg_rollback_logs_and_template_contracts(self):
@@ -111,28 +111,28 @@ class SealedReleaseTests(unittest.TestCase):
                 self.assertEqual(bootstrap.verify(releases)[0], second)
                 self.assertEqual(rollback_release(releases, runtime_validator=validator), first)
                 self.assertEqual(os.readlink(releases / "current"), first.name)
-            logs = prepare_logs(root / "Logs" / "Sotto")
+            logs = prepare_logs(root / "Logs" / "Scrivo")
             self.assertEqual(set(logs), {"app.log", "app-error.log", "worker.log", "worker-error.log"})
             self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in logs.values()))
             templates=[]
-            for template, entry, log_name in (("launchd/com.zohartito.sotto.app.plist", "sotto.py", "app.log"),
-                                              ("launchd/com.zohartito.sotto.adaptive-silver.plist", "maintainer/adaptive_worker.py", "worker.log")):
+            for template, entry, log_name in (("launchd/com.zohartito.scrivo.app.plist", "scrivo.py", "app.log"),
+                                              ("launchd/com.zohartito.scrivo.adaptive-silver.plist", "maintainer/adaptive_worker.py", "worker.log")):
                 value = plistlib.loads((Path(__file__).parents[1] / template).read_bytes())
                 templates.append(value)
                 self.assertEqual(value["ProgramArguments"][0], "/usr/bin/python3")
                 self.assertEqual(value["ProgramArguments"][1:4], ["-I","-S","-B"])
                 self.assertIn("sealed_release_bootstrap.py", value["ProgramArguments"][4])
                 self.assertIn(entry, value["ProgramArguments"])
-                self.assertTrue(value["StandardOutPath"].endswith("/Sotto/" + log_name))
-                self.assertNotIn("projects/sotto", "\0".join(value["ProgramArguments"]))
-            self.assertEqual(templates[0]["ProgramArguments"][-7:], ["run", "--trigger", "right-option", "--idle-release", "0", "--glossary", "__SOTTO_HOME__/Library/Application Support/sotto/releases/current/source/config/sotto-glossary.txt"])
+                self.assertTrue(value["StandardOutPath"].endswith("/Scrivo/" + log_name))
+                self.assertNotIn("projects/scrivo", "\0".join(value["ProgramArguments"]))
+            self.assertEqual(templates[0]["ProgramArguments"][-7:], ["run", "--trigger", "right-option", "--idle-release", "0", "--glossary", "__SCRIVO_HOME__/Library/Application Support/sotto/releases/current/source/config/scrivo-glossary.txt"])
             self.assertNotIn("--language", templates[0]["ProgramArguments"])
-            self.assertEqual(templates[1]["ProgramArguments"][-3:], ["--base-dir", "__SOTTO_HOME__/Library/Application Support/sotto", "--serve"])
+            self.assertEqual(templates[1]["ProgramArguments"][-3:], ["--base-dir", "__SCRIVO_HOME__/Library/Application Support/sotto", "--serve"])
             self.assertEqual(templates[0]["KeepAlive"],{"SuccessfulExit":False})
             self.assertEqual(templates[0]["ThrottleInterval"],60)
-            expected_env={"SOTTO_HF_HOME":"__SOTTO_HOME__/Library/Application Support/sotto/huggingface", "HF_HOME":"__SOTTO_HOME__/Library/Application Support/sotto/huggingface", "SOTTO_FFMPEG":"__SOTTO_FFMPEG__", "SOTTO_OFFLINE":"1", "HF_HUB_OFFLINE":"1", "TRANSFORMERS_OFFLINE":"1", "PYTHONDONTWRITEBYTECODE":"1"}
+            expected_env={"SCRIVO_HF_HOME":"__SCRIVO_HOME__/Library/Application Support/sotto/huggingface", "HF_HOME":"__SCRIVO_HOME__/Library/Application Support/sotto/huggingface", "SCRIVO_FFMPEG":"__SCRIVO_FFMPEG__", "SCRIVO_OFFLINE":"1", "HF_HUB_OFFLINE":"1", "TRANSFORMERS_OFFLINE":"1", "PYTHONDONTWRITEBYTECODE":"1"}
             self.assertTrue(all({key:value["EnvironmentVariables"][key] for key in expected_env} == expected_env for value in templates))
-            self.assertFalse((Path(__file__).parents[1] / "launchd/com.sotto.adaptive-silver.plist").exists())
+            self.assertFalse((Path(__file__).parents[1] / "launchd/com.scrivo.adaptive-silver.plist").exists())
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
     def test_bootstrap_refuses_manifest_alias_and_runtime_package_drift(self):
@@ -164,16 +164,16 @@ class SealedReleaseTests(unittest.TestCase):
             root=Path(directory); source_root=root/"source"; source_root.mkdir()
             recorded=root/"argv.json"
             body=f"import json,sys,pathlib\npathlib.Path({str(recorded)!r}).write_text(json.dumps(sys.argv))\n"
-            entry=source_root/"sotto.py"; entry.write_text(body); os.chmod(entry,0o600)
+            entry=source_root/"scrivo.py"; entry.write_text(body); os.chmod(entry,0o600)
             runtime=Path(sys.executable).resolve()
             site=Path(sys.prefix)/"lib"/f"python{sys.version_info.major}.{sys.version_info.minor}"/"site-packages"
-            declared={"source_manifest":{"files":[{"path":"sotto.py","sha256":hashlib.sha256(body.encode()).hexdigest()}]}}
+            declared={"source_manifest":{"files":[{"path":"scrivo.py","sha256":hashlib.sha256(body.encode()).hexdigest()}]}}
             saved_main=sys.modules["__main__"]; saved_argv=list(sys.argv); saved_path=list(sys.path)
             try:
-                with patch.object(bootstrap,"_canonical_isolation",return_value=True), patch.object(bootstrap,"verify",return_value=(root,{**declared,"runtime":{"python":{},"import_roots":[bootstrap._sealed_import_root(site)]},"entrypoints":{"app":"sotto.py"}})), \
+                with patch.object(bootstrap,"_canonical_isolation",return_value=True), patch.object(bootstrap,"verify",return_value=(root,{**declared,"runtime":{"python":{},"import_roots":[bootstrap._sealed_import_root(site)]},"entrypoints":{"app":"scrivo.py"}})), \
                      patch.object(bootstrap,"_verify_runtime",return_value=runtime), \
                      patch.object(bootstrap,"_running_pinned_launcher",return_value=True):
-                    bootstrap.main(["--release-root",str(root),"--entry","sotto.py","run","--trigger","right-option","--idle-release","45","--language","en","--adaptive"])
+                    bootstrap.main(["--release-root",str(root),"--entry","scrivo.py","run","--trigger","right-option","--idle-release","45","--language","en","--adaptive"])
             finally:
                 sys.modules["__main__"]=saved_main; sys.argv[:]=saved_argv; sys.path[:]=saved_path
             self.assertEqual(json.loads(recorded.read_text())[1:], ["run","--trigger","right-option","--idle-release","45","--language","en","--adaptive"])
@@ -219,7 +219,7 @@ class SealedReleaseTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run([str(resolved),"-B","-c","import huggingface_hub"],text=True,capture_output=True).returncode,0)
             source_root=root/"source"; source_root.mkdir()
             shutil.copy2(Path(__file__).parents[1]/"sealed_release_bootstrap.py",source_root/"sealed_release_bootstrap.py")
-            (source_root/"sotto.py").write_text("import huggingface_hub, os, sys\nprint('sealed-prefix='+sys.prefix)\nprint('offline='+os.environ.get('HF_HUB_OFFLINE','missing'))\nprint(huggingface_hub.__name__)\n")
+            (source_root/"scrivo.py").write_text("import huggingface_hub, os, sys\nprint('sealed-prefix='+sys.prefix)\nprint('offline='+os.environ.get('HF_HUB_OFFLINE','missing'))\nprint(huggingface_hub.__name__)\n")
             (source_root/"maintainer").mkdir(); (source_root/"maintainer"/"__init__.py").write_text("")
             (source_root/"maintainer"/"adaptive_worker.py").write_text("import huggingface_hub, os, sys\nprint('sealed-prefix='+sys.prefix)\nprint('offline='+os.environ.get('HF_HUB_OFFLINE','missing'))\nprint('sealed-worker='+huggingface_hub.__name__)\n")
             ffmpeg=root/"ffmpeg"; ffmpeg.write_text("#!/bin/sh\nprintf 'ffmpeg version fixture\\n'\n"); os.chmod(ffmpeg,0o700)
@@ -234,7 +234,7 @@ class SealedReleaseTests(unittest.TestCase):
             self.assertEqual(closure["python"]["resolved_path"],str(resolved))
             self.assertNotEqual(closure["python"]["prefix"],closure["python"]["base_prefix"])
             self.assertTrue(closure["python"]["launcher_chain"])
-            with patch.object(source,"RUNTIME_SOURCE_FILES",("sotto.py","maintainer/__init__.py","maintainer/adaptive_worker.py","sealed_release_bootstrap.py")):
+            with patch.object(source,"RUNTIME_SOURCE_FILES",("scrivo.py","maintainer/__init__.py","maintainer/adaptive_worker.py","sealed_release_bootstrap.py")):
                 bundle=stage_release(root/"releases",source_root=source_root,runtime=closure)
                 activate_release(root/"releases",bundle.name,runtime_validator=lambda value:value==closure)
             bootstrap_path=bundle/"source"/"sealed_release_bootstrap.py"
@@ -244,9 +244,9 @@ class SealedReleaseTests(unittest.TestCase):
                 (injection/name).write_text(f"open({str(sentinel)!r},'w').write('boom')\n")
             (injection/"ignored.pth").write_text(f"import pathlib; pathlib.Path({str(sentinel)!r}).write_text('boom')\n")
             environment=dict(os.environ); environment.pop("PYTHONDONTWRITEBYTECODE",None)
-            for name in ("SOTTO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE"): environment.pop(name,None)
+            for name in ("SCRIVO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE"): environment.pop(name,None)
             environment["PYTHONPATH"]=str(injection)
-            for entry,marker in (("sotto.py","huggingface_hub"),("maintainer/adaptive_worker.py","sealed-worker=huggingface_hub")):
+            for entry,marker in (("scrivo.py","huggingface_hub"),("maintainer/adaptive_worker.py","sealed-worker=huggingface_hub")):
                 command=[sys.executable,"-I","-S","-B",str(bootstrap_path),"--release-root",str(root/"releases"),"--entry",entry]
                 for _ in range(2):
                     result=subprocess.run(command,text=True,capture_output=True,env=environment,check=True)
@@ -306,30 +306,30 @@ class SealedReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); sentinel=root/"sentinel-app"
             source_root=root/"source"; source_root.mkdir()
-            (source_root/"sotto.py").write_text(f"open({str(sentinel)!r},'w').write('boom')\n")
+            (source_root/"scrivo.py").write_text(f"open({str(sentinel)!r},'w').write('boom')\n")
             shutil.copy2(Path(__file__).parents[1]/"sealed_release_bootstrap.py",source_root/"sealed_release_bootstrap.py")
             site=root/"site"; site.mkdir(); (site/"module.py").write_text("v1\n")
             closure={"schema":1,"python":{},"import_roots":[bootstrap._sealed_import_root(site)]}
             releases=root/"releases"
-            with patch.object(source,"RUNTIME_SOURCE_FILES",("sotto.py","sealed_release_bootstrap.py")):
+            with patch.object(source,"RUNTIME_SOURCE_FILES",("scrivo.py","sealed_release_bootstrap.py")):
                 bundle=stage_release(releases,source_root=source_root,runtime=closure)
                 activate_release(releases,bundle.name,runtime_validator=lambda value:value==closure)
             checked_bundle,checked_manifest=bootstrap.verify(releases)
             python=Path(sys.executable)
             def mutate(path,data):
                 with open(path,"r+b") as handle: handle.seek(0); handle.truncate(); handle.write(data)
-            execs=[]; argv=["--release-root",str(releases),"--entry","sotto.py"]
+            execs=[]; argv=["--release-root",str(releases),"--entry","scrivo.py"]
             # Target source mutated while the runtime probe runs: the dedicated
             # manifest-hash compare of the exact bytes to be executed rejects
             # it before execution (main executes only the compared bytes).
-            original_target=(bundle/"source"/"sotto.py").read_bytes()
+            original_target=(bundle/"source"/"scrivo.py").read_bytes()
             with patch.object(bootstrap,"_canonical_isolation",return_value=True), \
                  patch.object(bootstrap,"verify",return_value=(checked_bundle,checked_manifest)), \
-                 patch.object(bootstrap,"_verify_runtime",side_effect=lambda _r:(mutate(bundle/"source"/"sotto.py",b"tampered\n"),python)[1]), \
+                 patch.object(bootstrap,"_verify_runtime",side_effect=lambda _r:(mutate(bundle/"source"/"scrivo.py",b"tampered\n"),python)[1]), \
                  patch.object(bootstrap,"_running_pinned_launcher",return_value=True):
                 with self.assertRaisesRegex(RuntimeError,"sealed target changed"):
                     bootstrap.main(argv)
-            mutate(bundle/"source"/"sotto.py",original_target)
+            mutate(bundle/"source"/"scrivo.py",original_target)
             # Bootstrap source mutated while the probe runs: rejected before execve.
             original_bootstrap=(bundle/"source"/"sealed_release_bootstrap.py").read_bytes()
             with patch.object(bootstrap,"_canonical_isolation",return_value=True), \
@@ -358,10 +358,10 @@ class SealedReleaseTests(unittest.TestCase):
             # the runtime closure was verified for the pinned digest only, so
             # any mid-start switch to another release is refused outright.
             other_source=root/"source-b"; other_source.mkdir()
-            (other_source/"sotto.py").write_text(f"open({str(root/'sentinel-b')!r},'w').write('boom')\n")
+            (other_source/"scrivo.py").write_text(f"open({str(root/'sentinel-b')!r},'w').write('boom')\n")
             shutil.copy2(Path(__file__).parents[1]/"sealed_release_bootstrap.py",other_source/"sealed_release_bootstrap.py")
             closure_b={"schema":1,"python":{}}
-            with patch.object(source,"RUNTIME_SOURCE_FILES",("sotto.py","sealed_release_bootstrap.py")):
+            with patch.object(source,"RUNTIME_SOURCE_FILES",("scrivo.py","sealed_release_bootstrap.py")):
                 bundle_b=stage_release(releases,source_root=other_source,runtime=closure_b)
             def switch(_runtime):
                 activate_release(releases,bundle_b.name); return python
@@ -400,11 +400,11 @@ class SealedReleaseTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (launchd + macOS venv layout)")
     def test_runtime_policy_rejects_missing_direct_and_extra_locked_dependency(self):
-        missing={"roots":["sotto-required-not-installed"],"excluded":["pip","setuptools","wheel"],"distributions":[{"name":"sotto-required-not-installed","version":"1"}]}
+        missing={"roots":["scrivo-required-not-installed"],"excluded":["pip","setuptools","wheel"],"distributions":[{"name":"scrivo-required-not-installed","version":"1"}]}
         with self.assertRaisesRegex(RuntimeError,"probe"):
             release._probe_runtime(Path(sys.executable),policy=missing)
         policy=release._runtime_policy()
-        extra={"roots":policy["roots"],"excluded":policy["excluded"],"distributions":[*policy["distributions"],{"name":"sotto-unexpected-policy-dependency","version":"1"}]}
+        extra={"roots":policy["roots"],"excluded":policy["excluded"],"distributions":[*policy["distributions"],{"name":"scrivo-unexpected-policy-dependency","version":"1"}]}
         with self.assertRaisesRegex(RuntimeError,"probe"):
             release._probe_runtime(Path(sys.executable),policy=extra)
 

@@ -15,8 +15,8 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASES="$HOME/Library/Application Support/sotto/releases"
-LOG="$HOME/Library/Logs/Sotto/app-error.log"
-LABEL="com.zohartito.sotto.app"
+LOG="$HOME/Library/Logs/Scrivo/app-error.log"
+LABEL="com.zohartito.scrivo.app"
 DOMAIN="gui/$(id -u)"
 INSTALLED_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 PLIST_TEMPLATE="launchd/$LABEL.plist"
@@ -25,17 +25,17 @@ PLIST_BACKUP=""
 
 plist_env() {
     env PATH=/usr/bin:/bin \
-        SOTTO_FFMPEG=/opt/homebrew/bin/ffmpeg \
-        SOTTO_HF_HOME="$HOME/Library/Application Support/sotto/huggingface" \
+        SCRIVO_FFMPEG=/opt/homebrew/bin/ffmpeg \
+        SCRIVO_HF_HOME="$HOME/Library/Application Support/sotto/huggingface" \
         HF_HOME="$HOME/Library/Application Support/sotto/huggingface" \
-        SOTTO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+        SCRIVO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
         PYTHONDONTWRITEBYTECODE=1 "$@"
 }
 
 preflight() {
     plist_env /usr/bin/python3 -I -S -B \
         "$RELEASES/current/source/sealed_release_bootstrap.py" \
-        --release-root "$RELEASES" --entry sotto.py learning-preflight
+        --release-root "$RELEASES" --entry scrivo.py learning-preflight
 }
 
 # Bytes already in the log, so verify_boot reads only what THIS restart wrote.
@@ -47,8 +47,8 @@ verify_boot() {
     # written AFTER the restart.
     #
     # Never key off incidental output. The first version of this script looked
-    # for "releases/$digest/source/sotto.py" in the log, which a healthy boot
-    # only ever emitted because a PyObjC warning happened to quote sotto.py's
+    # for "releases/$digest/source/scrivo.py" in the log, which a healthy boot
+    # only ever emitted because a PyObjC warning happened to quote scrivo.py's
     # path — so it passed by accident, and any warning filter would have failed
     # every rollout. It also matched any sealed_release_bootstrap process, and
     # the silver worker runs one of those too.

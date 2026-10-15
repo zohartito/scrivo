@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 import tempfile
 
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 DICTIONARY_PATH = DATA_DIR / "dictionary.txt"
 SEPARATOR = "=>"

@@ -3,8 +3,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
 #
-# Downloads Scrivo with git into ~/sotto (or $SOTTO_SOURCE; the folder keeps
-# the name Scrivo had before, Sotto) and runs its scripts/install-mac.sh, or
+# Downloads Scrivo with git into ~/scrivo (or $SCRIVO_SOURCE; the folder keeps
+# the name Scrivo had before, Scrivo) and runs its scripts/install-mac.sh, or
 # updates that copy with install-mac.sh --update (the new packages first, the
 # source only after them), then opens Scrivo. Nothing needs sudo. Missing
 # tools are named with the command that installs them.
@@ -25,17 +25,17 @@ same_repo() {
     [ "${normalized[0]}" = "${normalized[1]}" ]
 }
 
-# The first process running the sotto.py in folder $1 (resolved): by that path
+# The first process running the scrivo.py in folder $1 (resolved): by that path
 # (what Scrivo.app runs) or relative to the process's working directory (a
-# terminal run: venv-alpha/bin/python sotto.py run).
+# terminal run: venv-alpha/bin/python scrivo.py run).
 running_from() {
     local listing pid command words word dir
     listing="$(ps -axww -o pid= -o command=)" || return 0
     while read -r pid command; do
-        case " $command " in *" $1/sotto.py "*) echo "$pid"; return 0 ;; esac
+        case " $command " in *" $1/scrivo.py "*) echo "$pid"; return 0 ;; esac
         read -ra words <<< "$command" || true  # split without globbing
         for word in ${words[@]+"${words[@]}"}; do
-            case "$word" in sotto.py|*/sotto.py) ;; *) continue ;; esac
+            case "$word" in scrivo.py|*/scrivo.py) ;; *) continue ;; esac
             case "$word" in
                 /*) dir="$(dirname "$word")" ;;
                 *) dir="$(/usr/sbin/lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" || continue
@@ -43,7 +43,7 @@ running_from() {
                    dir="$dir/$(dirname "$word")" ;;
             esac
             dir="$(cd "$dir" 2>/dev/null && pwd -P)" || continue
-            [ "$dir/sotto.py" != "$1/sotto.py" ] || { echo "$pid"; return 0; }
+            [ "$dir/scrivo.py" != "$1/scrivo.py" ] || { echo "$pid"; return 0; }
         done
     done <<< "$listing"
 }
@@ -52,9 +52,9 @@ main() {
     # This project, and its URL from before the rename (Scrivo was called Sotto).
     local scrivo_repo=https://github.com/zohartito/scrivo.git
     local legacy_repo=https://github.com/zohartito/sotto.git
-    local repo="${SOTTO_REPO:-$scrivo_repo}"
-    local dest="${SOTTO_SOURCE:-$HOME/sotto}"
-    local python="${SOTTO_PYTHON:-}"
+    local repo="${SCRIVO_REPO:-$scrivo_repo}"
+    local dest="${SCRIVO_SOURCE:-$HOME/scrivo}"
+    local python="${SCRIVO_PYTHON:-}"
 
     fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
 
@@ -89,7 +89,7 @@ main() {
             # A copy made before the rename follows the old URL (GitHub
             # redirects it): the same project, moved to the new URL below.
             same_repo "$repo" "$scrivo_repo" && same_repo "$origin" "$legacy_repo" \
-                || fail "$dest is a git copy of ${origin:-an unknown project}, not Scrivo. Choose another folder with SOTTO_SOURCE=..."
+                || fail "$dest is a git copy of ${origin:-an unknown project}, not Scrivo. Choose another folder with SCRIVO_SOURCE=..."
             renamed="${origin/zohartito\/sotto/zohartito/scrivo}"  # same form: https or ssh
         fi
         # Updating under a running Scrivo would swap its source and packages
@@ -106,13 +106,13 @@ main() {
         # the source only after them (putting the packages back on a failure).
         update="--update"
     elif [ -e "$dest" ]; then
-        fail "$dest exists and is not a copy of Scrivo. Choose another folder with SOTTO_SOURCE=..."
+        fail "$dest exists and is not a copy of Scrivo. Choose another folder with SCRIVO_SOURCE=..."
     else
         echo "== Downloading Scrivo into $dest"
         git clone --quiet "$repo" "$dest" < /dev/null
     fi
 
-    if [ -n "${SOTTO_GET_DRY_RUN:-}" ]; then
+    if [ -n "${SCRIVO_GET_DRY_RUN:-}" ]; then
         echo "dry run: would run $dest/scripts/install-mac.sh ${update:+$update }--python $python"
         return 0
     fi

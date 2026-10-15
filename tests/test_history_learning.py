@@ -333,7 +333,7 @@ class HistoryLearningTests(unittest.TestCase):
         self.assertEqual(recovered._records[enrolled.sample_id]["status"], "revoked")
 
     def test_plain_history_actions_never_create_the_silver_lane(self):
-        # Plain alpha: sotto.run always builds this guard, never a SilverStore.
+        # Plain alpha: scrivo.run always builds this guard, never a SilverStore.
         AdaptiveLearning(self.root)
         silver = self.root / "adaptive-learning" / "silver"
         row, other = self.live(), self.live("other")
@@ -642,23 +642,23 @@ class HistoryLearningTests(unittest.TestCase):
     def test_app_coordinator_keeps_dictation_working_without_saving(self):
         """F16b: the app gets a stand-in coordinator that hands dictation back
         unsaved and refuses every History action, never touching the file."""
-        import sotto
+        import scrivo
         from history import HistoryUnreadable
         root = self.root / "app"
         index, wav, before = self._unreadable_index(root, '{"id": "abc123", "text": "hi"')
         store = HistoryStore(root, tolerate_unreadable=True)
-        coordinator = sotto.history_coordinator(store, LearningStore(root))
-        self.assertIsInstance(coordinator, sotto.UnsavedHistory)
+        coordinator = scrivo.history_coordinator(store, LearningStore(root))
+        self.assertIsInstance(coordinator, scrivo.UnsavedHistory)
         row = coordinator.append_live("please call me back", prepare_canonical(np.zeros(1600, np.float32)),
                                       .1, "model", ts=5.0, provenance="live", adaptive=False)
         self.assertEqual((row["text"], row["saved"]), ("please call me back", False))
-        self.assertEqual(sotto._active_learning_history_ids(coordinator), set())
+        self.assertEqual(scrivo._active_learning_history_ids(coordinator), set())
         for action in (lambda: coordinator.clear(), lambda: coordinator.snapshot_for_retry(row["id"])):
             with self.assertRaises(HistoryUnreadable):
                 action()
         self.assertEqual(index.read_bytes(), before)
         self.assertEqual([path.name for path in store.audio_dir.iterdir()], [wav.name])
-        message = sotto.history_unreadable_message(store)
+        message = scrivo.history_unreadable_message(store)
         self.assertIn(str(index), message)
         self.assertIn("not saved to History", message)
         # Once the file reads again, the next launch gets the real coordinator.
@@ -666,7 +666,7 @@ class HistoryLearningTests(unittest.TestCase):
         store = HistoryStore(root, tolerate_unreadable=True)
         self.assertIsNone(store.unreadable)
         self.assertEqual([entry["text"] for entry in store.entries()], ["kept words"])
-        self.assertNotIsInstance(sotto.history_coordinator(store, LearningStore(root)), sotto.UnsavedHistory)
+        self.assertNotIsInstance(scrivo.history_coordinator(store, LearningStore(root)), scrivo.UnsavedHistory)
 
     def test_unicode_line_separators_never_split_a_row(self):
         """N4: str.splitlines() also breaks on U+2028, U+2029 and U+0085. One
@@ -753,7 +753,7 @@ class HistoryLearningTests(unittest.TestCase):
         LearningStore() raise before the menu bar existed, at every login.
         The app now opens it read-only (dictation works, nothing is saved or
         swept, the user is told once); every other caller stays strict."""
-        import sotto
+        import scrivo
         from history import HistoryUnreadable
         for name in ("learning.jsonl", "pending-gold.jsonl"):
             with self.subTest(name):
@@ -773,8 +773,8 @@ class HistoryLearningTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     learning.mark_pending_gold(row["id"], "code")
                 store = HistoryStore(root, tolerate_unreadable=True)
-                app = sotto.history_coordinator(store, learning)
-                self.assertIsInstance(app, sotto.UnsavedHistory)
+                app = scrivo.history_coordinator(store, learning)
+                self.assertIsInstance(app, scrivo.UnsavedHistory)
                 delivered = app.append_live("please call me back", prepare_canonical(np.zeros(1600, np.float32)),
                                             .1, "model", ts=5.0, provenance="live", adaptive=False)
                 self.assertEqual((delivered["text"], delivered["saved"]), ("please call me back", False))
@@ -782,8 +782,8 @@ class HistoryLearningTests(unittest.TestCase):
                     app.clear()
                 after = {path: path.read_bytes() for path in (root / "learning").rglob("*") if path.is_file()}
                 self.assertEqual(after, before, "the learning set is left exactly as it was")
-                title, message = sotto.unreadable_store_alert(store, learning)
-                self.assertEqual(title, sotto.LEARNING_UNREADABLE_TITLE)
+                title, message = scrivo.unreadable_store_alert(store, learning)
+                self.assertEqual(title, scrivo.LEARNING_UNREADABLE_TITLE)
                 self.assertIn(str(damaged), message)
                 self.assertIn("not saved to History", message)
                 self.assertEqual([entry["id"] for entry in HistoryStore(root).entries()], [row["id"]])

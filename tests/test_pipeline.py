@@ -53,11 +53,11 @@ class ScreenTests(TemporaryUserFiles, unittest.TestCase):
         self.assertEqual(result.receipts["repetition_trimmed"]["repeats"], 40)
 
     def test_dictionary_then_english_cleanup_with_receipts(self):
-        self.dictionary.write_text("soto => Sotto\n", encoding="utf-8")
+        self.dictionary.write_text("soto => Scrivo\n", encoding="utf-8")
         result = self.screen("Um, soto works.")
-        self.assertEqual(result.text, "Sotto works.")
+        self.assertEqual(result.text, "Scrivo works.")
         self.assertEqual(result.receipts["dictionary"]["asr_text"], "Um, soto works.")
-        self.assertEqual(result.receipts["voice"]["asr_text"], "Um, Sotto works.")
+        self.assertEqual(result.receipts["voice"]["asr_text"], "Um, Scrivo works.")
 
     def test_scratch_that_is_an_action_not_text(self):
         self.assertEqual(self.screen("Scratch that.").voice_action, "scratch")
@@ -80,16 +80,16 @@ class ScreenTests(TemporaryUserFiles, unittest.TestCase):
 
 
 def legacy_inline_screen(text, seconds, speech_fraction, language):
-    """The live worker's guard block in sotto.run() as of b3abda9, copied
+    """The live worker's guard block in scrivo.run() as of b3abda9, copied
     verbatim (variable names kept) so screen() can be checked against it."""
-    import sotto
+    import scrivo
     preprocessing = {}
-    no_speech = sotto.reads_as_no_speech(text, speech_fraction)
+    no_speech = scrivo.reads_as_no_speech(text, speech_fraction)
     if no_speech == "empty transcript":
         text = "[no speech detected]"
-    hallucinated = sotto.looks_hallucinated(text, seconds)
+    hallucinated = scrivo.looks_hallucinated(text, seconds)
     if hallucinated and not no_speech:
-        salvaged = sotto.salvage_repetition_loop(text, seconds)
+        salvaged = scrivo.salvage_repetition_loop(text, seconds)
         if salvaged is not None:
             text, trim_receipt = salvaged
             preprocessing["repetition_trimmed"] = trim_receipt
@@ -97,8 +97,8 @@ def legacy_inline_screen(text, seconds, speech_fraction, language):
     reason = hallucinated or no_speech
     voice_action = None
     if not reason:
-        text = sotto.apply_personal_dictionary(text, preprocessing)
-        text, voice_action = sotto.apply_voice_cleanup(text, preprocessing, language)
+        text = scrivo.apply_personal_dictionary(text, preprocessing)
+        text, voice_action = scrivo.apply_voice_cleanup(text, preprocessing, language)
     return text, reason, voice_action, preprocessing
 
 
@@ -106,7 +106,7 @@ class CharacterizationTests(TemporaryUserFiles, unittest.TestCase):
     """screen() gives exactly what the inline worker code gave, input by input."""
 
     def test_same_result_as_the_inline_worker_code(self):
-        self.dictionary.write_text("soto => Sotto\nopen ai => OpenAI\n", encoding="utf-8")
+        self.dictionary.write_text("soto => Scrivo\nopen ai => OpenAI\n", encoding="utf-8")
         texts = ["", "  ", "you", "Thank you.", "Um, soto said open ai ships it.", "Scratch that.",
                  "New line", "Eu comprei um carro e um livro.", "word " * 100,
                  f"That is part of the plan we agreed on last week. {LOOP}", LOOP,
@@ -125,12 +125,12 @@ class CharacterizationTests(TemporaryUserFiles, unittest.TestCase):
 
 
 class MovedFunctionsTests(unittest.TestCase):
-    """The guards moved here from sotto.py; sotto still exposes the same names."""
+    """The guards moved here from scrivo.py; scrivo still exposes the same names."""
 
-    def test_sotto_reexports_the_pipeline_functions(self):
-        import sotto
+    def test_scrivo_reexports_the_pipeline_functions(self):
+        import scrivo
         for name in ("looks_hallucinated", "salvage_repetition_loop", "reads_as_no_speech"):
-            self.assertIs(getattr(sotto, name), getattr(pipeline, name))
+            self.assertIs(getattr(scrivo, name), getattr(pipeline, name))
 
 
 class SharedWithWindowsTests(unittest.TestCase):

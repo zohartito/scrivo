@@ -1,10 +1,10 @@
 """Keeps a plain `python -m unittest discover -s tests` away from real user data (F64).
 
-`sotto_paths` reads SOTTO_DATA_DIR / SOTTO_HF_HOME once, at its first import, and
-without them it points at ~/Library/Application Support/sotto or %APPDATA%\\sotto.
+`scrivo_paths` reads SCRIVO_DATA_DIR / SCRIVO_HF_HOME once, at its first import, and
+without them it points at ~/Library/Application Support/sotto or %APPDATA%\\scrivo.
 Discovery imports test modules in sorted order, so this module loads before any
 other test module and points both variables at a throwaway folder first. Every
-in-process import of sotto_paths and every subprocess (they inherit os.environ)
+in-process import of scrivo_paths and every subprocess (they inherit os.environ)
 then stays inside that folder. The tests below fail if that ever stops holding.
 """
 import atexit
@@ -16,10 +16,10 @@ import tempfile
 import unittest
 
 HERE = Path(__file__).resolve().parent
-SOTTO_PATHS_PRELOADED = "sotto_paths" in sys.modules
-TEST_ROOT = Path(tempfile.mkdtemp(prefix="sotto-tests-"))
-os.environ["SOTTO_DATA_DIR"] = str(TEST_ROOT / "data")
-os.environ["SOTTO_HF_HOME"] = str(TEST_ROOT / "huggingface")
+SCRIVO_PATHS_PRELOADED = "scrivo_paths" in sys.modules
+TEST_ROOT = Path(tempfile.mkdtemp(prefix="scrivo-tests-"))
+os.environ["SCRIVO_DATA_DIR"] = str(TEST_ROOT / "data")
+os.environ["SCRIVO_HF_HOME"] = str(TEST_ROOT / "huggingface")
 atexit.register(shutil.rmtree, TEST_ROOT, ignore_errors=True)
 
 
@@ -37,8 +37,8 @@ def _real_default_folders():
 
 
 class HermeticTestState(unittest.TestCase):
-    def test_runs_before_anything_imports_sotto_paths(self):
-        self.assertFalse(SOTTO_PATHS_PRELOADED, "sotto_paths was imported before tests/test_00_hermetic.py")
+    def test_runs_before_anything_imports_scrivo_paths(self):
+        self.assertFalse(SCRIVO_PATHS_PRELOADED, "scrivo_paths was imported before tests/test_00_hermetic.py")
 
     def test_discovery_imports_this_module_first(self):
         importable = [name for name in sorted(os.listdir(HERE))
@@ -46,8 +46,8 @@ class HermeticTestState(unittest.TestCase):
         self.assertEqual(importable[0], Path(__file__).name)
 
     def test_data_and_model_cache_are_temporary(self):
-        import sotto_paths
-        for path in (sotto_paths.DATA_DIR, sotto_paths.MODEL_CACHE_DIR):
+        import scrivo_paths
+        for path in (scrivo_paths.DATA_DIR, scrivo_paths.MODEL_CACHE_DIR):
             self.assertTrue(_under(path, TEST_ROOT), f"{path} is outside the temporary folder {TEST_ROOT}")
             for real in _real_default_folders():
                 self.assertFalse(_under(path, real), f"{path} is inside the real data folder {real}")

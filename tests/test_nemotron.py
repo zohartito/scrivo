@@ -12,7 +12,7 @@ import numpy as np
 from scipy.signal import resample_poly
 
 import nemotron_backend
-import sotto
+import scrivo
 from speech_config import (load_engine_mode, resolve_speech_config,
                            save_engine_mode, with_language)
 from streaming_audio import StreamingCapture, StreamingResampler
@@ -81,12 +81,12 @@ class NemotronTests(unittest.TestCase):
     def test_cli_explicit_profile_and_adaptive_do_not_inherit_engine_preference(self):
         for args, expected in (([], "nemotron-en"), (["--profile", "auto"], "auto"),
                                (["--adaptive"], "auto"), (["--model", "custom"], "auto")):
-            with self.subTest(args=args), patch("sys.argv", ["sotto.py", *args]), \
+            with self.subTest(args=args), patch("sys.argv", ["scrivo.py", *args]), \
                     patch("speech_config.load_engine_mode", return_value="nemotron"), \
                     patch("speech_config.load_language_mode", return_value="pt"), \
-                    patch.object(sotto, "maintainer_lane_available", return_value=True), \
-                    patch.object(sotto, "run") as run:
-                sotto.main()
+                    patch.object(scrivo, "maintainer_lane_available", return_value=True), \
+                    patch.object(scrivo, "run") as run:
+                scrivo.main()
                 self.assertEqual(run.call_args.kwargs["speech_config"].profile.name, expected)
 
     def test_streaming_resampling_matches_whole_recording_across_buffer_edges(self):
@@ -188,7 +188,7 @@ class NemotronTests(unittest.TestCase):
         runtime = FakeRuntime()
         stream = StreamingCapture(runtime)
         queued = []
-        service = sotto.CaptureService()
+        service = scrivo.CaptureService()
         with patch.object(service, "_start_engine"):
             service.begin(stream=stream, enqueue=queued.append)
         service.abort()

@@ -24,7 +24,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install-windows.ps1"
-LEGACY_COMMIT = "21ce68b"  # the last commit before Scrivo was renamed from Sotto
+LEGACY_COMMIT = "21ce68b"  # the last commit before Scrivo was renamed from Scrivo
 
 
 def _powershell() -> str | None:
@@ -46,10 +46,10 @@ def _long_and_short(path: Path) -> tuple[str, str]:
 @unittest.skipUnless(_powershell(), "Windows PowerShell is Windows-only")
 class InstallerTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="sotto-installer-")
+        self._tmp = tempfile.TemporaryDirectory(prefix="scrivo-installer-")
         root = Path(self._tmp.name)
         self.venv, self.data, self.menu = root / "venv", root / "data", root / "menu"
-        self.run_key = rf"HKCU:\Software\sotto-tests\{uuid.uuid4().hex}"
+        self.run_key = rf"HKCU:\Software\scrivo-tests\{uuid.uuid4().hex}"
 
     def tearDown(self) -> None:
         subprocess.run([_powershell(), "-NoProfile", "-Command",
@@ -72,7 +72,7 @@ class InstallerTest(unittest.TestCase):
         return result.stdout.strip()
 
     def shortcut(self, arguments: str, name: str = "Scrivo.lnk") -> Path:
-        """A Start Menu "Scrivo" entry (or, by name, the "Sotto" one of earlier
+        """A Start Menu "Scrivo" entry (or, by name, the "Scrivo" one of earlier
         versions) with these arguments, as another copy's installer makes it."""
         self.menu.mkdir(exist_ok=True)
         path = self.menu / name
@@ -121,11 +121,11 @@ class InstallerTest(unittest.TestCase):
             self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
             self.assertIn('Create Start Menu shortcut "Scrivo"', planned.stdout)
 
-    def test_the_old_sotto_entry_is_replaced_only_when_it_starts_this_copy(self) -> None:
-        # Scrivo was called Sotto: its "Sotto" entry for this copy goes once the
+    def test_the_old_scrivo_entry_is_replaced_only_when_it_starts_this_copy(self) -> None:
+        # Scrivo was called Sotto: its "Scrivo" entry for this copy goes once the
         # "Scrivo" one is made (two entries would start the same app); one that
         # starts another copy, or another program, is never touched.
-        legacy = 'Remove the Start Menu shortcut "Sotto" of earlier versions'
+        legacy = 'Remove the Start Menu shortcut "Scrivo" of earlier versions'
         self.shortcut(f'"{ROOT / "win_launch.py"}" --data-dir "{self.data}"', name="Sotto.lnk")
         planned = self.ps("-WhatIf", "-Cpu", "-Python", sys.executable)
         self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
@@ -144,7 +144,7 @@ class InstallerTest(unittest.TestCase):
                 self.assertEqual(removed.returncode, 0, removed.stdout + removed.stderr)
                 self.assertEqual(self.shortcut_arguments(link), arguments)
 
-    def test_install_refuses_while_sotto_runs_from_the_environment(self) -> None:
+    def test_install_refuses_while_scrivo_runs_from_the_environment(self) -> None:
         # [F33] Installing under a running Scrivo replaced its packages in use.
         # Scrivo started by one name of the folder and the installer given the
         # other (long or 8.3 short) is the same environment: GitHub's runner
@@ -212,7 +212,7 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.venv.iterdir()), ["notes.txt"])
         self.assertFalse(self.data.exists() or self.menu.exists())
 
-    def test_uninstall_refuses_while_sotto_runs_from_the_environment(self) -> None:
+    def test_uninstall_refuses_while_scrivo_runs_from_the_environment(self) -> None:
         scripts = self.venv / "Scripts"
         scripts.mkdir(parents=True)
         (self.venv / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
@@ -246,7 +246,7 @@ class InstallerTest(unittest.TestCase):
         self.psc(make.format(path=legacy, target=sys.executable, args=f'"{launcher}" --data-dir "{self.data}"'))
         self.psc(make.format(path=other, target=sys.executable, args="elsewhere.py"))
         self.psc(f"New-Item -Path '{self.run_key}' -Force | Out-Null; "
-                 f"New-ItemProperty -Path '{self.run_key}' -Name Sotto -Value '\"py\" \"{launcher}\"' | Out-Null")
+                 f"New-ItemProperty -Path '{self.run_key}' -Name Scrivo -Value '\"py\" \"{launcher}\"' | Out-Null")
 
         dry = self.ps("-Uninstall", "-WhatIf")
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
@@ -261,7 +261,7 @@ class InstallerTest(unittest.TestCase):
         self.assertTrue((self.data / "history.jsonl").exists(), "data stays without -RemoveData")
         self.assertIn("add -RemoveData", result.stdout)
         self.assertEqual(self.psc(f"(Get-ItemProperty -Path '{self.run_key}').PSObject.Properties.Name "
-                                  "-contains 'Sotto'"), "False")
+                                  "-contains 'Scrivo'"), "False")
 
         # The manifest went with the venv: -RemoveData now refuses to guess.
         kept = self.ps("-Uninstall", "-RemoveData")
@@ -300,14 +300,14 @@ class InstallerTest(unittest.TestCase):
         ours = self.shortcut(f'"{short_launcher}" --data-dir "{short_data}"')
         # win_startup writes the login entry with list2cmdline: no quotes around a path without spaces.
         self.psc(f"New-Item -Path '{self.run_key}' -Force | Out-Null; "
-                 f"New-ItemProperty -Path '{self.run_key}' -Name Sotto "
+                 f"New-ItemProperty -Path '{self.run_key}' -Name Scrivo "
                  f"-Value 'pythonw.exe {short_launcher} --data-dir {short_data}' | Out-Null")
 
         result = self.ps("-Uninstall", "-RemoveData", script=Path(_long_and_short(script)[0]), data=long_data)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(ours.exists(), result.stdout)
         self.assertEqual(self.psc(f"(Get-ItemProperty -Path '{self.run_key}').PSObject.Properties.Name "
-                                  "-contains 'Sotto'"), "False", result.stdout)
+                                  "-contains 'Scrivo'"), "False", result.stdout)
         self.assertFalse(self.data.exists(), result.stdout)
 
 
@@ -319,7 +319,7 @@ def _wheel(folder: Path, name: str, version: str, requires=()) -> Path:
         f"{name}/__init__.py": f"VERSION = '{version}'\n",
         f"{dist}/METADATA": (f"Metadata-Version: 2.1\nName: {name.replace('_', '-')}\nVersion: {version}\n"
                              + "".join(f"Requires-Dist: {requirement}\n" for requirement in requires)),
-        f"{dist}/WHEEL": "Wheel-Version: 1.0\nGenerator: sotto-tests\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        f"{dist}/WHEEL": "Wheel-Version: 1.0\nGenerator: scrivo-tests\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
     }
     path = folder / f"{name}-{version}-py3-none-any.whl"
     with zipfile.ZipFile(path, "w") as archive:
@@ -347,7 +347,7 @@ class UpdateScriptTest(unittest.TestCase):
                 "(data / 'launched.txt').write_text('started', encoding='utf-8')\n")
 
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory(prefix="sotto-update-")
+        self._tmp = tempfile.TemporaryDirectory(prefix="scrivo-update-")
         base = Path(self._tmp.name)
         self.copy, self.remote, self.upstream = base / "copy", base / "remote.git", base / "upstream"
         self.venv, self.data, self.menu = base / "venv", base / "data", base / "menu"
@@ -437,11 +437,11 @@ class UpdateScriptTest(unittest.TestCase):
         # Scrivo started on it as if nothing happened.
         before = self.git(self.copy, "rev-parse", "HEAD")
         self.publish("requirements-alpha-windows.txt",
-                     self.REQUIREMENTS["requirements-alpha-windows.txt"] + "sotto-test-missing-package==1.0\n")
+                     self.REQUIREMENTS["requirements-alpha-windows.txt"] + "scrivo-test-missing-package==1.0\n")
         result = self.update()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(self.git(self.copy, "rev-parse", "HEAD"), before, "the source was not switched")
-        self.assertNotIn("sotto-test-missing-package", (self.copy / "requirements-alpha-windows.txt").read_text())
+        self.assertNotIn("scrivo-test-missing-package", (self.copy / "requirements-alpha-windows.txt").read_text())
         status = self.status()
         self.assertTrue(status.startswith("failed "), status)
         self.assertIn("previous packages are back", status)
@@ -455,22 +455,22 @@ class UpdateScriptTest(unittest.TestCase):
         # pip already upgraded it). The previously installed versions come back.
         wheels = Path(self._tmp.name) / "wheels"
         wheels.mkdir()
-        for name, version, requires in (("sotto_test_core", "1.0", ()), ("sotto_test_core", "2.0", ()),
-                                        ("sotto_test_app", "1.0", ("sotto-test-core<2",))):
+        for name, version, requires in (("scrivo_test_core", "1.0", ()), ("scrivo_test_core", "2.0", ()),
+                                        ("scrivo_test_app", "1.0", ("scrivo-test-core<2",))):
             _wheel(wheels, name, version, requires)
         python = self.venv / "Scripts" / "python.exe"
         subprocess.run([str(python), "-m", "pip", "install", "--quiet", "--no-index", "--find-links",
-                        str(wheels), "sotto-test-app==1.0"], check=True, capture_output=True, timeout=300)
+                        str(wheels), "scrivo-test-app==1.0"], check=True, capture_output=True, timeout=300)
         before = self.git(self.copy, "rev-parse", "HEAD")
         self.publish("requirements-alpha-windows.txt",
-                     self.REQUIREMENTS["requirements-alpha-windows.txt"] + "sotto-test-core==2.0\n")
+                     self.REQUIREMENTS["requirements-alpha-windows.txt"] + "scrivo-test-core==2.0\n")
         result = self.update(PIP_FIND_LINKS=str(wheels))
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         log = self.log_bytes().decode("utf-8", "replace")
-        self.assertIn("Successfully installed sotto-test-core-2.0", log, "pip did upgrade it first")
+        self.assertIn("Successfully installed scrivo-test-core-2.0", log, "pip did upgrade it first")
         installed = subprocess.run([str(python), "-m", "pip", "freeze"], capture_output=True, text=True,
                                    timeout=120).stdout.split()
-        self.assertEqual(sorted(installed), ["sotto-test-app==1.0", "sotto-test-core==1.0"], log)
+        self.assertEqual(sorted(installed), ["scrivo-test-app==1.0", "scrivo-test-core==1.0"], log)
         self.assertEqual(self.git(self.copy, "rev-parse", "HEAD"), before)
         self.assertIn("previous packages are back", self.status())
 
@@ -480,25 +480,25 @@ class UpdateScriptTest(unittest.TestCase):
         # the status said the previous packages were back.
         wheels = Path(self._tmp.name) / "wheels"
         wheels.mkdir()
-        for name, version, requires in (("sotto_test_core", "1.0", ()), ("sotto_test_core", "2.0", ()),
-                                        ("sotto_test_app", "1.0", ("sotto-test-core<2",)),
-                                        ("sotto_test_new", "1.0", ("sotto-test-extra",)),
-                                        ("sotto_test_extra", "1.0", ())):
+        for name, version, requires in (("scrivo_test_core", "1.0", ()), ("scrivo_test_core", "2.0", ()),
+                                        ("scrivo_test_app", "1.0", ("scrivo-test-core<2",)),
+                                        ("scrivo_test_new", "1.0", ("scrivo-test-extra",)),
+                                        ("scrivo_test_extra", "1.0", ())):
             _wheel(wheels, name, version, requires)
         python = self.venv / "Scripts" / "python.exe"
         subprocess.run([str(python), "-m", "pip", "install", "--quiet", "--no-index", "--find-links",
-                        str(wheels), "sotto-test-app==1.0"], check=True, capture_output=True, timeout=300)
+                        str(wheels), "scrivo-test-app==1.0"], check=True, capture_output=True, timeout=300)
         before = self.git(self.copy, "rev-parse", "HEAD")
         self.publish("requirements-alpha-windows.txt",
                      self.REQUIREMENTS["requirements-alpha-windows.txt"]
-                     + "sotto-test-new==1.0\nsotto-test-core==2.0\n")
+                     + "scrivo-test-new==1.0\nscrivo-test-core==2.0\n")
         result = self.update(PIP_FIND_LINKS=str(wheels))
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         log = self.log_bytes().decode("utf-8", "replace")
-        self.assertRegex(log, r"Successfully installed .*sotto-test-new-1\.0", "pip did add it first")
+        self.assertRegex(log, r"Successfully installed .*scrivo-test-new-1\.0", "pip did add it first")
         installed = subprocess.run([str(python), "-m", "pip", "freeze"], capture_output=True, text=True,
                                    timeout=120).stdout.split()
-        self.assertEqual(sorted(installed), ["sotto-test-app==1.0", "sotto-test-core==1.0"], log)
+        self.assertEqual(sorted(installed), ["scrivo-test-app==1.0", "scrivo-test-core==1.0"], log)
         self.assertEqual(self.git(self.copy, "rev-parse", "HEAD"), before)
         self.assertIn("previous packages are back", self.status())
 
@@ -543,8 +543,8 @@ class UpdateScriptTest(unittest.TestCase):
     @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
         ["git", "-C", str(ROOT), "cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}"], capture_output=True).returncode == 0,
         f"needs this repository's git history ({LEGACY_COMMIT})")
-    def test_the_first_update_from_sotto_moves_the_start_menu_entry_and_starts_again(self) -> None:
-        # The tray's Check for updates on the last Sotto build runs ITS
+    def test_the_first_update_from_scrivo_moves_the_start_menu_entry_and_starts_again(self) -> None:
+        # The tray's Check for updates on the last Scrivo build runs ITS
         # update-windows.ps1, which runs the new install-windows.ps1 after the
         # merge and then restarts through "Sotto.lnk", or this copy's launcher
         # when that entry is gone.
@@ -552,8 +552,8 @@ class UpdateScriptTest(unittest.TestCase):
             old = subprocess.run(["git", "-C", str(ROOT), "show", f"{LEGACY_COMMIT}:scripts/{name}"],
                                  check=True, capture_output=True, text=True, encoding="utf-8").stdout
             (self.copy / "scripts" / name).write_text(self.redirected(name, old), encoding="utf-8")
-        (self.menu / "Scrivo.lnk").rename(self.menu / "Sotto.lnk")  # what the last Sotto installed
-        self.git(self.copy, "commit", "--quiet", "-am", "the last Sotto")
+        (self.menu / "Scrivo.lnk").rename(self.menu / "Sotto.lnk")  # what the last Scrivo installed
+        self.git(self.copy, "commit", "--quiet", "-am", "the last Scrivo")
         self.git(self.copy, "push", "--quiet", "origin", "main")
         self.git(self.upstream, "pull", "--quiet", "--ff-only")
         for name in ("update-windows.ps1", "install-windows.ps1"):

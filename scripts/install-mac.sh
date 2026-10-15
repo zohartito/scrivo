@@ -12,8 +12,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
-DATA_DIR="${SOTTO_DATA_DIR:-$HOME/Library/Application Support/sotto-alpha}"
-PYTHON="${SOTTO_PYTHON:-}"
+DATA_DIR="${SCRIVO_DATA_DIR:-$HOME/Library/Application Support/sotto-alpha}"
+PYTHON="${SCRIVO_PYTHON:-}"
 MODE=install
 
 while [ $# -gt 0 ]; do
@@ -31,12 +31,12 @@ done
 fail() { echo "✗ $*" >&2; exit 1; }
 VENV="$ROOT/venv-alpha"
 
-# Does this compiled launcher start this folder's sotto.py? It holds the path
+# Does this compiled launcher start this folder's scrivo.py? It holds the path
 # as one NUL-terminated C string (scripts/install_app.py): require that exact
 # string, never a substring, like mac_app.launcher_runs. No perl: not ours.
 launcher_runs_this() {
     command -v perl >/dev/null 2>&1 || return 1
-    SCRIPT_PATH="$ROOT/sotto.py" perl -0777 -ne 'exit(index($_, "\0$ENV{SCRIPT_PATH}\0") >= 0 ? 0 : 1)' "$1" 2>/dev/null
+    SCRIPT_PATH="$ROOT/scrivo.py" perl -0777 -ne 'exit(index($_, "\0$ENV{SCRIPT_PATH}\0") >= 0 ? 0 : 1)' "$1" 2>/dev/null
 }
 
 if [ "$MODE" = uninstall ]; then
@@ -73,20 +73,20 @@ MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 xcrun --find clang >/dev/null 2>&1 || fail "Install Apple's command line tools first: xcode-select --install"
 
 # A Scrivo running from this copy would have its source and packages swapped
-# while in use: a process with this copy's sotto.py on its command line, by its
+# while in use: a process with this copy's scrivo.py on its command line, by its
 # resolved path (what Scrivo.app runs) or relative to the process's working
-# directory (a terminal run: venv-alpha/bin/python sotto.py run). Check for
-# Updates runs this from inside Scrivo, names itself in SOTTO_UPDATE_FROM_PID
+# directory (a terminal run: venv-alpha/bin/python scrivo.py run). Check for
+# Updates runs this from inside Scrivo, names itself in SCRIVO_UPDATE_FROM_PID
 # and restarts after.
-running_sotto() {
+running_scrivo() {
     local listing pid command words word dir
     listing="$(ps -axww -o pid= -o command=)" || return 0
     while read -r pid command; do
-        [ "$pid" != "${SOTTO_UPDATE_FROM_PID:-}" ] || continue
-        case " $command " in *" $ROOT/sotto.py "*) echo "$pid"; return 0 ;; esac
+        [ "$pid" != "${SCRIVO_UPDATE_FROM_PID:-}" ] || continue
+        case " $command " in *" $ROOT/scrivo.py "*) echo "$pid"; return 0 ;; esac
         read -ra words <<< "$command" || true  # split without globbing
         for word in ${words[@]+"${words[@]}"}; do
-            case "$word" in sotto.py|*/sotto.py) ;; *) continue ;; esac
+            case "$word" in scrivo.py|*/scrivo.py) ;; *) continue ;; esac
             case "$word" in
                 /*) dir="$(dirname "$word")" ;;
                 *) dir="$(/usr/sbin/lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" || continue
@@ -94,11 +94,11 @@ running_sotto() {
                    dir="$dir/$(dirname "$word")" ;;
             esac
             dir="$(cd "$dir" 2>/dev/null && pwd -P)" || continue
-            [ "$dir/sotto.py" != "$ROOT/sotto.py" ] || { echo "$pid"; return 0; }
+            [ "$dir/scrivo.py" != "$ROOT/scrivo.py" ] || { echo "$pid"; return 0; }
         done
     done <<< "$listing"
 }
-RUNNING="$(running_sotto)"
+RUNNING="$(running_scrivo)"
 [ -z "$RUNNING" ] || fail "Scrivo is running from this copy (process $RUNNING). Quit it from its menu (or update it there with Check for Updates), then run this again."
 
 UPSTREAM=""
@@ -193,10 +193,10 @@ else
     trap - INT TERM HUP
 fi
 
-export SOTTO_DATA_DIR="$DATA_DIR"
-export SOTTO_HF_HOME="$DATA_DIR/huggingface"
-echo "== Speech model (first time: about 1.6 GB into $SOTTO_HF_HOME)"
-"$VENV/bin/python" "$ROOT/sotto.py" setup
+export SCRIVO_DATA_DIR="$DATA_DIR"
+export SCRIVO_HF_HOME="$DATA_DIR/huggingface"
+echo "== Speech model (first time: about 1.6 GB into $SCRIVO_HF_HOME)"
+"$VENV/bin/python" "$ROOT/scrivo.py" setup
 
 echo "== Scrivo.app"
 "$VENV/bin/python" "$ROOT/scripts/install_app.py" --data-dir "$DATA_DIR"

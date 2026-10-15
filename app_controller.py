@@ -1,11 +1,11 @@
 """The Mac app's menu-bar actions.
 
-These were closures inside ``sotto.run()``; they are methods of one
-``AppController`` now, like ``sotto_win.Controller`` on Windows, with every
+These were closures inside ``scrivo.run()``; they are methods of one
+``AppController`` now, like ``scrivo_win.Controller`` on Windows, with every
 collaborator passed to ``__init__`` (dependency injection), so tests build
 it with fakes. tests/test_app_controller.py pins what each action does.
 
-Imports nothing from sotto: ``run()`` passes in the History and engine
+Imports nothing from scrivo: ``run()`` passes in the History and engine
 helpers that still live there.
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ class AppController:
                  use_parakeet: bool, engine_switching: bool, active_engine: str, settings_locked,
                  binding: dict, rebind, restart, language_lock, language_state: dict, save_language_mode,
                  parakeet_cached, persist_engine_and_restart, run_installer, triggers: dict,
-                 trigger_labels: dict, sotto_script: Path, engine, capture, on_finish, started_from: str = "",
+                 trigger_labels: dict, scrivo_script: Path, engine, capture, on_finish, started_from: str = "",
                  start_thread=start_daemon_thread, wait_until_idle=wait_until_idle) -> None:
         self.shutdown = shutdown
         self.lifecycle = lifecycle
@@ -60,7 +60,7 @@ class AppController:
         self.set_clipboard = set_clipboard
         self.current_speech_config = current_speech_config
         self.log = log
-        # History helpers that live in sotto.py.
+        # History helpers that live in scrivo.py.
         self.history_keep = history_keep
         self.overlay_learning_state = overlay_learning_state
         self.active_learning_history_ids = active_learning_history_ids
@@ -87,15 +87,15 @@ class AppController:
         self.language_lock = language_lock
         self.language_state = language_state
         self.save_language_mode = save_language_mode
-        # Engine and trigger helpers that live in sotto.py; sotto_script is
-        # sotto.py itself (Parakeet's download runs its setup command, and
+        # Engine and trigger helpers that live in scrivo.py; scrivo_script is
+        # scrivo.py itself (Parakeet's download runs its setup command, and
         # Nemotron's installer sits in its scripts/ folder).
         self.parakeet_cached = parakeet_cached
         self.persist_engine_and_restart = persist_engine_and_restart
         self.run_installer = run_installer
         self.triggers = triggers
         self.trigger_labels = trigger_labels
-        self.sotto_script = sotto_script
+        self.scrivo_script = scrivo_script
         # The gesture engine, the microphone capture and the gesture's own
         # finish, for the menu's Start and Finish now.
         self.engine = engine
@@ -470,7 +470,7 @@ class AppController:
             "language_names": WHISPER_LANGUAGES,
             "automatic_languages": list(automatic_languages(preferences["languages"])),
             "login_enabled": login_item.enabled(),
-            "login_available": app_mode() and bool(os.environ.get("SOTTO_APP_EXECUTABLE")),
+            "login_available": app_mode() and bool(os.environ.get("SCRIVO_APP_EXECUTABLE")),
             "dictionary_rules": len(dictionary.load(dictionary.DICTIONARY_PATH)),
             "data_dir": str(store.DATA_DIR),
         }
@@ -490,7 +490,7 @@ class AppController:
                 return None
             if key == "launch_at_login":
                 import login_item
-                executable = os.environ.get("SOTTO_APP_EXECUTABLE", "")
+                executable = os.environ.get("SCRIVO_APP_EXECUTABLE", "")
                 if value and not (app_mode() and executable):
                     return "Install Scrivo as an app first (scripts/install-mac.sh)."
                 login_item.enable(executable) if value else login_item.disable()
@@ -516,7 +516,7 @@ class AppController:
         if name == "open_dictionary":
             self.open_dictionary()
         elif name == "show_data_folder":
-            from sotto_paths import DATA_DIR
+            from scrivo_paths import DATA_DIR
             subprocess.Popen(["/usr/bin/open", str(DATA_DIR)])
         elif name == "install_nemotron" and not self.nemotron_installing:
             self.install_nemotron()
@@ -537,7 +537,7 @@ class AppController:
         self.nemotron_installing = True
 
         def work() -> None:
-            script = self.sotto_script.parent / "scripts" / "setup_nemotron.py"
+            script = self.scrivo_script.parent / "scripts" / "setup_nemotron.py"
             self.log("● installing Nemotron (about 700 MB) ...")
             try:
                 ok, detail = self.run_installer([sys.executable, str(script)])
@@ -558,7 +558,7 @@ class AppController:
     def install_parakeet(self) -> None:
         """Download Parakeet in the background; refused in offline mode.
 
-        Side effects: on a background thread, runs sotto.py setup (about
+        Side effects: on a background thread, runs scrivo.py setup (about
         2.5 GB), refreshes the menu and an open Settings window, logs and
         shows the result."""
         from offline_runtime import offline_requested
@@ -571,7 +571,7 @@ class AppController:
         def work() -> None:
             self.log("● downloading Parakeet (about 2.5 GB) ...")
             try:
-                ok, detail = self.run_installer([sys.executable, str(self.sotto_script),
+                ok, detail = self.run_installer([sys.executable, str(self.scrivo_script),
                                                  "setup", "--profile", "parakeet"])
             finally:
                 self.parakeet_installing = False
@@ -672,9 +672,9 @@ class AppController:
 
         def work() -> None:
             import updates
-            from sotto_paths import DATA_DIR
+            from scrivo_paths import DATA_DIR
             finished, tail, source_changed = updates.apply_mac(
-                self.sotto_script.parent, sys.executable, DATA_DIR / "logs" / "update.log")
+                self.scrivo_script.parent, sys.executable, DATA_DIR / "logs" / "update.log")
             self.update_running = False
             if finished:
                 self.log("✓ update installed — restarting once dictation is done")
@@ -713,7 +713,7 @@ class AppController:
         def work() -> None:
             import updates
             from offline_runtime import offline_requested
-            result = updates.check(self.sotto_script.parent, offline=offline_requested(),
+            result = updates.check(self.scrivo_script.parent, offline=offline_requested(),
                                    started_from=self.started_from)
             stale = result.stale
             self.log(f"update check: {result.state}" + (f", {result.behind} behind" if result.behind else "")
@@ -723,7 +723,7 @@ class AppController:
             def present() -> None:
                 # [N28] Only Scrivo.app updates or restarts itself; a terminal run is told what to do.
                 manual = ("run scripts/install-mac.sh --update in Terminal from Scrivo's source folder."
-                          if app_mode() else updates.mac_manual_update(self.sotto_script.parent))
+                          if app_mode() else updates.mac_manual_update(self.scrivo_script.parent))
                 title, text = updates.describe(result, manual, self_update=app_mode())
                 offer = updates.offer(result, self_update=app_mode())
                 if offer == "update":

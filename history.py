@@ -35,7 +35,7 @@ from audio_codec import (
 from storage_lock import (advisory_lock, ensure_private_directory, ensure_private_file, try_lock_exclusive,
                           unlock_exclusive)
 
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 STORE_DIR = DATA_DIR
 AUDIO_DIR = STORE_DIR / "audio"
@@ -762,7 +762,7 @@ class CaptureSpool:
             self._pending[capture_id] = False
             if self._writer is None:
                 self._writer = threading.Thread(target=self._write_loop, daemon=True,
-                                                name="sotto-capture-spool")
+                                                name="scrivo-capture-spool")
                 self._writer.start()
         self._queue.put((capture_id, raw, native_rate, captured_ts))
 
