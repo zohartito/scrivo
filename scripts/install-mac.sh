@@ -12,8 +12,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
-DATA_DIR="${SCRIVO_DATA_DIR:-$HOME/Library/Application Support/sotto-alpha}"
-PYTHON="${SCRIVO_PYTHON:-}"
+# Scrivo was called Sotto: SOTTO_* is the old name of each SCRIVO_* variable.
+DATA_DIR="${SCRIVO_DATA_DIR:-${SOTTO_DATA_DIR:-$HOME/Library/Application Support/sotto-alpha}}"
+PYTHON="${SCRIVO_PYTHON:-${SOTTO_PYTHON:-}}"
 MODE=install
 
 while [ $# -gt 0 ]; do
@@ -31,12 +32,13 @@ done
 fail() { echo "✗ $*" >&2; exit 1; }
 VENV="$ROOT/venv-alpha"
 
-# Does this compiled launcher start this folder's scrivo.py? It holds the path
-# as one NUL-terminated C string (scripts/install_app.py): require that exact
-# string, never a substring, like mac_app.launcher_runs. No perl: not ours.
+# Does this old Sotto.app launcher start this folder's sotto.py (what they ran
+# before the module rename)? It holds the path as one NUL-terminated C string
+# (scripts/install_app.py): require that exact string, never a substring, like
+# mac_app.launcher_runs. No perl: not ours.
 launcher_runs_this() {
     command -v perl >/dev/null 2>&1 || return 1
-    SCRIPT_PATH="$ROOT/scrivo.py" perl -0777 -ne 'exit(index($_, "\0$ENV{SCRIPT_PATH}\0") >= 0 ? 0 : 1)' "$1" 2>/dev/null
+    SCRIPT_PATH="$ROOT/sotto.py" perl -0777 -ne 'exit(index($_, "\0$ENV{SCRIPT_PATH}\0") >= 0 ? 0 : 1)' "$1" 2>/dev/null
 }
 
 if [ "$MODE" = uninstall ]; then
@@ -73,20 +75,21 @@ MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
 xcrun --find clang >/dev/null 2>&1 || fail "Install Apple's command line tools first: xcode-select --install"
 
 # A Scrivo running from this copy would have its source and packages swapped
-# while in use: a process with this copy's scrivo.py on its command line, by its
+# while in use: a process with this copy's scrivo.py (or sotto.py, its name
+# before the rename, still run by older launchers) on its command line, by its
 # resolved path (what Scrivo.app runs) or relative to the process's working
 # directory (a terminal run: venv-alpha/bin/python scrivo.py run). Check for
 # Updates runs this from inside Scrivo, names itself in SCRIVO_UPDATE_FROM_PID
-# and restarts after.
+# (SOTTO_UPDATE_FROM_PID from a Scrivo started before the rename) and restarts after.
 running_scrivo() {
     local listing pid command words word dir
     listing="$(ps -axww -o pid= -o command=)" || return 0
     while read -r pid command; do
-        [ "$pid" != "${SCRIVO_UPDATE_FROM_PID:-}" ] || continue
-        case " $command " in *" $ROOT/scrivo.py "*) echo "$pid"; return 0 ;; esac
+        [ "$pid" != "${SCRIVO_UPDATE_FROM_PID:-${SOTTO_UPDATE_FROM_PID:-}}" ] || continue
+        case " $command " in *" $ROOT/scrivo.py "*|*" $ROOT/sotto.py "*) echo "$pid"; return 0 ;; esac
         read -ra words <<< "$command" || true  # split without globbing
         for word in ${words[@]+"${words[@]}"}; do
-            case "$word" in scrivo.py|*/scrivo.py) ;; *) continue ;; esac
+            case "$word" in scrivo.py|*/scrivo.py|sotto.py|*/sotto.py) ;; *) continue ;; esac
             case "$word" in
                 /*) dir="$(dirname "$word")" ;;
                 *) dir="$(/usr/sbin/lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" || continue
@@ -94,7 +97,7 @@ running_scrivo() {
                    dir="$dir/$(dirname "$word")" ;;
             esac
             dir="$(cd "$dir" 2>/dev/null && pwd -P)" || continue
-            [ "$dir/scrivo.py" != "$ROOT/scrivo.py" ] || { echo "$pid"; return 0; }
+            [ "$dir" != "$ROOT" ] || { echo "$pid"; return 0; }
         done
     done <<< "$listing"
 }

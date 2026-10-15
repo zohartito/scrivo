@@ -317,8 +317,8 @@ class AlphaArchiveTests(unittest.TestCase):
             output = Path(scratch) / "alpha.tar.gz"
             first = build_alpha_source.build(output)
             with tarfile.open(output) as archive:
-                names = {member.name.removeprefix("sotto-alpha/") for member in archive.getmembers()}
-                sources = {name: archive.extractfile("sotto-alpha/" + name).read().decode("utf-8")
+                names = {member.name.removeprefix("scrivo-alpha/") for member in archive.getmembers()}
+                sources = {name: archive.extractfile("scrivo-alpha/" + name).read().decode("utf-8")
                            for name in names if name.endswith(".py")}
             self.assertEqual(build_alpha_source.build(output)["sha256"], first["sha256"])  # deterministic
         self.assertEqual(names, set(getattr(build_alpha_source, "ALPHA_FILES", build_alpha_source.PUBLIC_FILES)))

@@ -49,7 +49,7 @@ DELIVERY_POLL_S = 0.15           # re-check a held key this often before pasting
 DELIVERY_WAIT_MAX_S = 30.0       # key held, no recording: give up, the text stays in History
 # The drop note for a dictation History could not keep (F16a/F16b, N16).
 NOT_IN_HISTORY_EITHER = "History could not save it either; please dictate again."
-SCRIVO_EVENT_TAG = 0x534F5454     # "SOTT" in kCGEventSourceUserData on every key event Scrivo posts
+SCRIVO_EVENT_TAG = 0x53435256     # "SCRV" in kCGEventSourceUserData on every key event Scrivo posts
 
 
 _restore_generation = 0

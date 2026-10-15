@@ -71,9 +71,11 @@ model warms up); a "Ready — hold Right Ctrl to dictate" notification says when
 you can dictate. Launches use the cached model with no network access.
 
 For the source archive, check its separately supplied SHA-256 with
-`Get-FileHash sotto-alpha-source.tar.gz -Algorithm SHA256`, extract it with
-`tar -xzf sotto-alpha-source.tar.gz` (built into Windows 10/11), `cd sotto-alpha`,
-and run the installer. The archive has no Git history, credentials, model
+`Get-FileHash scrivo-alpha-source.tar.gz -Algorithm SHA256`, extract it with
+`tar -xzf scrivo-alpha-source.tar.gz` (built into Windows 10/11), `cd scrivo-alpha`,
+and run the installer. Extracted next to the `sotto-alpha` folder of an earlier
+archive, it takes over that copy's Start Menu entry and launch at login; delete
+the old folder afterwards. The archive has no Git history, credentials, model
 weights or personal data.
 
 ## Manual install and console use
@@ -303,7 +305,7 @@ languages. Use Accurate if Fast makes mistakes in yours.
 
 ## Launch at login
 
-Settings → **Launch Scrivo when I sign in** adds one per-user value, `Scrivo`
+Settings → **Launch Scrivo when I sign in** adds one per-user value, `Sotto`
 (the name Scrivo had before; kept so existing entries keep working),
 under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, which starts the
 tray app with pythonw and the same data folder. Turning it off removes that

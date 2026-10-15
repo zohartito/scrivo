@@ -19,7 +19,7 @@ venv-alpha/bin/python -m compileall -q *.py scripts tests
 python3 benchmark.py tests/fixtures/benchmark_gate/manifest.jsonl --dry-run
 bash -n scripts/install-mac.sh scripts/rollout.sh
 plutil -lint launchd/*.plist
-venv-alpha/bin/python scripts/build_alpha_source.py /absolute/output/sotto-alpha-source.tar.gz
+venv-alpha/bin/python scripts/build_alpha_source.py /absolute/output/scrivo-alpha-source.tar.gz
 ```
 
 `test_alpha.py` points data, Hugging Face, XDG and Numba caches at a temporary

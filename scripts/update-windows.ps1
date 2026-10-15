@@ -73,7 +73,9 @@ $Status = Join-Path $DataDir 'update-status.txt'
 $Shortcut = Join-Path $ShortcutDir 'Scrivo.lnk'
 $Launcher = Join-Path $Root 'win_launch.py'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
-$Manifest = Join-Path $VenvDir 'sotto-install.json'
+$Manifest = Join-Path $VenvDir 'scrivo-install.json'
+# The install record's name before the rename (Scrivo was called Sotto).
+if (-not (Test-Path -LiteralPath $Manifest -PathType Leaf)) { $Manifest = Join-Path $VenvDir 'sotto-install.json' }
 $Next = $null  # the new version's package lists, in a temporary folder
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 Set-Content -LiteralPath $Log -Value "update started $(Get-Date -Format s)" -Encoding UTF8

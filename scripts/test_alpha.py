@@ -26,9 +26,11 @@ if os.name == 'posix' and (blocked := unsafe_ancestor(root)) is not None:
     raise SystemExit(f'Run the tests from a checkout you own outside shared folders: {blocked} '
                      'is group/world-writable or not owned by you (e.g. /tmp). Move the checkout.')
 
-with tempfile.TemporaryDirectory(prefix='sotto-alpha-tests-') as temporary:
+with tempfile.TemporaryDirectory(prefix='scrivo-alpha-tests-') as temporary:
     state = Path(temporary)
-    env = dict(os.environ, SCRIVO_DATA_DIR=str(state/'data'), SCRIVO_HF_HOME=str(state/'huggingface'),
+    # Without the old SOTTO_* names (Scrivo was called Sotto), which scrivo_paths also reads.
+    inherited = {name: value for name, value in os.environ.items() if not name.startswith('SOTTO_')}
+    env = dict(inherited, SCRIVO_DATA_DIR=str(state/'data'), SCRIVO_HF_HOME=str(state/'huggingface'),
                HF_HOME=str(state/'huggingface'), HF_HUB_CACHE=str(state/'huggingface/hub'),
                XDG_CACHE_HOME=str(state/'cache'), NUMBA_CACHE_DIR=str(state/'numba'),
                SCRIVO_OFFLINE='1', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')

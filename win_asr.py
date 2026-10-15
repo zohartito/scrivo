@@ -247,9 +247,10 @@ def _transcribe_reusing(model: Any, samples: Any, options: dict, window: Any, ou
 
 
 def requested_device(cli: str | None = None, environ=None) -> str:
-    """``--device`` wins, then ``SCRIVO_DEVICE``; blank means ``auto``."""
-    source = os.environ if environ is None else environ
-    value = (cli or source.get("SCRIVO_DEVICE", "") or "auto").strip().lower() or "auto"
+    """``--device`` wins, then ``SCRIVO_DEVICE`` (or the old ``SOTTO_DEVICE``);
+    blank means ``auto``."""
+    from scrivo_paths import env
+    value = (cli or env("DEVICE", environ) or "auto").strip().lower() or "auto"
     if value not in DEVICE_CHOICES:
         raise ValueError(f"device must be one of {', '.join(DEVICE_CHOICES)}; got {value!r}")
     return value

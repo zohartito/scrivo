@@ -10,14 +10,13 @@ helpers that still live there.
 """
 from __future__ import annotations
 
-import os
 import sys
 import threading
 import time
 import uuid
 from pathlib import Path
 
-from lifecycle import UPDATE_DRAIN_DEADLINE_S, app_mode, end_capture_now, wait_until_idle
+from lifecycle import UPDATE_DRAIN_DEADLINE_S, app_executable, app_mode, end_capture_now, wait_until_idle
 
 
 def start_daemon_thread(target) -> None:
@@ -470,7 +469,7 @@ class AppController:
             "language_names": WHISPER_LANGUAGES,
             "automatic_languages": list(automatic_languages(preferences["languages"])),
             "login_enabled": login_item.enabled(),
-            "login_available": app_mode() and bool(os.environ.get("SCRIVO_APP_EXECUTABLE")),
+            "login_available": app_mode() and bool(app_executable()),
             "dictionary_rules": len(dictionary.load(dictionary.DICTIONARY_PATH)),
             "data_dir": str(store.DATA_DIR),
         }
@@ -490,7 +489,7 @@ class AppController:
                 return None
             if key == "launch_at_login":
                 import login_item
-                executable = os.environ.get("SCRIVO_APP_EXECUTABLE", "")
+                executable = app_executable()
                 if value and not (app_mode() and executable):
                     return "Install Scrivo as an app first (scripts/install-mac.sh)."
                 login_item.enable(executable) if value else login_item.disable()

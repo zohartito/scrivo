@@ -24,7 +24,9 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install-windows.ps1"
-LEGACY_COMMIT = "21ce68b"  # the last commit before Scrivo was renamed from Scrivo
+LEGACY_COMMIT = "21ce68b"  # the last commit before Scrivo was renamed from Sotto
+LAST_SCRIVO_COMMIT = "f221967"  # the last commit before sotto_win.py and the others became scrivo_*
+RUN_VALUE = "Sotto"  # the login entry keeps its name from before the rename
 
 
 def _powershell() -> str | None:
@@ -72,7 +74,7 @@ class InstallerTest(unittest.TestCase):
         return result.stdout.strip()
 
     def shortcut(self, arguments: str, name: str = "Scrivo.lnk") -> Path:
-        """A Start Menu "Scrivo" entry (or, by name, the "Scrivo" one of earlier
+        """A Start Menu "Scrivo" entry (or, by name, the "Sotto" one of earlier
         versions) with these arguments, as another copy's installer makes it."""
         self.menu.mkdir(exist_ok=True)
         path = self.menu / name
@@ -121,11 +123,11 @@ class InstallerTest(unittest.TestCase):
             self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
             self.assertIn('Create Start Menu shortcut "Scrivo"', planned.stdout)
 
-    def test_the_old_scrivo_entry_is_replaced_only_when_it_starts_this_copy(self) -> None:
-        # Scrivo was called Sotto: its "Scrivo" entry for this copy goes once the
+    def test_the_old_sotto_entry_is_replaced_only_when_it_starts_this_copy(self) -> None:
+        # Scrivo was called Sotto: its "Sotto" entry for this copy goes once the
         # "Scrivo" one is made (two entries would start the same app); one that
         # starts another copy, or another program, is never touched.
-        legacy = 'Remove the Start Menu shortcut "Scrivo" of earlier versions'
+        legacy = 'Remove the Start Menu shortcut "Sotto" of earlier versions'
         self.shortcut(f'"{ROOT / "win_launch.py"}" --data-dir "{self.data}"', name="Sotto.lnk")
         planned = self.ps("-WhatIf", "-Cpu", "-Python", sys.executable)
         self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
@@ -246,7 +248,7 @@ class InstallerTest(unittest.TestCase):
         self.psc(make.format(path=legacy, target=sys.executable, args=f'"{launcher}" --data-dir "{self.data}"'))
         self.psc(make.format(path=other, target=sys.executable, args="elsewhere.py"))
         self.psc(f"New-Item -Path '{self.run_key}' -Force | Out-Null; "
-                 f"New-ItemProperty -Path '{self.run_key}' -Name Scrivo -Value '\"py\" \"{launcher}\"' | Out-Null")
+                 f"New-ItemProperty -Path '{self.run_key}' -Name {RUN_VALUE} -Value '\"py\" \"{launcher}\"' | Out-Null")
 
         dry = self.ps("-Uninstall", "-WhatIf")
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
@@ -261,7 +263,7 @@ class InstallerTest(unittest.TestCase):
         self.assertTrue((self.data / "history.jsonl").exists(), "data stays without -RemoveData")
         self.assertIn("add -RemoveData", result.stdout)
         self.assertEqual(self.psc(f"(Get-ItemProperty -Path '{self.run_key}').PSObject.Properties.Name "
-                                  "-contains 'Scrivo'"), "False")
+                                  f"-contains '{RUN_VALUE}'"), "False")
 
         # The manifest went with the venv: -RemoveData now refuses to guess.
         kept = self.ps("-Uninstall", "-RemoveData")
@@ -300,14 +302,14 @@ class InstallerTest(unittest.TestCase):
         ours = self.shortcut(f'"{short_launcher}" --data-dir "{short_data}"')
         # win_startup writes the login entry with list2cmdline: no quotes around a path without spaces.
         self.psc(f"New-Item -Path '{self.run_key}' -Force | Out-Null; "
-                 f"New-ItemProperty -Path '{self.run_key}' -Name Scrivo "
+                 f"New-ItemProperty -Path '{self.run_key}' -Name {RUN_VALUE} "
                  f"-Value 'pythonw.exe {short_launcher} --data-dir {short_data}' | Out-Null")
 
         result = self.ps("-Uninstall", "-RemoveData", script=Path(_long_and_short(script)[0]), data=long_data)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(ours.exists(), result.stdout)
         self.assertEqual(self.psc(f"(Get-ItemProperty -Path '{self.run_key}').PSObject.Properties.Name "
-                                  "-contains 'Scrivo'"), "False", result.stdout)
+                                  f"-contains '{RUN_VALUE}'"), "False", result.stdout)
         self.assertFalse(self.data.exists(), result.stdout)
 
 
@@ -512,8 +514,10 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertEqual(self.git(self.copy, "rev-parse", "HEAD"), upstream)
         status = self.status()
         self.assertTrue(status.startswith("ok ") and upstream.startswith(status[3:]), status)
-        record = json.loads((self.venv / "sotto-install.json").read_text(encoding="utf-8-sig"))
+        # The record made before the rename (sotto-install.json) now has the new name.
+        record = json.loads((self.venv / "scrivo-install.json").read_text(encoding="utf-8-sig"))
         self.assertEqual(record["flavor"], "cpu")
+        self.assertFalse((self.venv / "sotto-install.json").exists())
         log = self.log_bytes()
         self.assertNotIn(b"\x00", log)
         self.assertLess(log.index(b"== packages"), log.index(b"== source"), "packages before the source")
@@ -543,17 +547,18 @@ class UpdateScriptTest(unittest.TestCase):
     @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
         ["git", "-C", str(ROOT), "cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}"], capture_output=True).returncode == 0,
         f"needs this repository's git history ({LEGACY_COMMIT})")
-    def test_the_first_update_from_scrivo_moves_the_start_menu_entry_and_starts_again(self) -> None:
-        # The tray's Check for updates on the last Scrivo build runs ITS
-        # update-windows.ps1, which runs the new install-windows.ps1 after the
-        # merge and then restarts through "Sotto.lnk", or this copy's launcher
-        # when that entry is gone.
+    def first_update_from(self, commit: str, entry: str) -> tuple[subprocess.CompletedProcess, str, str]:
+        """The tray's Check for updates on an installed build runs ITS
+        update-windows.ps1, which runs the new install-windows.ps1 after the
+        merge and then restarts through the Start Menu entry that starts this
+        copy, or this copy's launcher when there is none."""
         for name in ("update-windows.ps1", "install-windows.ps1"):
-            old = subprocess.run(["git", "-C", str(ROOT), "show", f"{LEGACY_COMMIT}:scripts/{name}"],
+            old = subprocess.run(["git", "-C", str(ROOT), "show", f"{commit}:scripts/{name}"],
                                  check=True, capture_output=True, text=True, encoding="utf-8").stdout
             (self.copy / "scripts" / name).write_text(self.redirected(name, old), encoding="utf-8")
-        (self.menu / "Scrivo.lnk").rename(self.menu / "Sotto.lnk")  # what the last Scrivo installed
-        self.git(self.copy, "commit", "--quiet", "-am", "the last Scrivo")
+        if entry != "Scrivo.lnk":
+            (self.menu / "Scrivo.lnk").rename(self.menu / entry)  # what that build installed
+        self.git(self.copy, "commit", "--quiet", "-am", f"the installed build ({commit})")
         self.git(self.copy, "push", "--quiet", "origin", "main")
         self.git(self.upstream, "pull", "--quiet", "--ff-only")
         for name in ("update-windows.ps1", "install-windows.ps1"):
@@ -567,15 +572,106 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr + log)
         self.assertEqual(self.git(self.copy, "rev-parse", "HEAD"), upstream)
         self.assertTrue(self.status().startswith("ok "), self.status())
-        self.assertFalse((self.menu / "Sotto.lnk").exists(), log)
         link = self.menu / "Scrivo.lnk"
         arguments = subprocess.run([_powershell(), "-NoProfile", "-Command",
                                     f"(New-Object -ComObject WScript.Shell).CreateShortcut('{link}').Arguments"],
                                    capture_output=True, text=True, timeout=60).stdout
         self.assertIn("win_launch.py", arguments)
-        self.assertIn("removed the old Start Menu shortcut", log)
         self.assertTrue((self.data / "launched.txt").exists(), "the tray starts again, by its launcher")
+        # The install record keeps its content under its new name.
+        self.assertEqual(json.loads((self.venv / "scrivo-install.json").read_text(encoding="utf-8-sig"))["flavor"],
+                         "cpu")
+        self.assertFalse((self.venv / "sotto-install.json").exists())
+        return result, log, arguments
 
+    @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}"], capture_output=True).returncode == 0,
+        f"needs this repository's git history ({LEGACY_COMMIT})")
+    def test_the_first_update_from_sotto_moves_the_start_menu_entry_and_starts_again(self) -> None:
+        _result, log, _arguments = self.first_update_from(LEGACY_COMMIT, "Sotto.lnk")
+        self.assertFalse((self.menu / "Sotto.lnk").exists(), log)
+        self.assertIn("removed the old Start Menu shortcut", log)
+
+    @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "-e", f"{LAST_SCRIVO_COMMIT}^{{commit}}"],
+        capture_output=True).returncode == 0, f"needs this repository's git history ({LAST_SCRIVO_COMMIT})")
+    def test_the_first_update_after_the_module_rename_keeps_the_entry_and_starts_again(self) -> None:
+        # The entry and the login entry start win_launch.py, whose name never
+        # changed; it now runs scrivo_win.
+        _result, log, arguments = self.first_update_from(LAST_SCRIVO_COMMIT, "Scrivo.lnk")
+        self.assertIn(str(_long_and_short(self.copy / "win_launch.py")[0]), arguments)
+        self.assertNotIn("removed the old Start Menu shortcut", log)
+        self.assertIn("import scrivo_win", (ROOT / "win_launch.py").read_text(encoding="utf-8"))
+
+    def test_an_archive_beside_an_earlier_one_takes_over_its_entries(self) -> None:
+        # A source archive extracts to scrivo-alpha; the one from before the
+        # rename extracted to sotto-alpha next to it, and its "Sotto" entry and
+        # login entry start that copy. Installing the new one moves both here.
+        base = Path(self._tmp.name)
+        archive, earlier = base / "scrivo-alpha", base / "sotto-alpha"
+        (archive / "scripts").mkdir(parents=True)
+        earlier.mkdir()
+        (earlier / "win_launch.py").write_text("", encoding="utf-8")
+        script = archive / "scripts" / "install-windows.ps1"
+        script.write_text(self.redirected("install-windows.ps1", SCRIPT.read_text(encoding="utf-8")),
+                          encoding="utf-8")
+        for name, text in self.REQUIREMENTS.items():
+            (archive / name).write_text(text, encoding="utf-8")
+        (archive / "win_launch.py").write_text(self.LAUNCHER, encoding="utf-8")
+        shutil.copy(ROOT / "win_startup.py", archive / "win_startup.py")
+        (self.menu / "Scrivo.lnk").unlink()  # the earlier archive made only "Sotto"
+        theirs = f'"{earlier / "win_launch.py"}" --data-dir "{self.data}"'
+        subprocess.run([_powershell(), "-NoProfile", "-Command",
+                        f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{self.menu / 'Sotto.lnk'}'); "
+                        f"$s.TargetPath = '{sys.executable}'; $s.Arguments = '{theirs}'; $s.Save()"],
+                       check=True, capture_output=True, timeout=60)
+        run_key = rf"HKCU:\Software\scrivo-tests\{uuid.uuid4().hex}"
+        cleanup = f"Remove-Item -LiteralPath '{run_key}' -Recurse -ErrorAction SilentlyContinue"
+        self.addCleanup(subprocess.run, [_powershell(), "-NoProfile", "-Command", cleanup],
+                        capture_output=True, timeout=60)
+        subprocess.run([_powershell(), "-NoProfile", "-Command",
+                        f"New-Item -Path '{run_key}' -Force | Out-Null; "
+                        f"New-ItemProperty -Path '{run_key}' -Name {RUN_VALUE} "
+                        f"-Value 'pythonw.exe \"{earlier / 'win_launch.py'}\" --data-dir \"{self.data}\"' | Out-Null"],
+                       check=True, capture_output=True, timeout=60)
+        venv = base / "archive-venv"
+        result = subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                                 "-File", str(script), "-SkipSetup", "-Cpu", "-Python", sys.executable,
+                                 "-VenvDir", str(venv), "-DataDir", str(self.data), "-RunKey", run_key],
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                                env=dict(os.environ, PIP_NO_INDEX="1", PIP_DISABLE_PIP_VERSION_CHECK="1"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.menu / "Sotto.lnk").exists(), result.stdout)
+        link = self.menu / "Scrivo.lnk"
+        arguments = subprocess.run([_powershell(), "-NoProfile", "-Command",
+                                    f"(New-Object -ComObject WScript.Shell).CreateShortcut('{link}').Arguments"],
+                                   capture_output=True, text=True, timeout=60).stdout
+        self.assertIn(str(archive / "win_launch.py"), arguments)
+        command = subprocess.run([_powershell(), "-NoProfile", "-Command",
+                                  f"(Get-ItemProperty -Path '{run_key}').{RUN_VALUE}"],
+                                 capture_output=True, text=True, timeout=60).stdout.strip()
+        self.assertIn(str(archive / "win_launch.py"), command, result.stdout)
+        self.assertNotIn(str(earlier), command)
+        self.assertIn("launch at login now starts this copy", result.stdout)
+        self.assertTrue((venv / "scrivo-install.json").is_file())
+        # Not from an archive folder: another folder's entries stay its own.
+        elsewhere = base / "elsewhere"
+        (elsewhere / "scripts").mkdir(parents=True)
+        shutil.copy(script, elsewhere / "scripts" / "install-windows.ps1")
+        (elsewhere / "win_launch.py").write_text("", encoding="utf-8")
+        subprocess.run([_powershell(), "-NoProfile", "-Command",
+                        f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{self.menu / 'Sotto.lnk'}'); "
+                        f"$s.TargetPath = '{sys.executable}'; $s.Arguments = '{theirs}'; $s.Save()"],
+                       check=True, capture_output=True, timeout=60)
+        link.unlink()
+        planned = subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                                  "-File", str(elsewhere / "scripts" / "install-windows.ps1"), "-WhatIf", "-Cpu",
+                                  "-Python", sys.executable, "-VenvDir", str(base / "elsewhere-venv"),
+                                  "-DataDir", str(self.data), "-RunKey", run_key],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+        self.assertNotIn('Remove the Start Menu shortcut "Sotto"', planned.stdout)
+        self.assertNotIn("instead of the earlier one", planned.stdout)
 
 if __name__ == "__main__":
     unittest.main()

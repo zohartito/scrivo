@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 from gestures import HANDS_FREE_MAX_S
 from scrivo_log import log
+from scrivo_paths import env
 
 if TYPE_CHECKING:
     from delivery import PendingDeliveries
@@ -174,7 +175,12 @@ LAUNCHD_LABEL = "com.zohartito.scrivo.app"  # must match launchd/ and scripts/ro
 
 def app_mode() -> bool:
     """Started by the installed Scrivo.app launcher (not a terminal)."""
-    return os.environ.get("SCRIVO_LAUNCHER") == "app"
+    return env("LAUNCHER") == "app"
+
+
+def app_executable() -> str:
+    """The Scrivo.app launcher that started this process ('' from a terminal)."""
+    return env("APP_EXECUTABLE")
 
 
 def launchd_owns_this_process() -> bool:
@@ -252,7 +258,7 @@ class RestartController:
     def exec_foreground(self) -> None:
         if not self.foreground_pending:
             return
-        if app_mode() and os.environ.get("SCRIVO_APP_EXECUTABLE", "").strip():
+        if app_mode() and app_executable():
             relaunch_app_after_exit()
             return
         os.execv(sys.executable, self.argv)
@@ -270,7 +276,7 @@ def relaunch_app_after_exit() -> None:
     starts the login item if it is loaded, otherwise opens the app again."""
     import subprocess
     import login_item
-    bundle = Path(os.environ["SCRIVO_APP_EXECUTABLE"].strip()).parents[2]
+    bundle = Path(app_executable()).parents[2]
     subprocess.Popen(
         ["/bin/sh", "-c", APP_RELAUNCH_SCRIPT, "scrivo-relaunch", str(os.getppid()), login_item.LABEL, str(bundle)],
         start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

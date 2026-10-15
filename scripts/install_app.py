@@ -24,6 +24,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from mac_app import APP_NAME, BUNDLE_ID, EXECUTABLE, candidate_folders  # noqa: E402
+import scrivo_paths  # noqa: E402
 
 LAUNCHER_C = r"""
 #include <signal.h>
@@ -235,7 +236,7 @@ def main() -> None:
     parser.add_argument("--applications", type=Path, default=None,
                         help="install folder (default: /Applications if writable, else ~/Applications)")
     parser.add_argument("--data-dir", type=Path,
-                        default=Path(os.environ.get("SCRIVO_DATA_DIR", "").strip() or
+                        default=Path(scrivo_paths.env("DATA_DIR") or
                                      Path.home() / "Library/Application Support/sotto-alpha"))
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args()

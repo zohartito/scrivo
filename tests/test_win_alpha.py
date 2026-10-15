@@ -144,10 +144,10 @@ class WindowsArchiveTests(unittest.TestCase):
             self.assertEqual(builder.build(first)["sha256"], builder.build(second)["sha256"])
             with tarfile.open(first) as archive:
                 names = archive.getnames()
-        self.assertTrue(all(name.startswith("sotto-alpha/") for name in names))
+        self.assertTrue(all(name.startswith("scrivo-alpha/") for name in names))
         for forbidden in (".handoff/", "venv", ".git/", "huggingface", ".alpha-state", "__pycache__"):
             self.assertFalse([name for name in names if forbidden in name], forbidden)
-        self.assertIn("sotto-alpha/docs/windows-alpha.md", names)
+        self.assertIn("scrivo-alpha/docs/windows-alpha.md", names)
 
 
 if __name__ == "__main__":

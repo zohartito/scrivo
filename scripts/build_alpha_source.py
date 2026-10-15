@@ -81,6 +81,7 @@ PUBLIC_TEST_FILES = (
     'tests/test_nemotron_pipeline.py',
     'tests/test_offline_backup.py',
     'tests/test_repetition_loop.py',
+    'tests/test_rename_compat.py',
     'tests/test_runtime_source_manifest.py',
     'tests/test_sealed_release.py',
     'tests/test_silver_lane.py',
@@ -97,6 +98,7 @@ PUBLIC_TEST_FILES = (
 # docs and tests, plus the shared dictionary/settings modules it imports.
 WINDOWS_FILES = (
     'scrivo_win.py',
+    'sotto_win.py',
     'win_asr.py',
     'win_capture.py',
     'win_hotkey.py',
@@ -144,6 +146,7 @@ WINDOWS_FILES = (
 )
 
 PUBLIC_FILES = sorted(set(RUNTIME_SOURCE_FILES) | set(PUBLIC_TEST_FILES) | set(WINDOWS_FILES) | {
+    'sotto.py',  # the stand-in for scrivo.py
     'README.md', 'LICENSE', 'AGENTS.md', 'pyproject.toml', 'requirements-alpha.txt', 'constraints-alpha.txt',
     'docs/images/demo.gif', 'docs/images/step1-terminal.png', 'docs/images/step2-switch.png',
     'docs/images/step3-pill.png',
@@ -176,6 +179,11 @@ MAINTAINER_TEST_FILES = (
 )
 MAINTAINER_PREFIXES = ('maintainer/', 'tests/fixtures/calibration_v2_expected/')
 
+# The folder the archive extracts to. An archive from before the rename made
+# sotto-alpha/; the installers recognise that copy beside this one (mac_app.legacy_scripts,
+# install-windows.ps1's Points-Earlier) and take over its app, shortcut and login entry.
+TOP_FOLDER = 'scrivo-alpha/'
+
 # What the archive ships: the public allowlist without the maintainer lane.
 # The sealed boundary is still all of RUNTIME_SOURCE_FILES, maintainer/ included.
 ALPHA_FILES = [name for name in PUBLIC_FILES
@@ -190,7 +198,7 @@ def build(output: Path) -> dict:
             if source.is_symlink() or not source.is_file():
                 raise RuntimeError('Public source file missing or unsafe: ' + name)
             data = source.read_bytes()
-            info = tarfile.TarInfo('sotto-alpha/' + name)
+            info = tarfile.TarInfo(TOP_FOLDER + name)
             info.size = len(data)
             # Keep only the executable bit (rollout.sh); owner/time are normalized.
             info.mode = 0o755 if source.stat().st_mode & 0o100 else 0o644

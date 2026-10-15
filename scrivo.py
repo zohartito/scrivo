@@ -58,7 +58,8 @@ from delivery import (DELIVERY_POLL_S, DELIVERY_WAIT_MAX_S, NOT_IN_HISTORY_EITHE
 from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAUNCHD_EXIT_TIMEOUT_S,  # noqa: F401
                        LAUNCHD_LABEL, QUIT_DRAIN_S, RESTART_DRAIN_DEADLINE_S, RESTART_FAILED_EXIT,
                        RESTART_RELEASE_WAIT_S, SIGTERM_DRAIN_S, SIGTERM_KEEP_RESERVE_S, SIGTERM_RESTORE_WAIT_S,
-                       CaptureGate, Lifecycle, RestartController, ShutdownBoundary, app_mode, commit_if_running,
+                       CaptureGate, Lifecycle, RestartController, ShutdownBoundary, app_executable, app_mode,
+                       commit_if_running,
                        dictation_in_flight, end_capture_now, launchd_owns_this_process, launched_as_sealed_job,
                        UPDATE_DRAIN_DEADLINE_S, main_thread_dispatch, relaunch_app_after_exit,
                        shutdown_signal_handlers, wait_until_idle)
@@ -121,7 +122,7 @@ def glossary_source(explicit: str | None) -> Path | None:
 def scrivo_icon_path() -> Path | None:
     """Scrivo.app's icon, found from the launcher that started this process
     (named after it: Scrivo.icns, or Sotto.icns in an app built before the rename)."""
-    executable = os.environ.get("SCRIVO_APP_EXECUTABLE", "").strip()
+    executable = app_executable()
     icon = (Path(executable).parent.parent / "Resources" / f"{Path(executable).name}.icns"
             if executable else None)
     return icon if icon is not None and icon.is_file() else None
@@ -1636,7 +1637,7 @@ def move_from_legacy_app(*, hand_off=None, retire=None) -> bool:
     Side effects: may open Scrivo.app, rewrite login items, delete the old
     app; logs."""
     import mac_app
-    executable = os.environ.get("SCRIVO_APP_EXECUTABLE", "")
+    executable = app_executable()
     script = Path(__file__).resolve()
     try:
         opened = (hand_off or mac_app.hand_off)(executable, script)

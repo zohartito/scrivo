@@ -2,9 +2,9 @@
 #
 #   irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex
 #
-# Downloads Scrivo with git into %USERPROFILE%\scrivo (or $env:SCRIVO_SOURCE; the
-# folder keeps the name Scrivo had before, Scrivo), or updates that copy (the new
-# packages first, the source only after them), then runs its
+# Downloads Scrivo with git into %USERPROFILE%\scrivo (or $env:SCRIVO_SOURCE; a
+# copy installed before the rename, in %USERPROFILE%\sotto, stays there), or
+# updates that copy (the new packages first, the source only after them), then runs its
 # scripts\install-windows.ps1 and starts Scrivo.
 # No admin rights. Missing tools are named with the command that installs them.
 
@@ -53,25 +53,43 @@ function Fail-Install([string]$Text) {
 
 function Install-Scrivo {
   $ErrorActionPreference = 'Stop'
-  # This project, and its URL from before the rename (Scrivo was called Sotto).
+  # This project, and its URL from before the rename (Scrivo was called
+  # Sotto; SOTTO_* is the old name of each SCRIVO_* variable).
   $scrivoRepo = 'https://github.com/zohartito/scrivo.git'
   $legacyRepo = 'https://github.com/zohartito/sotto.git'
-  $repo = if ($env:SCRIVO_REPO) { $env:SCRIVO_REPO } else { $scrivoRepo }
-  $dest = if ($env:SCRIVO_SOURCE) { $env:SCRIVO_SOURCE } else { Join-Path $env:USERPROFILE 'scrivo' }
+  $repo = if ($env:SCRIVO_REPO) { $env:SCRIVO_REPO } elseif ($env:SOTTO_REPO) { $env:SOTTO_REPO } else { $scrivoRepo }
+  $dest = if ($env:SCRIVO_SOURCE) { $env:SCRIVO_SOURCE } elseif ($env:SOTTO_SOURCE) { $env:SOTTO_SOURCE } else { '' }
   $shortcutDir = [Environment]::GetFolderPath('Programs')
+  # A copy of this project: it follows $repo or, for this project, the URL
+  # from before the rename (GitHub redirects it).
+  function Test-FollowsThis([string]$Origin) {
+    return (Test-SameRepo $Origin $repo) -or ((Test-SameRepo $repo $scrivoRepo) -and (Test-SameRepo $Origin $legacyRepo))
+  }
 
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Fail-Install 'Scrivo needs Git: winget install --id Git.Git -e  (then open a new PowerShell and run this line again)'
     return
+  }
+  if (-not $dest) {
+    $dest = Join-Path $env:USERPROFILE 'scrivo'
+    # A copy installed before the rename is in %USERPROFILE%\sotto, and its
+    # Start Menu entry and login entry run it by that path: update it where it
+    # is, unless %USERPROFILE%\scrivo exists.
+    $legacyDest = Join-Path $env:USERPROFILE 'sotto'
+    if (-not (Test-Path -LiteralPath $dest) -and (Test-Path -LiteralPath (Join-Path $legacyDest '.git'))) {
+      $legacyOrigin = ''
+      try { $legacyOrigin = git -C $legacyDest remote get-url origin 2>$null } catch { $legacyOrigin = '' }
+      if (Test-FollowsThis $legacyOrigin) { $dest = $legacyDest }
+    }
   }
   if (Test-Path -LiteralPath (Join-Path $dest '.git')) {
     $origin = ''
     try { $origin = git -C $dest remote get-url origin 2>$null } catch { $origin = '' }
     $renamed = ''
     if (-not (Test-SameRepo $origin $repo)) {
-      # A copy made before the rename follows the old URL (GitHub redirects
-      # it): the same project, moved to the new URL below.
-      if (-not ((Test-SameRepo $repo $scrivoRepo) -and (Test-SameRepo $origin $legacyRepo))) {
+      # A copy made before the rename follows the old URL: the same project,
+      # moved to the new URL below.
+      if (-not (Test-FollowsThis $origin)) {
         Fail-Install "$dest is a git copy of $origin, not Scrivo. Choose another folder with `$env:SCRIVO_SOURCE."
         return
       }

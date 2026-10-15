@@ -46,7 +46,7 @@ KEYEVENTF_UNICODE = 0x0004
 VK_CONTROL = 0x11
 VK_V = 0x56
 VK_MENU_MASK = 0xE8  # unassigned; cancels Alt's menu activation (win_hotkey)
-INJECTED_TAG = 0x534F54544F  # "SCRIVO" — marks Scrivo's own synthetic keys
+INJECTED_TAG = 0x53435249564F  # "SCRIVO" — marks Scrivo's own synthetic keys
 _CHUNK = 256  # inputs per SendInput call (dictations are far smaller)
 
 RENDER_WAIT_S = 10.0    # an app that has not read the offer by now never pastes it

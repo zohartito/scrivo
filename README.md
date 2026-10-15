@@ -110,7 +110,8 @@ See [Python for macOS](https://www.python.org/downloads/macos/) and
 
 ## Install as an app (recommended)
 
-One line in Terminal downloads Scrivo into `~/scrivo` and installs it:
+One line in Terminal downloads Scrivo into `~/scrivo` (a copy installed before
+the rename is updated where it is, `~/sotto`) and installs it:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
@@ -145,16 +146,26 @@ never your words) is `logs/scrivo.log` in the data folder.
 
 ### Scrivo was called Sotto
 
-If you installed it as Scrivo, nothing moves: the folder stays `~/scrivo`, and your
-History, dictionary, settings and models stay in the same data folder. Choose
-**Check for Updates…** → **Update Now** in Scrivo's menu (or paste the install
-line again). The update builds `Scrivo.app`; Scrivo restarts once, opens Scrivo
+If you installed it as Sotto, nothing moves: the folder stays `~/sotto`, and your
+History, dictionary, settings and models stay in the same data folder (the data
+folders keep the old name, `sotto-alpha`). Choose
+**Check for Updates…** → **Update Now** in Sotto's menu (or paste the install
+line again). The update builds `Scrivo.app`; Sotto restarts once, opens Scrivo
 and quits, and Scrivo then removes the old `Sotto.app` and moves **Start when I
 log in** over. Scrivo is a new app to macOS, so it asks for the Microphone and
-Accessibility again: allow **Scrivo** (the old **Scrivo** entries in System
+Accessibility again: allow **Scrivo** (the old **Sotto** entries in System
 Settings can be removed with −). Copies cloned from `github.com/zohartito/sotto`
 keep updating (GitHub forwards the old address); the install line also points
 them at the new one.
+
+Later, `sotto.py` became `scrivo.py`. A `Scrivo.app` built before that runs the
+old path, so the first update after it builds `Scrivo.app` again; macOS treats
+the rebuilt app as new and asks for the Microphone and Accessibility once more.
+The `SOTTO_*` variables below still work under their old names (`SCRIVO_*` wins
+when both are set), and the log moved from `logs/sotto.log` to `logs/scrivo.log`.
+A source archive now extracts to `scrivo-alpha/`: run its installer and it takes
+over the app, Start Menu entry and login entry of an earlier archive's
+`sotto-alpha/` folder beside it; delete that folder afterwards.
 
 Anything that can change this source folder runs with Scrivo's permissions, as
 with any source install; keep it in a folder only you control.
