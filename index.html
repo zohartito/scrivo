@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scrivo — free, private dictation for your Mac</title>
+  <meta name="description" content="Hold a key, talk, and your words appear wherever you're typing. Scrivo is free, open-source dictation that runs entirely on your Mac, so your voice never leaves it.">
+  <link rel="canonical" href="https://zohartito.github.io/scrivo/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Scrivo">
+  <meta property="og:title" content="Scrivo — free, private dictation for your Mac">
+  <meta property="og:description" content="Hold a key, talk, and your words appear wherever you're typing. Free, open source, and it runs on your Mac.">
+  <meta property="og:url" content="https://zohartito.github.io/scrivo/">
+  <meta property="og:image" content="https://zohartito.github.io/scrivo/images/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Scrivo: hold a key, talk, and your words appear wherever you're typing.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://zohartito.github.io/scrivo/images/og.png">
+  <meta name="theme-color" content="#181614" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23181614'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%23f39a3c'/%3E%3C/svg%3E">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Scrivo",
+    "alternateName": "Sotto",
+    "description": "Free, open-source push-to-talk dictation that runs on your own computer: hold a key, speak, release, and the text lands at your cursor.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "macOS 14 or later (Apple silicon); Windows 10/11 (alpha)",
+    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://zohartito.github.io/scrivo/",
+    "downloadUrl": "https://github.com/zohartito/scrivo",
+    "codeRepository": "https://github.com/zohartito/scrivo",
+    "author": {"@type": "Person", "name": "Zohar Tito", "url": "https://x.com/zohar_tito"}
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #faf7f2;
+      --surface: #ffffff;
+      --text: #1d1a17;
+      --muted: #6b6259;
+      --line: #e8e1d8;
+      --accent: #e0791f;
+      --accent-soft: #fbe9d7;
+      --code-bg: #f2ede6;
+      --radius: 16px;
+      --max: 1040px;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181614;
+        --surface: #221f1c;
+        --text: #f6f1ea;
+        --muted: #b4aa9e;
+        --line: #36312b;
+        --accent: #f39a3c;
+        --accent-soft: #3a2a1b;
+        --code-bg: #2a2622;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 17px/1.6 var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); }
+    img { max-width: 100%; height: auto; display: block; }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+
+    header.top { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; color: var(--text); text-decoration: none; }
+    .brand-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); }
+    .top nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
+    .top nav a:hover { color: var(--text); }
+
+    .hero { text-align: center; padding: 36px 0 24px; }
+    .hero h1 { font-size: clamp(44px, 9vw, 84px); line-height: 1.02; margin: 0 0 18px; letter-spacing: -0.03em; }
+    .hero .lead { font-size: clamp(20px, 3.2vw, 26px); line-height: 1.4; margin: 0 auto 10px; max-width: 30ch; }
+    .hero .sub { color: var(--muted); margin: 0 auto 28px; max-width: 46ch; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 36px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 999px;
+      font-weight: 600; font-size: 16px; text-decoration: none; border: 1px solid var(--line);
+      color: var(--text); background: var(--surface);
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #1d1206; }
+    .btn:hover { filter: brightness(1.05); }
+
+    figure.demo { margin: 0 auto; max-width: 900px; }
+    figure.demo img { border-radius: var(--radius); border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18); width: 100%; }
+    figure.demo figcaption { color: var(--muted); font-size: 14px; margin-top: 12px; text-align: center; }
+
+    section { padding: 56px 0; }
+    section h2 { font-size: clamp(28px, 4.5vw, 38px); letter-spacing: -0.02em; margin: 0 0 8px; text-align: center; }
+    section .intro { color: var(--muted); text-align: center; margin: 0 auto 32px; max-width: 52ch; }
+
+    .features { display: grid; gap: 16px; grid-template-columns: 1fr; }
+    @media (min-width: 760px) { .features { grid-template-columns: repeat(3, 1fr); } }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+    .card h3 { margin: 0 0 6px; font-size: 19px; }
+    .card p { margin: 0; color: var(--muted); font-size: 16px; }
+
+    ol.steps { list-style: none; padding: 0; margin: 0 auto; max-width: 760px; counter-reset: step; }
+    ol.steps > li { counter-increment: step; position: relative; padding: 0 0 36px 60px; }
+    ol.steps > li::before {
+      content: counter(step); position: absolute; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%;
+      display: grid; place-items: center; font-weight: 700; background: var(--accent-soft); color: var(--accent);
+    }
+    @media (max-width: 559px) {
+      ol.steps > li { padding-left: 0; }
+      ol.steps > li::before { position: static; margin-bottom: 10px; }
+    }
+    ol.steps h3 { margin: 4px 0 8px; font-size: 21px; }
+    ol.steps p { margin: 0 0 12px; }
+    ol.steps ul { margin: 0 0 12px; padding-left: 20px; }
+    ol.steps .shot { border-radius: 12px; border: 1px solid var(--line); margin: 6px 0 4px; }
+    kbd { font: 600 14px var(--font); background: var(--code-bg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 7px; }
+    code { font-family: var(--mono); font-size: 0.92em; background: var(--code-bg); padding: 1px 6px; border-radius: 6px; }
+
+    .command { display: flex; align-items: stretch; background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px; margin: 6px 0 14px; overflow: hidden; }
+    .command code { flex: 1; background: none; padding: 14px 16px; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+    .command button {
+      border: 0; border-left: 1px solid var(--line); background: var(--surface); color: var(--text);
+      font: 600 14px var(--font); padding: 0 18px; cursor: pointer; min-width: 84px;
+    }
+    .command button:hover { color: var(--accent); }
+    .note { font-size: 15px; color: var(--muted); }
+
+    .faq { max-width: 760px; margin: 0 auto; }
+    .faq details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+    .faq summary { cursor: pointer; font-weight: 600; font-size: 18px; }
+    .faq details p { color: var(--muted); margin: 10px 0 0; }
+
+    footer { border-top: 1px solid var(--line); padding: 28px 0 44px; color: var(--muted); font-size: 15px; text-align: center; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="./"><span class="brand-dot" aria-hidden="true"></span>Scrivo</a>
+      <nav aria-label="Main">
+        <a href="#install">Install</a>
+        <a href="https://github.com/zohartito/scrivo">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="title">
+        <h1 id="title">Scrivo</h1>
+        <p class="lead">Hold a key, talk, and your words appear wherever you're typing.</p>
+        <p class="sub">Free and open source. It runs on your Mac, so your voice never leaves it.</p>
+        <div class="actions">
+          <a class="btn primary" href="#install">Install in 3 steps</a>
+          <a class="btn" href="https://github.com/zohartito/scrivo">View on GitHub</a>
+        </div>
+        <figure class="demo">
+          <img src="images/demo.gif" width="960" height="621" alt="A Mac with an empty TextEdit page. A small dark pill at the top of the screen fills with words as they are spoken: Everything I say shows up right where my cursor is. Then the sentence appears on the page.">
+          <figcaption>A real recording in real time. This clip uses the optional English engine, which shows your words while you talk; with the standard engine, they appear the moment you let go.</figcaption>
+        </figure>
+      </section>
+
+      <section aria-labelledby="why">
+        <h2 id="why">Talk instead of type</h2>
+        <p class="intro">Emails, notes, messages, documents: anywhere your cursor is, Scrivo can write for you.</p>
+        <div class="features">
+          <article class="card">
+            <h3>Private by design</h3>
+            <p>Speech recognition runs on your own computer. No account, no cloud service, no telemetry. The internet is only used to install it and download the speech model.</p>
+          </article>
+          <article class="card">
+            <h3>Works where you type</h3>
+            <p>Hold the key, say your sentence, let go, and the text lands at your cursor. Tap twice to talk hands-free, tap once more to stop.</p>
+          </article>
+          <article class="card">
+            <h3>Free and open source</h3>
+            <p>MIT licensed and built in the open. Whisper understands about 100 languages; optional engines add speed (Parakeet) or live words in English (Nemotron).</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="install" aria-labelledby="install-title">
+        <h2 id="install-title">Get started in 3 steps</h2>
+        <p class="intro">You need a Mac with Apple silicon (M1 or newer) and macOS 14 or later. On Windows? See <a href="#windows">Windows</a>.</p>
+        <ol class="steps">
+          <li>
+            <h3>Paste one line into Terminal</h3>
+            <p>Open <strong>Terminal</strong>: press <kbd>⌘</kbd> <kbd>Space</kbd>, type <code>Terminal</code>, press <kbd>Return</kbd>. Copy this line, paste it with <kbd>⌘</kbd> <kbd>V</kbd>, and press <kbd>Return</kbd>.</p>
+            <div class="command">
+              <code id="install-line">curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash</code>
+              <button type="button" data-copy="install-line" aria-label="Copy the install line">Copy</button>
+            </div>
+            <img class="shot" src="images/step1-terminal.png" width="960" height="142" alt="A Terminal window with the install line pasted in, ready to press Return." loading="lazy">
+            <p class="note">The first time it downloads the speech model (about 1.6 GB), so give it a few minutes. It is finished when Terminal says <strong>Done</strong>. If it asks for Apple's command line tools or Python 3.12, do what the message says and paste the line again.</p>
+          </li>
+          <li>
+            <h3>Open Scrivo and say yes to two questions</h3>
+            <p>Open <strong>Scrivo</strong> like any app (<kbd>⌘</kbd> <kbd>Space</kbd>, type <code>Scrivo</code>). It asks for:</p>
+            <ul>
+              <li><strong>Accessibility</strong>, so it can hear your key and type for you: click <strong>Open System Settings</strong> and switch Scrivo on. (Newer macOS calls this list <em>Device Control and Data Access</em>.)</li>
+              <li><strong>The microphone</strong>: click <strong>Allow</strong>. Scrivo only listens while you are dictating.</li>
+            </ul>
+            <img class="shot" src="images/step2-switch.png" width="935" height="84" alt="Scrivo switched on in System Settings." loading="lazy">
+          </li>
+          <li>
+            <h3>Hold Right Option ⌥, talk, let go</h3>
+            <p>Click where you want the words. Hold the <strong>Option ⌥</strong> key on the right side of the space bar, say your sentence, and let go. Your words appear at the cursor.</p>
+            <img class="shot" src="images/step3-pill.png" width="800" height="136" alt="The Scrivo pill at the top of the screen: an orange dot and the words being spoken." loading="lazy">
+            <p class="note">While you hold the key, a small pill with an orange dot shows Scrivo is listening. Scrivo lives in the menu bar: recent dictations, Settings (another key, your languages, start at login) and Quit.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="windows" aria-labelledby="windows-title">
+        <h2 id="windows-title">Windows (alpha)</h2>
+        <p class="intro">Scrivo also runs on Windows 10/11 as a tray app: hold right Ctrl to talk. In PowerShell:</p>
+        <div class="command" style="max-width: 760px; margin: 0 auto;">
+          <code id="windows-line">irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex</code>
+          <button type="button" data-copy="windows-line" aria-label="Copy the Windows install line">Copy</button>
+        </div>
+        <p class="intro" style="margin-top: 14px;">It needs Git and 64-bit Python 3.13 and says how to install either. Details are in the <a href="https://github.com/zohartito/scrivo#windows">README</a>.</p>
+      </section>
+
+      <section aria-labelledby="faq">
+        <h2 id="faq">Questions</h2>
+        <div class="faq">
+          <details>
+            <summary>Does my voice go to the internet?</summary>
+            <p>No. Recording and transcription happen on your computer. Installing and the first model download need internet, and Check for Updates contacts GitHub only when you click it.</p>
+          </details>
+          <details>
+            <summary>Is it really free?</summary>
+            <p>Yes. Scrivo is open source under the MIT license; the speech models have their own licenses.</p>
+          </details>
+          <details>
+            <summary>Which languages does it understand?</summary>
+            <p>The standard engine (Whisper) understands about 100 languages and can pick automatically among the ones you choose. The optional Parakeet engine covers 25 European languages; the optional Nemotron engine is English only and shows words while you talk.</p>
+          </details>
+          <details>
+            <summary>It's an alpha. What does that mean?</summary>
+            <p>It installs from source with one script, and it was tested on a small number of Macs. Please report what you find on GitHub.</p>
+          </details>
+          <details>
+            <summary>Wasn't this called Sotto?</summary>
+            <p>Yes. Sotto is now Scrivo (Italian for "I write"): same app, new name. Old links keep working, and existing installs move over with Check for Updates.</p>
+          </details>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      Scrivo is free and open source (MIT) · <a href="https://github.com/zohartito/scrivo">github.com/zohartito/scrivo</a> · made by <a href="https://x.com/zohar_tito">Zohar Tito</a>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll("[data-copy]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const text = document.getElementById(button.dataset.copy).textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = "Copied";
+        } catch (error) {
+          button.textContent = "Select it";
+        }
+        setTimeout(() => { button.textContent = "Copy"; }, 1800);
+      });
+    });
+  </script>
+</body>
+</html>

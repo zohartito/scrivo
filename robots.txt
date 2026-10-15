@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://zohartito.github.io/scrivo/sitemap.xml
