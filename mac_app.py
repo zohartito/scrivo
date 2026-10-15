@@ -3,9 +3,8 @@ earlier versions (macOS).
 
 Scrivo was called Sotto. Copies installed before the rename have a
 ``Sotto.app`` (bundle id ``org.sotto.alpha``) and maybe a login item with that
-label. Its compiled launcher starts this folder's sotto.py (now a stand-in
-that runs scrivo.py), so the first start after an update can still come from
-the old app: then ``hand_off`` opens Scrivo.app instead, and Scrivo.app's own
+label. Its compiled launcher starts this folder's sotto.py. When a start
+comes from the old app, ``hand_off`` opens Scrivo.app instead, and Scrivo.app's own
 start (``retire_legacy``) removes the old app and moves the login item over.
 Only an old app built by this installer for this very folder (or, for a source
 archive, for the earlier archive's folder next to it) is ever touched.
@@ -24,8 +23,8 @@ BUNDLE_ID = "io.github.zohartito.scrivo"
 LEGACY_APP_NAME = "Sotto.app"
 LEGACY_EXECUTABLE = "Sotto"
 LEGACY_BUNDLE_ID = "org.sotto.alpha"
-# Launchers built before the module rename run sotto.py: the stand-in in this
-# folder, or the earlier source archive's own copy in the folder beside it.
+# Launchers built before the module rename run sotto.py: this folder's, or the
+# earlier source archive's own copy in the folder beside it.
 LEGACY_SCRIPT = "sotto.py"
 ARCHIVE_FOLDER = "scrivo-alpha"
 LEGACY_ARCHIVE_FOLDER = "sotto-alpha"

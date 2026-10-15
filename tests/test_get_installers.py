@@ -255,7 +255,7 @@ class MacInstallerTests(unittest.TestCase):
             env, dest, before = self.installed_copy(folder)
             # Scrivo.app runs the resolved path; a terminal run (venv-alpha/bin/python
             # scrivo.py run) one relative to its working directory [PR21 review];
-            # a launcher built before the rename runs sotto.py, the stand-in.
+            # a Scrivo started before the module rename runs sotto.py.
             for arguments, cwd in (([str(dest.resolve() / "scrivo.py")], None), (["scrivo.py", "run"], dest),
                                    ([str(dest.resolve() / "sotto.py")], None), (["sotto.py", "run"], dest)):
                 with self.subTest(arguments=arguments):

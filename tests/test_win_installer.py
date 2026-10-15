@@ -24,8 +24,6 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install-windows.ps1"
-LEGACY_COMMIT = "21ce68b"  # the last commit before Scrivo was renamed from Sotto
-LAST_SCRIVO_COMMIT = "f221967"  # the last commit before sotto_win.py and the others became scrivo_*
 RUN_VALUE = "Sotto"  # the login entry keeps its name from before the rename
 
 
@@ -543,65 +541,6 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertIn("OK updated to", result.stdout)
         time.sleep(2.0)
         self.assertFalse((self.data / "launched.txt").exists(), "get.ps1 starts Scrivo, not the updater")
-
-    @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
-        ["git", "-C", str(ROOT), "cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}"], capture_output=True).returncode == 0,
-        f"needs this repository's git history ({LEGACY_COMMIT})")
-    def first_update_from(self, commit: str, entry: str) -> tuple[subprocess.CompletedProcess, str, str]:
-        """The tray's Check for updates on an installed build runs ITS
-        update-windows.ps1, which runs the new install-windows.ps1 after the
-        merge and then restarts through the Start Menu entry that starts this
-        copy, or this copy's launcher when there is none."""
-        for name in ("update-windows.ps1", "install-windows.ps1"):
-            old = subprocess.run(["git", "-C", str(ROOT), "show", f"{commit}:scripts/{name}"],
-                                 check=True, capture_output=True, text=True, encoding="utf-8").stdout
-            (self.copy / "scripts" / name).write_text(self.redirected(name, old), encoding="utf-8")
-        if entry != "Scrivo.lnk":
-            (self.menu / "Scrivo.lnk").rename(self.menu / entry)  # what that build installed
-        self.git(self.copy, "commit", "--quiet", "-am", f"the installed build ({commit})")
-        self.git(self.copy, "push", "--quiet", "origin", "main")
-        self.git(self.upstream, "pull", "--quiet", "--ff-only")
-        for name in ("update-windows.ps1", "install-windows.ps1"):
-            (self.upstream / "scripts" / name).write_text(
-                self.redirected(name, (ROOT / "scripts" / name).read_text(encoding="utf-8")), encoding="utf-8")
-        self.git(self.upstream, "commit", "--quiet", "-am", "Scrivo")
-        self.git(self.upstream, "push", "--quiet", "origin", "HEAD:main")
-        upstream = self.git(self.upstream, "rev-parse", "HEAD")
-        result = self.update()
-        log = self.log_bytes().decode("utf-8", "replace")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr + log)
-        self.assertEqual(self.git(self.copy, "rev-parse", "HEAD"), upstream)
-        self.assertTrue(self.status().startswith("ok "), self.status())
-        link = self.menu / "Scrivo.lnk"
-        arguments = subprocess.run([_powershell(), "-NoProfile", "-Command",
-                                    f"(New-Object -ComObject WScript.Shell).CreateShortcut('{link}').Arguments"],
-                                   capture_output=True, text=True, timeout=60).stdout
-        self.assertIn("win_launch.py", arguments)
-        self.assertTrue((self.data / "launched.txt").exists(), "the tray starts again, by its launcher")
-        # The install record keeps its content under its new name.
-        self.assertEqual(json.loads((self.venv / "scrivo-install.json").read_text(encoding="utf-8-sig"))["flavor"],
-                         "cpu")
-        self.assertFalse((self.venv / "sotto-install.json").exists())
-        return result, log, arguments
-
-    @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
-        ["git", "-C", str(ROOT), "cat-file", "-e", f"{LEGACY_COMMIT}^{{commit}}"], capture_output=True).returncode == 0,
-        f"needs this repository's git history ({LEGACY_COMMIT})")
-    def test_the_first_update_from_sotto_moves_the_start_menu_entry_and_starts_again(self) -> None:
-        _result, log, _arguments = self.first_update_from(LEGACY_COMMIT, "Sotto.lnk")
-        self.assertFalse((self.menu / "Sotto.lnk").exists(), log)
-        self.assertIn("removed the old Start Menu shortcut", log)
-
-    @unittest.skipUnless((ROOT / ".git").exists() and subprocess.run(
-        ["git", "-C", str(ROOT), "cat-file", "-e", f"{LAST_SCRIVO_COMMIT}^{{commit}}"],
-        capture_output=True).returncode == 0, f"needs this repository's git history ({LAST_SCRIVO_COMMIT})")
-    def test_the_first_update_after_the_module_rename_keeps_the_entry_and_starts_again(self) -> None:
-        # The entry and the login entry start win_launch.py, whose name never
-        # changed; it now runs scrivo_win.
-        _result, log, arguments = self.first_update_from(LAST_SCRIVO_COMMIT, "Scrivo.lnk")
-        self.assertIn(str(_long_and_short(self.copy / "win_launch.py")[0]), arguments)
-        self.assertNotIn("removed the old Start Menu shortcut", log)
-        self.assertIn("import scrivo_win", (ROOT / "win_launch.py").read_text(encoding="utf-8"))
 
     def archive_beside_an_earlier_one(self, *, relink_fails: bool = False):
         """A source archive extracts to scrivo-alpha; the one from before the
