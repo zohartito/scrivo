@@ -189,6 +189,8 @@ class LanguageRestricted:
         self._model = model
         self.allowed = tuple(allowed)
         self.last_language: str | None = None
+        # The decode block: the CT2 result carries no per-segment decode fields.
+        self.last_decode = {"path": "faster-whisper"}
 
     def transcribe(self, samples: Any, *args: Any, **kwargs: Any) -> dict:
         self.last_language = None

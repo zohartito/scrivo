@@ -143,13 +143,18 @@ def apply_voice_cleanup(text: str, preprocessing: dict, language: str | None) ->
 
 
 def move_detected_language(attempt_metadata: dict, preprocessing: dict) -> None:
-    """Automatic's pick lives in the row's preprocessing, not its attempt metadata.
+    """Automatic's pick and the decode block (speech_config.full_decode_summary)
+    live in the row's preprocessing, not its attempt metadata (History keeps
+    only its known attempt keys).
 
-    Side effects: pops "detected_language" from `attempt_metadata`; sets it in
-    `preprocessing` when there was one."""
+    Side effects: pops "detected_language" and "decode" from `attempt_metadata`;
+    sets each in `preprocessing` when there was one."""
     detected = attempt_metadata.pop("detected_language", None)
     if detected:
         preprocessing["detected_language"] = detected
+    decode = attempt_metadata.pop("decode", None)
+    if decode:
+        preprocessing["decode"] = decode
 
 
 @dataclass(frozen=True)

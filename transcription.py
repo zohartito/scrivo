@@ -372,7 +372,7 @@ class TranscriptionWorker:
                 if self.use_nemotron:
                     from nemotron_backend import metadata
                     text = stream_text if stream_text is not None else self.nemotron.transcribe(prepared.asr_samples)
-                    attempt_metadata = metadata()
+                    attempt_metadata = {**metadata(), "decode": {"path": "nemotron"}}
                 else:
                     text, attempt_metadata = transcribe_prepared(
                         self.mlx_whisper, prepared, job_config, self.glossary_terms)

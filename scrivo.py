@@ -42,6 +42,7 @@ from pipeline import (LOOP_MAX_UNIT_WORDS, LOOP_MIN_PREFIX_CHARS, LOOP_MIN_REPEA
                       finalize_primary_live_delivery, looks_hallucinated, reads_as_no_speech,
                       salvage_repetition_loop, screen)
 # The decode options live in speech_config.py (shared with Windows).
+from speech_config import full_decode_summary, one_pass_decode_summary
 from speech_config import transcription_kwargs as _transcription_kwargs
 # The log and its rotation live in scrivo_log.py (it imports nothing from scrivo);
 # these names stay importable from scrivo for existing callers.
@@ -360,6 +361,7 @@ class LocalParakeet:
                                             _complete_parakeet_snapshot)
         self._model = None
         self.last_language = None  # the model does not report one
+        self.last_decode = {"path": "parakeet"}  # no Whisper decode to report
 
     def _load(self):
         if self._model is None:
@@ -408,6 +410,7 @@ class LocalWhisper:
     allowed_languages = None  # callable -> the codes Automatic may choose among
     speed = None              # callable -> "accurate" | "fast" (Settings)
     last_language = None
+    last_decode = None        # the last transcribe's decode block (speech_config.full_decode_summary)
 
     def _features(self, model, samples, *, trim: bool):
         """Encoder features for one window. ``trim`` (Fast) encodes only the
@@ -468,17 +471,24 @@ class LocalWhisper:
         task = DecodingTask(model, DecodingOptions(language=language, without_timestamps=True, temperature=0.0))
         task._get_audio_features = lambda audio_features: audio_features  # already encoded
         result = task.run(features)[0]
+        self.last_decode = decode = one_pass_decode_summary(result)
         if len(result.tokens) >= task.sample_len - 1:
+            decode.update(outcome="handed_off", reason="token_budget")
             return language, None  # budget exhausted: never paste a cut-off prefix
         if result.no_speech_prob > 0.6 and result.avg_logprob <= -1.0:
+            decode["outcome"] = "no_speech"
             return language, {"text": "", "language": language, "segments": []}  # Whisper's skip rule
         if result.compression_ratio > 2.4 or result.avg_logprob < -1.0:
+            decode.update(outcome="handed_off",
+                          reason="compression_ratio" if result.compression_ratio > 2.4 else "avg_logprob")
             return language, None
+        decode["outcome"] = "accepted"
         return language, {"text": result.text, "language": language, "segments": []}
 
     def transcribe(self, samples, **kwargs):
         kwargs["path_or_hf_repo"] = self.path
         self.last_language = None
+        self.last_decode = None
         explicit = kwargs.get("language")
         allowed = () if explicit else tuple(self.allowed_languages() if self.allowed_languages else ())
         language = explicit or (allowed[0] if len(allowed) == 1 else None)
@@ -497,7 +507,13 @@ class LocalWhisper:
                 self.last_language = language
         elif allowed:
             kwargs["language"] = self.last_language = self.detect_language(samples, allowed)
-        return self.backend.transcribe(samples, **kwargs)
+        result = self.backend.transcribe(samples, **kwargs)
+        full = full_decode_summary(result)
+        if self.last_decode is None:
+            self.last_decode = full
+        else:
+            self.last_decode["full"] = full  # one_pass handed the clip to the full pipeline
+        return result
 
 
 def model_rewarm_due(last_finished: float, now: float, *, rewarming: bool,
@@ -924,7 +940,7 @@ def transcribe_canonical_samples(mlx_whisper, samples: np.ndarray, speech_config
         from nemotron_backend import metadata
         if nemotron is None:
             raise RuntimeError("Nemotron runtime is required")
-        return nemotron.transcribe(samples), metadata()
+        return nemotron.transcribe(samples), {**metadata(), "decode": {"path": "nemotron"}}
     kwargs, metadata = _transcription_kwargs(speech_config, glossary_terms, duration)
     result = mlx_whisper.transcribe(samples, **kwargs)
     if not isinstance(result, dict) or not isinstance(result.get("text"), str):
@@ -932,6 +948,9 @@ def transcribe_canonical_samples(mlx_whisper, samples: np.ndarray, speech_config
     chosen = getattr(mlx_whisper, "last_language", None)
     if speech_config.language is None and isinstance(chosen, str):
         metadata["detected_language"] = chosen  # Automatic's pick among the allowed set
+    decode = getattr(mlx_whisper, "last_decode", None)
+    if isinstance(decode, dict):
+        metadata["decode"] = dict(decode)  # which decode step produced the text
     return result["text"].strip(), metadata
 
 
