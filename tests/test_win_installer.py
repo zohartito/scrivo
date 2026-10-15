@@ -603,10 +603,11 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertNotIn("removed the old Start Menu shortcut", log)
         self.assertIn("import scrivo_win", (ROOT / "win_launch.py").read_text(encoding="utf-8"))
 
-    def test_an_archive_beside_an_earlier_one_takes_over_its_entries(self) -> None:
-        # A source archive extracts to scrivo-alpha; the one from before the
-        # rename extracted to sotto-alpha next to it, and its "Sotto" entry and
-        # login entry start that copy. Installing the new one moves both here.
+    def archive_beside_an_earlier_one(self, *, relink_fails: bool = False):
+        """A source archive extracts to scrivo-alpha; the one from before the
+        rename extracted to sotto-alpha next to it, and its "Sotto" entry and
+        login entry start that copy. Installs the new one; returns the result,
+        the archive folder, the earlier one and the login key."""
         base = Path(self._tmp.name)
         archive, earlier = base / "scrivo-alpha", base / "sotto-alpha"
         (archive / "scripts").mkdir(parents=True)
@@ -618,7 +619,18 @@ class UpdateScriptTest(unittest.TestCase):
         for name, text in self.REQUIREMENTS.items():
             (archive / name).write_text(text, encoding="utf-8")
         (archive / "win_launch.py").write_text(self.LAUNCHER, encoding="utf-8")
-        shutil.copy(ROOT / "win_startup.py", archive / "win_startup.py")
+        # win_startup's own command is tested in test_win_startup; this stand-in
+        # skips its 260-character check (these temp paths are longer than that).
+        (archive / "win_startup.py").write_text(
+            "import winreg\n"
+            "from pathlib import Path\n"
+            "def launch_command(data_dir, hf_home):\n"
+            "    return f'pythonw \"{Path(__file__).with_name(\"win_launch.py\")}\" --data-dir {data_dir} "
+            "--hf-home {hf_home}'\n"
+            "def set_enabled(on, command, *, key):\n"
+            + ("    raise ValueError('the install path is too long for a login entry')\n" if relink_fails else
+               "    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_SET_VALUE) as handle:\n"
+               "        winreg.SetValueEx(handle, 'Sotto', 0, winreg.REG_SZ, command)\n"), encoding="utf-8")
         (self.menu / "Scrivo.lnk").unlink()  # the earlier archive made only "Sotto"
         theirs = f'"{earlier / "win_launch.py"}" --data-dir "{self.data}"'
         subprocess.run([_powershell(), "-NoProfile", "-Command",
@@ -634,36 +646,46 @@ class UpdateScriptTest(unittest.TestCase):
                         f"New-ItemProperty -Path '{run_key}' -Name {RUN_VALUE} "
                         f"-Value 'pythonw.exe \"{earlier / 'win_launch.py'}\" --data-dir \"{self.data}\"' | Out-Null"],
                        check=True, capture_output=True, timeout=60)
-        venv = base / "archive-venv"
         result = subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                                  "-File", str(script), "-SkipSetup", "-Cpu", "-Python", sys.executable,
-                                 "-VenvDir", str(venv), "-DataDir", str(self.data), "-RunKey", run_key],
+                                 "-VenvDir", str(base / "archive-venv"), "-DataDir", str(self.data),
+                                 "-RunKey", run_key],
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
                                 env=dict(os.environ, PIP_NO_INDEX="1", PIP_DISABLE_PIP_VERSION_CHECK="1"))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse((self.menu / "Sotto.lnk").exists(), result.stdout)
-        link = self.menu / "Scrivo.lnk"
+        self.assertFalse((self.menu / "Sotto.lnk").exists(), result.stdout + result.stderr)
         arguments = subprocess.run([_powershell(), "-NoProfile", "-Command",
-                                    f"(New-Object -ComObject WScript.Shell).CreateShortcut('{link}').Arguments"],
+                                    f"(New-Object -ComObject WScript.Shell).CreateShortcut("
+                                    f"'{self.menu / 'Scrivo.lnk'}').Arguments"],
                                    capture_output=True, text=True, timeout=60).stdout
         self.assertIn(str(archive / "win_launch.py"), arguments)
-        command = subprocess.run([_powershell(), "-NoProfile", "-Command",
-                                  f"(Get-ItemProperty -Path '{run_key}').{RUN_VALUE}"],
-                                 capture_output=True, text=True, timeout=60).stdout.strip()
-        self.assertIn(str(archive / "win_launch.py"), command, result.stdout)
+        return result, archive, earlier, run_key
+
+    def login_command(self, run_key: str) -> str:
+        return subprocess.run([_powershell(), "-NoProfile", "-Command",
+                               f"(Get-ItemProperty -Path '{run_key}' -ErrorAction SilentlyContinue).{RUN_VALUE}"],
+                              capture_output=True, text=True, timeout=60).stdout.strip()
+
+    def test_an_archive_beside_an_earlier_one_takes_over_its_entries(self) -> None:
+        result, archive, earlier, run_key = self.archive_beside_an_earlier_one()
+        command = self.login_command(run_key)
+        self.assertIn(str(archive / "win_launch.py"), command, result.stdout + result.stderr)
+        self.assertIn(f"--data-dir {self.data} --hf-home {self.data / 'huggingface'}", command)
         self.assertNotIn(str(earlier), command)
         self.assertIn("launch at login now starts this copy", result.stdout)
-        self.assertTrue((venv / "scrivo-install.json").is_file())
+        self.assertTrue((Path(self._tmp.name) / "archive-venv" / "scrivo-install.json").is_file())
         # Not from an archive folder: another folder's entries stay its own.
+        base = Path(self._tmp.name)
         elsewhere = base / "elsewhere"
         (elsewhere / "scripts").mkdir(parents=True)
-        shutil.copy(script, elsewhere / "scripts" / "install-windows.ps1")
+        shutil.copy(archive / "scripts" / "install-windows.ps1", elsewhere / "scripts" / "install-windows.ps1")
         (elsewhere / "win_launch.py").write_text("", encoding="utf-8")
+        theirs = f'"{earlier / "win_launch.py"}" --data-dir "{self.data}"'
         subprocess.run([_powershell(), "-NoProfile", "-Command",
                         f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{self.menu / 'Sotto.lnk'}'); "
                         f"$s.TargetPath = '{sys.executable}'; $s.Arguments = '{theirs}'; $s.Save()"],
                        check=True, capture_output=True, timeout=60)
-        link.unlink()
+        (self.menu / "Scrivo.lnk").unlink()
         planned = subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                                   "-File", str(elsewhere / "scripts" / "install-windows.ps1"), "-WhatIf", "-Cpu",
                                   "-Python", sys.executable, "-VenvDir", str(base / "elsewhere-venv"),
@@ -672,6 +694,13 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
         self.assertNotIn('Remove the Start Menu shortcut "Sotto"', planned.stdout)
         self.assertNotIn("instead of the earlier one", planned.stdout)
+
+    def test_an_earlier_archives_login_entry_that_cannot_move_is_turned_off(self) -> None:
+        # Left as it was, it would start the earlier copy at sign-in, and that
+        # copy's single-instance lock would keep this one out.
+        result, _archive, _earlier, run_key = self.archive_beside_an_earlier_one(relink_fails=True)
+        self.assertEqual(self.login_command(run_key), "", result.stdout)
+        self.assertIn("so it is off; turn it on in Settings", result.stdout)
 
 if __name__ == "__main__":
     unittest.main()

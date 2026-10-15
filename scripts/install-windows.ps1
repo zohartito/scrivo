@@ -384,7 +384,11 @@ if ($run -and (Points-Earlier $run.$RunValue) -and $RunKey -match '^HKCU:\\(.+)$
     "win_startup.set_enabled(True, win_startup.launch_command(Path(sys.argv[2]), Path(sys.argv[3])), key=sys.argv[4])"
   Native { & $VenvPython -c $relink $Root $DataDir (Join-Path $DataDir 'huggingface') $subkey }
   if ($LASTEXITCODE -eq 0) { Say 'OK launch at login now starts this copy' }
-  else { Say '! Could not move launch at login to this copy; turn it off and on in Settings.' }
+  else {
+    # Never leave it starting the earlier copy (whose single-instance lock would then keep this one out).
+    Remove-ItemProperty -Path $RunKey -Name $RunValue
+    Say '! Launch at login started the earlier copy and could not be moved here (see above), so it is off; turn it on in Settings.'
+  }
 }
 
 Write-Manifest $createdVenv $createdData $flavor $BasePython

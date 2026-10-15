@@ -36,12 +36,13 @@ class WindowsPathTests(unittest.TestCase):
             roaming = Path(temporary) / "Roaming"
             data, cache = _paths({"SCRIVO_DATA_DIR": "  ", "SCRIVO_HF_HOME": "",
                                   "APPDATA": str(roaming)}, cwd=temporary)
-            self.assertEqual(data, str(roaming / "scrivo"))
-            self.assertEqual(cache, str(roaming / "scrivo" / "huggingface"))
+            # The folder keeps Scrivo's former name: existing History and models stay put.
+            self.assertEqual(data, str(roaming / "sotto"))
+            self.assertEqual(cache, str(roaming / "sotto" / "huggingface"))
 
     def test_missing_or_blank_appdata_falls_back_to_the_profile_never_cwd(self):
         with tempfile.TemporaryDirectory() as temporary:
-            expected = Path.home() / "AppData" / "Roaming" / "scrivo"
+            expected = Path.home() / "AppData" / "Roaming" / "sotto"
             for appdata in (None, " "):
                 data, cache = _paths({"SCRIVO_DATA_DIR": None, "SCRIVO_HF_HOME": None,
                                       "APPDATA": appdata}, cwd=temporary)

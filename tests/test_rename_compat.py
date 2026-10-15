@@ -137,7 +137,10 @@ class StandInTests(unittest.TestCase):
 
     def test_sotto_win_py_runs_scrivo_win_py_as_main_in_this_process(self):
         folder = Folder(self)
-        process = subprocess.Popen([sys.executable, str(folder.path / "sotto_win.py"), "--tray"],
+        # A venv's python.exe on Windows is a redirector that starts the real
+        # interpreter as its child; the recorder needs only the standard library.
+        python = getattr(sys, "_base_executable", sys.executable) if sys.platform == "win32" else sys.executable
+        process = subprocess.Popen([python, str(folder.path / "sotto_win.py"), "--tray"],
                                    env=clean_environment(RECORD=str(folder.record), EXIT_CODE="3"))
         self.assertEqual(process.wait(timeout=60), 3)
         record = folder.recorded()
