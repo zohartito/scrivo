@@ -101,13 +101,13 @@ class RestartTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Scrivo.app relaunch helper is macOS-only')
     def test_relaunch_helper_waits_for_the_launcher_then_opens_unless_the_login_item_starts(self):
-        for kickstart, expected in (('false', 'opened /B/Sotto.app'), ('true', '')):
+        for kickstart, expected in (('false', 'opened /B/Scrivo.app'), ('true', '')):
             script = (scrivo.APP_RELAUNCH_SCRIPT.replace('/bin/launchctl kickstart', kickstart)
                       .replace('/usr/bin/open -n', 'echo opened'))
             launcher = subprocess.Popen(['/bin/sleep', '0.5'])
             threading.Thread(target=launcher.wait, daemon=True).start()  # reap it, as launchd would
             started = time.monotonic()
-            result = subprocess.run(['/bin/sh', '-c', script, 'x', str(launcher.pid), 'label', '/B/Sotto.app'],
+            result = subprocess.run(['/bin/sh', '-c', script, 'x', str(launcher.pid), 'label', '/B/Scrivo.app'],
                                     capture_output=True, text=True, timeout=10)
             self.assertGreaterEqual(time.monotonic() - started, 0.4)
             self.assertEqual(result.stdout.strip(), expected)
@@ -413,7 +413,7 @@ class QuitDrainTests(unittest.TestCase):
         # The gate is closed while it waits, so a wedged native call (or a paste
         # count that never drops) must not refuse recordings forever. Update Now
         # passes this deadline to its drain (tests/test_app_controller.py
-        # ApplyUpdateTests); [N28] only Sotto.app offers or runs Update Now
+        # ApplyUpdateTests); [N28] only Scrivo.app offers or runs Update Now
         # (CheckUpdatesTests, ApplyUpdateTests.test_a_terminal_run_never_updates_itself).
         self.assertGreater(scrivo.UPDATE_DRAIN_DEADLINE_S, scrivo.HANDS_FREE_MAX_S)  # outlasts any recording
 

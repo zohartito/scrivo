@@ -108,7 +108,7 @@ class OverlayPlacementTests(unittest.TestCase):
 
 
 class AlertIconTests(unittest.TestCase):
-    """Sotto.app runs Python as a child, and AppKit loads Python's bundle icon
+    """Scrivo.app runs Python as a child, and AppKit loads Python's bundle icon
     when the app finishes launching, so dialogs showed Python's rocket even
     after use_app_icon. Every dialog carries Scrivo's icon itself."""
 

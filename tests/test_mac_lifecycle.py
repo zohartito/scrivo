@@ -557,7 +557,7 @@ class TeardownTests(unittest.TestCase):
 
 
 class RelaunchTests(unittest.TestCase):
-    """N44/N27: Sotto.app's relaunch helper that cannot start reaches the
+    """N44/N27: Scrivo.app's relaunch helper that cannot start reaches the
     teardown as an exception (which exits RESTART_FAILED_EXIT), never as a
     silent success that would end in exit 0."""
 
@@ -565,7 +565,7 @@ class RelaunchTests(unittest.TestCase):
         with patch.object(lifecycle, "launchd_owns_this_process", return_value=False), \
              patch.object(lifecycle, "launched_as_sealed_job", return_value=False):
             restart = scrivo.RestartController(scrivo.ShutdownBoundary())
-        env = {"SCRIVO_LAUNCHER": "app", "SCRIVO_APP_EXECUTABLE": "/Applications/Sotto.app/Contents/MacOS/Sotto"}
+        env = {"SCRIVO_LAUNCHER": "app", "SCRIVO_APP_EXECUTABLE": "/Applications/Scrivo.app/Contents/MacOS/Scrivo"}
         with patch.dict(os.environ, env), patch("os.execv") as execute, \
              patch("subprocess.Popen", side_effect=OSError(35, "Resource temporarily unavailable")):
             self.assertTrue(restart.request())
