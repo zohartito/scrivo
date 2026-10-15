@@ -18,12 +18,13 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
+import re
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pipeline import NO_SPEECH_TEXT, looks_hallucinated, reads_as_no_speech  # noqa: E402
+from pipeline import looks_hallucinated, reads_as_no_speech  # noqa: E402
 
 # Scrivo.app's data folder (its sotto-alpha name was kept on purpose).
 DEFAULT_DATA_DIR = Path.home() / "Library/Application Support/sotto-alpha"
@@ -31,6 +32,10 @@ WHISPER_PATHS = ("full", "one_pass")
 OTHER_ENGINE_PROFILES = ("nemotron-en", "parakeet")
 TEMPERATURE_BUCKETS = ("0.0", "0.2-0.4", "0.6+", "n/a")
 COMPRESSION_BUCKETS = ("<= 2.4", "2.4-3.0", "> 3.0", "n/a")
+# Scrivo's own placeholder rows ("[no speech detected]", "[dead microphone]",
+# "[transcription failed]", "[not transcribed: Scrivo stopped]"): no transcript.
+MARKER_TEXT = re.compile(r"\[[^\[\]]*\]")
+ERROR_KEYS = ("error", "transcription_error")  # Mac, Windows
 
 
 def read_rows(index: Path) -> tuple[list[dict], int]:
@@ -66,17 +71,28 @@ def _number(value) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
-def loop_kind(attempt: dict) -> str | None:
+def screened_seconds(row: dict, attempt: dict) -> float | None:
+    """The clip length pipeline.screen judged: the canonical audio's exact
+    sample count (History rounds ``duration`` to 0.01 s), else ``duration``."""
+    audio = row.get("audio") if isinstance(row.get("audio"), dict) else {}
+    inference = audio.get("inference") if isinstance(audio.get("inference"), dict) else {}
+    count, rate = _number(inference.get("sample_count")), _number(inference.get("sample_rate"))
+    if count is not None and rate:
+        return count / rate
+    return _number(attempt.get("duration"))
+
+
+def loop_kind(attempt: dict, seconds: float | None) -> str | None:
     """"salvaged", "flagged" or None, by pipeline.screen's own rules."""
     preprocessing = attempt.get("preprocessing")
     if not isinstance(preprocessing, dict):
         return None
     if "repetition_trimmed" in preprocessing:
         return "salvaged"
-    if preprocessing.get("outcome") != "suspect" or "error" in preprocessing:
-        return None  # delivered, or a capture that was never transcribed
-    text, seconds = attempt.get("text"), _number(attempt.get("duration"))
-    if not isinstance(text, str) or seconds is None or text == NO_SPEECH_TEXT:
+    if preprocessing.get("outcome") != "suspect" or any(key in preprocessing for key in ERROR_KEYS):
+        return None  # delivered, or a capture whose model never produced text
+    text = attempt.get("text")
+    if not isinstance(text, str) or seconds is None or MARKER_TEXT.fullmatch(text):
         return None
     vad = attempt.get("vad") if isinstance(attempt.get("vad"), dict) else {}
     fraction = _number(vad.get("speech_fraction"))
@@ -146,7 +162,7 @@ def summarize(rows: list[dict], since: float) -> Counter:
             path, temperature, _ratio, _no_speech = decode_route(decode)
             counts["whisper path", path] += 1
             counts["whisper temperature", temperature_bucket(temperature)] += 1
-        kind = loop_kind(attempt)
+        kind = loop_kind(attempt, screened_seconds(row, attempt))
         if kind is None:
             continue
         counts["loops", "all"] += 1

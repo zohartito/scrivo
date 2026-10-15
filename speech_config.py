@@ -384,26 +384,33 @@ def full_decode_summary(result) -> dict:
     """The decode block for mlx_whisper.transcribe's ``result``. Each segment
     carries the temperature, compression ratio and log-probabilities of the
     window decode that produced it (DecodingResult's are NaN until set)."""
-    segments = result.get("segments") if isinstance(result, dict) else None
-    segments = [segment for segment in segments if isinstance(segment, dict)] if isinstance(segments, list) else []
+    try:
+        segments = result.get("segments") if isinstance(result, dict) else None
+        segments = ([segment for segment in segments if isinstance(segment, dict)]
+                    if isinstance(segments, list) else [])
 
-    def values(key: str) -> list[float]:
-        return [number for number in (_decode_number(segment.get(key)) for segment in segments)
-                if number is not None]
+        def values(key: str) -> list[float]:
+            return [number for number in (_decode_number(segment.get(key)) for segment in segments)
+                    if number is not None]
 
-    temperatures = values("temperature")
-    return {"path": "full", "segments": len(segments),
-            "temperatures": temperatures[:DECODE_TEMPERATURES_KEPT],
-            "max_temperature": max(temperatures, default=None),
-            "max_compression_ratio": max(values("compression_ratio"), default=None),
-            "min_avg_logprob": min(values("avg_logprob"), default=None),
-            "max_no_speech_prob": max(values("no_speech_prob"), default=None),
-            "fallback_used": any(temperature > 0 for temperature in temperatures)}
+        temperatures = values("temperature")
+        return {"path": "full", "segments": len(segments),
+                "temperatures": temperatures[:DECODE_TEMPERATURES_KEPT],
+                "max_temperature": max(temperatures, default=None),
+                "max_compression_ratio": max(values("compression_ratio"), default=None),
+                "min_avg_logprob": min(values("avg_logprob"), default=None),
+                "max_no_speech_prob": max(values("no_speech_prob"), default=None),
+                "fallback_used": any(temperature > 0 for temperature in temperatures)}
+    except Exception:  # telemetry must never cost a dictation
+        return {"path": "full", "unreadable": True}
 
 
 def one_pass_decode_summary(result) -> dict:
     """The decode block for LocalWhisper.one_pass's single greedy
     DecodingResult; one_pass adds its ``outcome``."""
-    return {"path": "one_pass", "temperature": 0.0,
-            **{key: _decode_number(getattr(result, key, None))
-               for key in ("compression_ratio", "avg_logprob", "no_speech_prob")}}
+    try:
+        fields = {key: _decode_number(getattr(result, key, None))
+                  for key in ("compression_ratio", "avg_logprob", "no_speech_prob")}
+    except Exception:  # telemetry must never cost a dictation
+        fields = {"unreadable": True}
+    return {"path": "one_pass", "temperature": 0.0, **fields}

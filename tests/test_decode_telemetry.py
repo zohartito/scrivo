@@ -56,15 +56,38 @@ class FakeBackend:
         return self.result
 
 
-def fake_decoding(decoded):
+def fake_decoding(decoded, options_seen=None):
     """mlx_whisper.decoding with a DecodingTask whose run() returns ``decoded``
-    (never imports the real mlx_whisper into the test process)."""
+    (never imports the real mlx_whisper into the test process). Each
+    DecodingOptions one_pass builds is appended to ``options_seen``."""
     task = Mock(sample_len=224)
     task.run.return_value = [decoded]
-    module = types.SimpleNamespace(DecodingOptions=lambda **options: options,
-                                   DecodingTask=lambda *_a, **_k: task)
+
+    def options(**given):
+        if options_seen is not None:
+            options_seen.append(given)
+        return given
+
+    module = types.SimpleNamespace(DecodingOptions=options, DecodingTask=lambda *_a, **_k: task)
     return patch.dict(sys.modules, {"mlx_whisper": types.SimpleNamespace(decoding=module),
                                     "mlx_whisper.decoding": module})
+
+
+class BadSegment(dict):
+    """A segment whose accessor itself fails."""
+
+    def get(self, *_args):
+        raise ValueError("bad metric")
+
+
+class BadResult:
+    """A one_pass DecodingResult that ran out of tokens and whose metrics fail."""
+    tokens = [1] * 224
+    text = " cut off"
+
+    @property
+    def compression_ratio(self):
+        raise ValueError("bad metric")
 
 
 def greedy(text, *, compression_ratio, avg_logprob=-0.2, no_speech_prob=0.01, tokens=20):
@@ -140,19 +163,23 @@ class DecodeTelemetryTest(unittest.TestCase):
         self.assertEqual(len(metadata["decode"]["temperatures"]), 32)
 
     # (d) one_pass: accepted, and handed to the full pipeline
-    def automatic(self, decoded, full_result):
+    def automatic(self, decoded, full_result, options_seen=None):
         local = self.whisper(full_result)
         local.allowed_languages = lambda: ("en", "pt")
         with patch.object(scrivo.LocalWhisper, "_model", return_value=Mock()), \
              patch.object(scrivo.LocalWhisper, "_features", return_value=Mock()), \
              patch.object(scrivo.LocalWhisper, "_language_probabilities", return_value={"en": 0.9, "pt": 0.1}), \
-             fake_decoding(decoded):
+             fake_decoding(decoded, options_seen):
             text, metadata = self.transcribe(local, language="auto")
         return local, text, metadata
 
     def test_one_pass_accepted(self):
-        local, text, metadata = self.automatic(greedy(" Hello.", compression_ratio=1.1), {"text": "unused"})
+        options_seen = []
+        local, text, metadata = self.automatic(greedy(" Hello.", compression_ratio=1.1), {"text": "unused"},
+                                               options_seen)
         self.assertEqual(text, "Hello.")
+        self.assertEqual(options_seen, [{"language": "en", "without_timestamps": True, "temperature": 0.0}],
+                         "one_pass stays one greedy decode")
         self.assertEqual(local.backend.calls, [], "an accepted one_pass never runs the full pipeline")
         self.assertEqual(metadata["decode"], {
             "path": "one_pass", "temperature": 0.0, "compression_ratio": 1.1, "avg_logprob": -0.2,
@@ -185,6 +212,17 @@ class DecodeTelemetryTest(unittest.TestCase):
                 self.assertEqual(metadata["decode"]["outcome"], outcome)
                 self.assertEqual(metadata["decode"].get("reason"), reason)
 
+    def test_a_block_never_leaks_into_the_next_transcription(self):
+        full = {"text": " Again.", "segments": [segment(0.0, 1.2)]}
+        local, _text, first = self.automatic(greedy(" hello" * 30, compression_ratio=3.1), full)
+        _text, second = self.transcribe(local)  # a fixed language goes straight to the full pipeline
+        self.assertEqual(first["decode"]["outcome"], "handed_off")
+        self.assertEqual(set(second["decode"]) & {"outcome", "full"}, set())
+        local.backend.transcribe = Mock(side_effect=RuntimeError("Metal"))
+        with self.assertRaises(RuntimeError):
+            self.transcribe(local)
+        self.assertIsNone(local.last_decode, "a decode that raised leaves no block behind")
+
     # A malformed result never costs the dictation.
     def test_malformed_results_still_deliver_the_text(self):
         for segments in ("garbage", None, [None, "seg", {"temperature": float("nan"), "compression_ratio": "x",
@@ -196,6 +234,23 @@ class DecodeTelemetryTest(unittest.TestCase):
                 self.assertIsNone(metadata["decode"]["max_temperature"])
                 self.assertFalse(metadata["decode"]["fallback_used"])
                 self.assert_json_safe(metadata)
+
+    def test_failing_accessors_and_numpy_scalars(self):
+        text, metadata = self.transcribe(self.whisper({"text": " still here", "segments": [BadSegment()]}))
+        self.assertEqual((text, metadata["decode"]), ("still here", {"path": "full", "unreadable": True}))
+        numpy_segment = {"temperature": np.float32(0.2), "compression_ratio": np.float64(2.5),
+                         "avg_logprob": np.float32(-0.5), "no_speech_prob": np.float64("nan")}
+        _text, metadata = self.transcribe(self.whisper({"text": " ok", "segments": [numpy_segment]}))
+        self.assertEqual((metadata["decode"]["temperatures"], metadata["decode"]["max_compression_ratio"],
+                          metadata["decode"]["max_no_speech_prob"]), ([0.2], 2.5, None))
+        self.assertIs(type(metadata["decode"]["temperatures"][0]), float)
+        self.assert_json_safe(metadata)
+        # one_pass: a budget-exhausted decode is still handed on, metrics or not
+        local, text, metadata = self.automatic(BadResult(), {"text": " full text", "segments": []})
+        self.assertEqual(text, "full text")
+        self.assertEqual(len(local.backend.calls), 1)
+        self.assertEqual({key: metadata["decode"][key] for key in ("unreadable", "outcome", "reason")},
+                         {"unreadable": True, "outcome": "handed_off", "reason": "token_budget"})
 
     def test_decode_options_are_unchanged(self):
         local = self.whisper({"text": " ok", "segments": []})
@@ -260,8 +315,9 @@ class DecodeLoopReportTest(unittest.TestCase):
         voiced = {"available": True, "speech_fraction": 0.8, "span_count": 1}
         base = {"resampled_normalized": True, "vad_trimmed": False, "silence_collapsed": False}
 
-        def add(text, seconds, profile="auto", provenance="live", days_ago=0.0, vad=voiced, **preprocessing):
-            store.append(text, np.zeros(1600, np.float32), seconds, "model", ts=now - days_ago * 86_400,
+        def add(text, seconds, profile="auto", provenance="live", days_ago=0.0, vad=voiced, samples=1600,
+                **preprocessing):
+            store.append(text, np.zeros(samples, np.float32), seconds, "model", ts=now - days_ago * 86_400,
                          profile=profile, language="en", vad=vad, provenance=provenance,
                          preprocessing={**base, **preprocessing})
 
@@ -282,6 +338,13 @@ class DecodeLoopReportTest(unittest.TestCase):
         add("[transcription failed]", 0.4, provenance="live_suspect", outcome="suspect", error="RuntimeError")
         add("you", 0.2, provenance="live_suspect", outcome="suspect",
             vad={"available": True, "speech_fraction": 0.0, "span_count": 0})
+        # Windows keeps a failed capture under "transcription_error", not "error".
+        add("[transcription failed]", 0.4, provenance="live_suspect", outcome="suspect",
+            transcription_error="RuntimeError")
+        add("[dead microphone]", 0.3, provenance="live_suspect", outcome="suspect")
+        # 120 chars over 47,984 samples (2.999 s) is held (> 40 chars/s);
+        # History's rounded duration (3.0 s) alone would read exactly 40.
+        add("word " * 24, 47_984 / 16_000, samples=47_984, provenance="live_suspect", outcome="suspect")
         add("A month ago.", 2.0, days_ago=30, decode=full_block([0.0], 1.0))
         with (self.data / "history.jsonl").open("a", encoding="utf-8") as handle:
             handle.write('{"id": "half-writ\n')
@@ -297,16 +360,29 @@ class DecodeLoopReportTest(unittest.TestCase):
         rows, unreadable = report.read_rows(self.data / "history.jsonl")
         self.assertEqual(unreadable, 1)
         counts = report.summarize(rows, time.time() - 7 * 86_400)
-        self.assertEqual(counts["dictations", "all"], 10)
+        self.assertEqual(counts["dictations", "all"], 13)
         self.assertEqual((counts["dictations", "whisper"], counts["dictations", "no telemetry"],
-                          counts["dictations", "other engine"]), (4, 4, 2))
-        self.assertEqual((counts["loops", "all"], counts["loops", "salvaged"], counts["loops", "flagged"]), (3, 2, 1))
-        self.assertEqual((counts["loops", "whisper"], counts["loops", "no telemetry"]), (2, 1))
+                          counts["dictations", "other engine"]), (4, 7, 2))
+        self.assertEqual((counts["loops", "all"], counts["loops", "salvaged"], counts["loops", "flagged"]), (4, 2, 2))
+        self.assertEqual((counts["loops", "whisper"], counts["loops", "no telemetry"]), (2, 2))
         self.assertEqual(counts["loop path", "full"], 1)
         self.assertEqual(counts["loop path", "one_pass -> full"], 1)
         self.assertEqual((counts["loop temperature", "0.0"], counts["loop temperature", "0.6+"]), (1, 1))
         self.assertEqual((counts["loop compression", "> 3.0"], counts["loop compression", "2.4-3.0"]), (1, 1))
         self.assertEqual(counts["loop", "no-speech prob > 0.6"], 1)
+
+    def test_classifies_from_exact_length_and_skips_placeholders(self):
+        rows, _ = report.read_rows(self.data / "history.jsonl")
+        boundary = next(row for row in rows if row.get("text") == "word " * 24)
+        attempt = report.live_attempt(boundary)
+        self.assertEqual(attempt["duration"], 3.0)
+        self.assertIsNone(report.loop_kind(attempt, attempt["duration"]), "the rounded length alone misses it")
+        self.assertEqual(report.loop_kind(attempt, report.screened_seconds(boundary, attempt)), "flagged")
+        for row in rows:
+            if str(row.get("text", "")).startswith("["):
+                with self.subTest(text=row["text"], preprocessing=sorted(row["preprocessing"])):
+                    attempt = report.live_attempt(row)
+                    self.assertIsNone(report.loop_kind(attempt, report.screened_seconds(row, attempt)))
 
     def test_prints_counts_only_and_changes_nothing(self):
         code, output = self.run_report()
