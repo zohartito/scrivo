@@ -394,8 +394,13 @@ def full_decode_summary(result) -> dict:
                     if number is not None]
 
         temperatures = values("temperature")
+        # Index-aligned with temperatures: the same segments' compression
+        # ratios, None where a segment's ratio is not a finite number.
+        compression_ratios = [_decode_number(segment.get("compression_ratio")) for segment in segments
+                              if _decode_number(segment.get("temperature")) is not None]
         return {"path": "full", "segments": len(segments),
                 "temperatures": temperatures[:DECODE_TEMPERATURES_KEPT],
+                "compression_ratios": compression_ratios[:DECODE_TEMPERATURES_KEPT],
                 "max_temperature": max(temperatures, default=None),
                 "max_compression_ratio": max(values("compression_ratio"), default=None),
                 "min_avg_logprob": min(values("avg_logprob"), default=None),

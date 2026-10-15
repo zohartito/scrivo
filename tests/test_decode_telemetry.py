@@ -27,7 +27,9 @@ from history import HistoryStore
 import scrivo
 from pipeline import move_detected_language, screen
 from speech_config import MODEL_PROFILES, resolve_speech_config
-from test_transcription_worker import LOOP, PREFIX, Harness, TemporaryUserFiles, says, speech
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # the golden master's harness, under any runner
+from test_transcription_worker import LOOP, PREFIX, Harness, TemporaryUserFiles, says, speech  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("decode_loop_report", ROOT / "scripts" / "decode_loop_report.py")
@@ -118,10 +120,11 @@ class DecodeTelemetryTest(unittest.TestCase):
                   "segments": [segment(0.0, 1.4, -0.21, 0.02), segment(0.0, 1.6, -0.3, 0.01)]}
         text, metadata = self.transcribe(self.whisper(result))
         self.assertEqual(text, "Hello there. How are you?")
+        self.assertEqual(text, result["text"].strip(), "the backend's text, unchanged")
         self.assertEqual(metadata["decode"], {
-            "path": "full", "segments": 2, "temperatures": [0.0, 0.0], "max_temperature": 0.0,
-            "max_compression_ratio": 1.6, "min_avg_logprob": -0.3, "max_no_speech_prob": 0.02,
-            "fallback_used": False})
+            "path": "full", "segments": 2, "temperatures": [0.0, 0.0], "compression_ratios": [1.4, 1.6],
+            "max_temperature": 0.0, "max_compression_ratio": 1.6, "min_avg_logprob": -0.3,
+            "max_no_speech_prob": 0.02, "fallback_used": False})
         self.assert_json_safe(metadata)
 
     # (b) a loop kept at T=0: its no-speech probability cancelled the fallback
@@ -129,8 +132,9 @@ class DecodeTelemetryTest(unittest.TestCase):
         looped = " " + LOOP_PREFIX + " difference" * 40
         result = {"text": looped, "language": "en", "segments": [segment(0.0, 3.1, -0.15, 0.72)]}
         text, metadata = self.transcribe(self.whisper(result))
-        self.assertEqual(text, looped.strip())
+        self.assertEqual(text, looped.strip(), "the backend's text, unchanged")
         decode = metadata["decode"]
+        self.assertEqual((decode["temperatures"], decode["compression_ratios"]), ([0.0], [3.1]))
         self.assertEqual((decode["max_temperature"], decode["max_compression_ratio"], decode["fallback_used"]),
                          (0.0, 3.1, False))
         self.assertEqual(decode["max_no_speech_prob"], 0.72)
@@ -150,8 +154,10 @@ class DecodeTelemetryTest(unittest.TestCase):
                   "segments": [segment(0.0, 1.3), segment(0.4, 2.0, -0.8, 0.1)]}
         text, metadata = self.transcribe(self.whisper(result))
         self.assertEqual(text, "First window. Second window.")
+        self.assertEqual(text, result["text"].strip(), "the backend's text, unchanged")
         decode = metadata["decode"]
         self.assertEqual(decode["temperatures"], [0.0, 0.4])
+        self.assertEqual(decode["compression_ratios"], [1.3, 2.0], "segment by segment with temperatures")
         self.assertEqual(decode["max_temperature"], 0.4)
         self.assertTrue(decode["fallback_used"])
         self.assertEqual(decode["min_avg_logprob"], -0.8)
@@ -161,6 +167,15 @@ class DecodeTelemetryTest(unittest.TestCase):
         _text, metadata = self.transcribe(self.whisper(result))
         self.assertEqual(metadata["decode"]["segments"], 50)
         self.assertEqual(len(metadata["decode"]["temperatures"]), 32)
+        self.assertEqual(len(metadata["decode"]["compression_ratios"]), 32)
+
+    def test_compression_ratios_stay_aligned_and_finite(self):
+        result = {"text": " ok", "segments": [segment(0.0, 1.2), segment(0.2, float("nan")),
+                                              segment(float("nan"), 2.9), segment(0.4, 2.6)]}
+        _text, metadata = self.transcribe(self.whisper(result))
+        self.assertEqual(metadata["decode"]["temperatures"], [0.0, 0.2, 0.4])
+        self.assertEqual(metadata["decode"]["compression_ratios"], [1.2, None, 2.6])
+        self.assert_json_safe(metadata)
 
     # (d) one_pass: accepted, and handed to the full pipeline
     def automatic(self, decoded, full_result, options_seen=None):
