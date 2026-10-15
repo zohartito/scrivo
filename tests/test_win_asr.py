@@ -2,7 +2,7 @@
 
 No real model loads and no network: model factories and downloads are fakes,
 and the fake model asserts the exact kwargs mapping, because
-``sotto.transcribe_canonical_samples`` and ``sotto.warm_speech_runtime``
+``scrivo.transcribe_canonical_samples`` and ``scrivo.warm_speech_runtime``
 forward their kwargs verbatim into ``transcribe``.
 """
 from __future__ import annotations
@@ -137,7 +137,7 @@ class ResolveModelDirTest(unittest.TestCase):
         download.assert_not_called()
         message = str(ctx.exception)
         self.assertIsInstance(ctx.exception, win_asr.SetupError)
-        for fragment in (TURBO, TURBO_SHA[:12], str(self.cache), "SOTTO_OFFLINE", "without those variables"):
+        for fragment in (TURBO, TURBO_SHA[:12], str(self.cache), "SCRIVO_OFFLINE", "without those variables"):
             self.assertIn(fragment, message)
 
     def test_failed_or_incomplete_download_is_a_setup_error(self) -> None:
@@ -186,11 +186,11 @@ class ResolveModelDirTest(unittest.TestCase):
 class DeviceSelectionTest(unittest.TestCase):
     def test_cli_beats_environment_and_blank_means_auto(self) -> None:
         self.assertEqual(win_asr.requested_device(None, {}), "auto")
-        self.assertEqual(win_asr.requested_device(None, {"SOTTO_DEVICE": "  "}), "auto")
-        self.assertEqual(win_asr.requested_device(None, {"SOTTO_DEVICE": "CPU"}), "cpu")
-        self.assertEqual(win_asr.requested_device("cuda", {"SOTTO_DEVICE": "cpu"}), "cuda")
+        self.assertEqual(win_asr.requested_device(None, {"SCRIVO_DEVICE": "  "}), "auto")
+        self.assertEqual(win_asr.requested_device(None, {"SCRIVO_DEVICE": "CPU"}), "cpu")
+        self.assertEqual(win_asr.requested_device("cuda", {"SCRIVO_DEVICE": "cpu"}), "cuda")
         with self.assertRaises(ValueError):
-            win_asr.requested_device(None, {"SOTTO_DEVICE": "gpu"})
+            win_asr.requested_device(None, {"SCRIVO_DEVICE": "gpu"})
 
     def test_device_plans(self) -> None:
         self.assertEqual(win_asr.device_plan("auto", 1), [win_asr.CUDA, win_asr.CPU])
@@ -301,7 +301,7 @@ class LocalCT2WhisperTest(unittest.TestCase):
         whisper = self.whisper()
         view = win_asr.LanguageRestricted(whisper, ("en", "pt"))
         self.assertEqual(view.transcribe(self._samples(), path_or_hf_repo="label")["text"], "hello world")
-        self.assertEqual(view.last_language, "en")  # read by sotto.transcribe_canonical_samples
+        self.assertEqual(view.last_language, "en")  # read by scrivo.transcribe_canonical_samples
         self.assertEqual(self.models["cuda"].calls[-1][1]["language"], "en")
         view.transcribe(self._samples(), language="pt")
         self.assertIsNone(view.last_language)

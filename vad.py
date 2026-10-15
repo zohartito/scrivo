@@ -1,5 +1,5 @@
 """Silero VAD — advisory speech scoring: trims dead air from long captures
-and feeds the output-side no-speech verdict (sotto.reads_as_no_speech).
+and feeds the output-side no-speech verdict (scrivo.reads_as_no_speech).
 
 It must never block transcription: Silero scores real whispered (unvoiced)
 dictation at 0% speech frames, so any input-side gate built on it silently
@@ -22,10 +22,10 @@ import tempfile
 
 import numpy as np
 
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 MODEL_PATH = DATA_DIR / "models" / "silero_vad.onnx"
-# Silero VAD v6.2 (MIT), pinned: installed by `sotto.py setup`, verified on load.
+# Silero VAD v6.2 (MIT), pinned: installed by `scrivo.py setup`, verified on load.
 MODEL_URL = "https://raw.githubusercontent.com/snakers4/silero-vad/v6.2/src/silero_vad/data/silero_vad.onnx"
 MODEL_SHA256 = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"
 SAMPLE_RATE = 16_000

@@ -6,11 +6,11 @@ tap, so idle Scrivo holds no microphone. The service also owns the idle device
 scan, the dead-route repair ladder (drop the reused engine object, then a
 launchd relaunch) and joining tap blocks recorded at different rates.
 
-Moved verbatim out of sotto.py (restructure step 4); sotto re-exports the
-public names, so ``sotto.CaptureService is capture.CaptureService``. The
+Moved verbatim out of scrivo.py (restructure step 4); scrivo re-exports the
+public names, so ``scrivo.CaptureService is capture.CaptureService``. The
 service reads its helpers, constants and log from this module: patch them here
-(``capture._pin_input_to_builtin``, ``capture.log``), never through sotto.
-Imports nothing from sotto.
+(``capture._pin_input_to_builtin``, ``capture.log``), never through scrivo.
+Imports nothing from scrivo.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import time
 
 import numpy as np
 
-from sotto_log import log
+from scrivo_log import log
 
 
 SAMPLE_RATE = 16_000
@@ -520,7 +520,7 @@ class CaptureService:
                 # CoreAudio teardown can block it long enough for macOS to
                 # disable the tap (2026-09-15). Defer it exactly like
                 # release_soon does. Never start an engine here either: idle
-                # sotto must not hold the microphone (--idle-release 0), so
+                # scrivo must not hold the microphone (--idle-release 0), so
                 # the next press is what builds the fresh one.
                 threading.Thread(target=self._rebuild_engine,
                                  daemon=True).start()

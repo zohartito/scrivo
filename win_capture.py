@@ -11,7 +11,7 @@ is open only while the trigger key is held — ``begin()`` opens the stream,
 Unlike the Mac's process-lifetime AVAudioEngine (preroll ring, dead-route
 repair via engine rebuild + launchd restart), Windows v1 opens a fresh
 stream per capture, so a wedged device cannot persist across captures.  The
-worker-side exact-zero guard (sotto.asr_skip_reason) still quarantines a
+worker-side exact-zero guard (scrivo.asr_skip_reason) still quarantines a
 dead route that occurs mid-capture.
 
 Stopping a stream can take a while (Bluetooth, slow drivers), and end() and
@@ -45,7 +45,7 @@ def _log(msg: str) -> None:
 
 
 class WinCapture:
-    """begin/end/abort surface mirroring what sotto.run() expects of CaptureService."""
+    """begin/end/abort surface mirroring what scrivo.run() expects of CaptureService."""
 
     def __init__(self, stream_factory=None, log=_log) -> None:
         self.native_rate = SAMPLE_RATE

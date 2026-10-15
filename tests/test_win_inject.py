@@ -87,7 +87,7 @@ class WinInjectTest(unittest.TestCase):
             with self.assertRaises(OSError):
                 win_inject.send_inputs(inputs)
 
-    def test_every_injected_event_carries_the_sotto_tag(self) -> None:
+    def test_every_injected_event_carries_the_scrivo_tag(self) -> None:
         # win_hotkey drops exactly these, so Ctrl+V can never look like a trigger.
         events = win_inject.build_inputs("a") + win_inject.chord_inputs(win_inject.VK_CONTROL, win_inject.VK_V)
         self.assertTrue(all(event.u.ki.dwExtraInfo == win_inject.INJECTED_TAG for event in events))
@@ -353,7 +353,7 @@ k.GlobalUnlock.argtypes = (wintypes.HANDLE,)
 # (with a desktop for the owner window) so the user's clipboard is never used.
 original = u.GetProcessWindowStation()
 original_sequence = u.GetClipboardSequenceNumber()
-name = "sotto-test-%d" % os.getpid()
+name = "scrivo-test-%d" % os.getpid()
 u.SetProcessWindowStation(u.CreateWindowStationW(name, 0, 0x37F, None))
 buf = ctypes.create_unicode_buffer(256)
 u.GetUserObjectInformationW(u.GetProcessWindowStation(), 2, buf, 512, ctypes.byref(wintypes.DWORD()))

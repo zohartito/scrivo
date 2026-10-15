@@ -1,6 +1,6 @@
 """win_startup / win_launch: the per-user login entry and the pythonw launcher.
 
-Registry tests use a throwaway key under HKCU\\Software\\sotto-tests, never the
+Registry tests use a throwaway key under HKCU\\Software\\scrivo-tests, never the
 real Run key, and remove it afterwards.
 """
 from __future__ import annotations
@@ -19,11 +19,11 @@ if sys.platform == "win32":
 @unittest.skipUnless(sys.platform == "win32", "Windows-only module")
 class RunKeyTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.parent = rf"Software\sotto-tests\{uuid.uuid4().hex}"
+        self.parent = rf"Software\scrivo-tests\{uuid.uuid4().hex}"
         self.key = self.parent + r"\Run"
 
     def tearDown(self) -> None:
-        for key in (self.key, self.parent, r"Software\sotto-tests"):
+        for key in (self.key, self.parent, r"Software\scrivo-tests"):
             try:
                 winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
             except OSError:
@@ -32,7 +32,7 @@ class RunKeyTest(unittest.TestCase):
     def test_enable_and_disable_add_and_remove_exactly_one_value(self) -> None:
         command = win_startup.launch_command(Path(r"C:\data dir"), Path(r"C:\data dir\huggingface"),
                                              python=Path(r"C:\py\pythonw.exe"),
-                                             launcher=Path(r"C:\sotto\win_launch.py"))
+                                             launcher=Path(r"C:\scrivo\win_launch.py"))
         self.assertFalse(win_startup.enabled(key=self.key))
         win_startup.set_enabled(True, command, key=self.key)
         self.assertEqual(win_startup.current(key=self.key), command)
@@ -46,8 +46,8 @@ class RunKeyTest(unittest.TestCase):
     def test_command_quotes_paths_and_fits_the_run_limit(self) -> None:
         command = win_startup.launch_command(Path(r"C:\data dir"), Path(r"D:\models"),
                                              python=Path(r"C:\py\pythonw.exe"),
-                                             launcher=Path(r"C:\sotto\win_launch.py"))
-        self.assertEqual(command, r'C:\py\pythonw.exe C:\sotto\win_launch.py --data-dir "C:\data dir" '
+                                             launcher=Path(r"C:\scrivo\win_launch.py"))
+        self.assertEqual(command, r'C:\py\pythonw.exe C:\scrivo\win_launch.py --data-dir "C:\data dir" '
                                   r"--hf-home D:\models")
         with self.assertRaises(ValueError):
             win_startup.set_enabled(True, "x" * 300, key=self.key)

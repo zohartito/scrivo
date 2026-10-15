@@ -214,7 +214,7 @@ class InferenceScheduler:
                 except RuntimeError:
                     return
 
-        thread = threading.Thread(target=pump, name="sotto-inference-heartbeat", daemon=True)
+        thread = threading.Thread(target=pump, name="scrivo-inference-heartbeat", daemon=True)
         thread.start()
         try:
             yield

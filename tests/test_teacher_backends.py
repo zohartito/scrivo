@@ -121,8 +121,8 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
             with mock.patch.object(normal,"validate",return_value="fixture"):
                 self.assertEqual(normal.transcribe(QWEN,audio,'opaque'),'normal-path')
             self.assertEqual(len(calls),1)
-            self.assertEqual({name:calls[0][1]['env'][name] for name in ('SOTTO_OFFLINE','HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE')},
-                             {'SOTTO_OFFLINE':'1','HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1'})
+            self.assertEqual({name:calls[0][1]['env'][name] for name in ('SCRIVO_OFFLINE','HF_HUB_OFFLINE','TRANSFORMERS_OFFLINE')},
+                             {'SCRIVO_OFFLINE':'1','HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1'})
 
     def test_teacher_probe_and_cancellable_inference_receive_all_offline_flags(self):
         seen=[]
@@ -145,7 +145,7 @@ class OfflineTeacherRunnerTests(unittest.TestCase):
         runner=OfflineTeacherRunner({QWEN.stable_id:receipt},popen=lambda *_args,**kwargs: (seen.append(kwargs['env']) or Process()))
         with mock.patch.object(runner,"validate",return_value="fixture"):
             self.assertEqual(runner.transcribe(QWEN,Path(__file__),'opaque',cancel=lambda: False),'ok')
-        expected={'SOTTO_OFFLINE':'1','HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1'}
+        expected={'SCRIVO_OFFLINE':'1','HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1'}
         self.assertTrue(all({name:value[name] for name in expected} == expected for value in seen))
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS-only in v1 (macOS venv probe / POSIX process preemption)")

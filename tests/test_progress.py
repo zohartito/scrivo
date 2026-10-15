@@ -105,15 +105,15 @@ class LifetimeTotalsTests(unittest.TestCase):
         """A truncated stats.json is not "no stats yet" either: record() writes
         nothing, and the app's record_totals logs it instead of raising."""
         from unittest import mock
-        import sotto
+        import scrivo
         truncated = '{"dictations": 812, "words": 243'
         self.path.write_text(truncated, encoding="utf-8")
         with self.assertRaises(ValueError):
             progress.record(self.path, text="two words", seconds=1.0)
         self.assertEqual(self.path.read_text(encoding="utf-8"), truncated)
-        with mock.patch.object(sotto, "totals_path", return_value=self.path), \
-             mock.patch.object(sotto, "log") as logged:
-            sotto.record_totals("two words", 1.0)
+        with mock.patch.object(scrivo, "totals_path", return_value=self.path), \
+             mock.patch.object(scrivo, "log") as logged:
+            scrivo.record_totals("two words", 1.0)
         self.assertEqual(self.path.read_text(encoding="utf-8"), truncated)
         self.assertIn("progress totals not saved", logged.call_args[0][0])
 

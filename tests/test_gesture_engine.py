@@ -1,6 +1,6 @@
 """GestureEngine: the hands-free watchdog and the ordering of capture actions.
 
-Real sotto.GestureEngine with threading.Timer replaced by a manual timer, so
+Real scrivo.GestureEngine with threading.Timer replaced by a manual timer, so
 every deadline fires exactly when the test says and on the thread the test
 chooses. No event tap, no microphone, no wall-clock waits.
 
@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 import gestures
-import sotto
+import scrivo
 
 
 class ManualTimers:
@@ -50,7 +50,7 @@ class EngineHarness(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.events = []
-        self.engine = sotto.GestureEngine(lambda: self.events.append("start"),
+        self.engine = scrivo.GestureEngine(lambda: self.events.append("start"),
                                           lambda: self.events.append("finish"),
                                           lambda: self.events.append("discard"))
 
@@ -61,7 +61,7 @@ class EngineHarness(unittest.TestCase):
         self.engine.pressed(); self.engine.released()
         self.engine.pressed(); self.engine.released()
         self.assertEqual(self.engine.snapshot(), (True, True))
-        watchdogs = [t for t in self.timers.armed[before:] if t[0] == sotto.HANDS_FREE_MAX_S]
+        watchdogs = [t for t in self.timers.armed[before:] if t[0] == scrivo.HANDS_FREE_MAX_S]
         self.assertEqual(len(watchdogs), 1)
         _, handler, args = watchdogs[0]
         return lambda: handler(*args)
@@ -89,7 +89,7 @@ class HandsFreeWatchdogTests(EngineHarness):
 
     def test_menu_armed_hands_free_watchdog_survives_a_press_too(self):
         self.assertTrue(self.engine.force_start())
-        fire_watchdog = self.timers.only(sotto.HANDS_FREE_MAX_S)
+        fire_watchdog = self.timers.only(scrivo.HANDS_FREE_MAX_S)
         self.engine.pressed()
         fire_watchdog()
         self.assertEqual(self.events, ["start", "finish"])
@@ -112,7 +112,7 @@ class HandsFreeWatchdogTests(EngineHarness):
 
 class OrderedActionTests(EngineHarness):
     def test_stale_tap_expiry_cannot_discard_a_newer_capture(self):
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         capture._engine = mock.Mock()        # engine already live: begin() does not cold-start
         capture.idle_release_s = -1
         order = []
@@ -137,10 +137,10 @@ class OrderedActionTests(EngineHarness):
             order.append("finish")
             capture.end()
 
-        engine = sotto.GestureEngine(on_start, on_finish, on_discard)
+        engine = scrivo.GestureEngine(on_start, on_finish, on_discard)
         engine.pressed(); engine.released()  # a lone short tap arms the expiry timer
         self.assertTrue(capture.is_active())
-        timer_thread = threading.Thread(target=self.timers.only(sotto.DOUBLE_TAP_WINDOW_S),
+        timer_thread = threading.Thread(target=self.timers.only(scrivo.DOUBLE_TAP_WINDOW_S),
                                         daemon=True)
         timer_thread.start()                 # the window closes: discard decided, lock released
         self.assertTrue(discard_entered.wait(5))
@@ -169,7 +169,7 @@ class OrderedActionTests(EngineHarness):
             resume_start.wait(5)             # e.g. the capture gate is busy
             order.append("start")
 
-        engine = sotto.GestureEngine(on_start, lambda: order.append("finish"),
+        engine = scrivo.GestureEngine(on_start, lambda: order.append("finish"),
                                      lambda: order.append("discard"))
         tap_thread = threading.Thread(target=engine.pressed, daemon=True)
         tap_thread.start()
@@ -196,7 +196,7 @@ class OrderedActionTests(EngineHarness):
             resume_start.wait(5)             # e.g. the mic is slow to open
             order.append("start")
 
-        engine = sotto.GestureEngine(on_start, lambda: order.append("finish"),
+        engine = scrivo.GestureEngine(on_start, lambda: order.append("finish"),
                                      lambda: order.append("discard"))
         tap_thread = threading.Thread(target=engine.pressed, daemon=True)
         tap_thread.start()
@@ -219,7 +219,7 @@ class OrderedActionTests(EngineHarness):
             results.append(engine.force_finish())
             order.append("start")
 
-        engine = sotto.GestureEngine(on_start, lambda: order.append("finish"),
+        engine = scrivo.GestureEngine(on_start, lambda: order.append("finish"),
                                      lambda: order.append("discard"))
         tap_thread = threading.Thread(target=engine.pressed, daemon=True)
         tap_thread.start()
@@ -254,7 +254,7 @@ class GestureDecisionTests(EngineHarness):
         self.engine.pressed(); self.engine.released()
         self.assertEqual(self.engine.snapshot(), (True, False))   # recording until the verdict
         self.assertEqual(self.events, ["start"])
-        self.timers.only(sotto.DOUBLE_TAP_WINDOW_S)()
+        self.timers.only(scrivo.DOUBLE_TAP_WINDOW_S)()
         self.assertEqual(self.events, ["start", "discard"])
         self.assertEqual(self.engine.snapshot(), (False, False))
 
@@ -278,7 +278,7 @@ class GestureDecisionTests(EngineHarness):
 
     def test_a_menu_start_is_refused_while_recording_and_arms_hands_free_otherwise(self):
         hands_free = []
-        engine = sotto.GestureEngine(lambda: self.events.append("start"),
+        engine = scrivo.GestureEngine(lambda: self.events.append("start"),
                                      lambda: self.events.append("finish"),
                                      lambda: self.events.append("discard"),
                                      on_hands_free=lambda: hands_free.append(True))
@@ -312,7 +312,7 @@ class GestureDecisionTests(EngineHarness):
 
         def failing_start():
             raise RuntimeError("mic busy")
-        engine = sotto.GestureEngine(failing_start, lambda: self.events.append("finish"),
+        engine = scrivo.GestureEngine(failing_start, lambda: self.events.append("finish"),
                                      lambda: self.events.append("discard"))
         with mock.patch.object(gestures, "log", logs.append):
             engine.pressed()

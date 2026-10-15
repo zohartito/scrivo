@@ -108,16 +108,16 @@ class OverlayPlacementTests(unittest.TestCase):
 
 
 class AlertIconTests(unittest.TestCase):
-    """Sotto.app runs Python as a child, and AppKit loads Python's bundle icon
+    """Scrivo.app runs Python as a child, and AppKit loads Python's bundle icon
     when the app finishes launching, so dialogs showed Python's rocket even
-    after use_app_icon. Every dialog carries Sotto's icon itself."""
+    after use_app_icon. Every dialog carries Scrivo's icon itself."""
 
-    def test_every_dialog_is_built_with_sottos_icon(self):
+    def test_every_dialog_is_built_with_scrivos_icon(self):
         import tempfile
         from pathlib import Path
         import ui
         with tempfile.TemporaryDirectory() as folder:
-            icon = Path(folder) / "Sotto.png"
+            icon = Path(folder) / "Scrivo.png"
             image = AppKit.NSImage.alloc().initWithSize_((16, 16))
             image.lockFocus(); AppKit.NSColor.orangeColor().set()
             AppKit.NSBezierPath.fillRect_(((0, 0), (16, 16))); image.unlockFocus()

@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Import-free check, so it runs on Linux even though sotto itself is
+      # Import-free check, so it runs on Linux even though scrivo itself is
       # macOS-only (Quartz/AppKit at module scope).
       - name: Compile all sources
         run: python -m compileall -q *.py tests

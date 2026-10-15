@@ -400,7 +400,7 @@ class StatusUI:
         from nemotron_backend import is_installed
         # Re-check on every rebuild: a runtime installed after launch shows up.
         self.nemotron_available = is_installed()
-        from sotto_paths import MODEL_CACHE_DIR
+        from scrivo_paths import MODEL_CACHE_DIR
         from speech_config import MODEL_PROFILES, pinned_snapshot_cached
         parakeet_available = pinned_snapshot_cached(MODEL_PROFILES["parakeet"].repo, MODEL_CACHE_DIR / "hub",
                                                     ("config.json", "model.safetensors"))
@@ -466,7 +466,7 @@ class StatusUI:
             "Your progress", None, "")
         progress_menu = AppKit.NSMenu.alloc().init()
         progress_menu.setAutoenablesItems_(False)
-        from sotto_paths import DATA_DIR
+        from scrivo_paths import DATA_DIR
         totals = progress.load_totals(DATA_DIR / progress.TOTALS_NAME)
         for line in progress.lines(progress.summarize(entries, rules=rule_count), totals):
             info = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(line, None, "")

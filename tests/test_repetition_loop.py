@@ -10,7 +10,7 @@ word they actually said. Reference capture from this machine's history
 
 import unittest
 
-from sotto import (LOOP_MIN_REPEATS, looks_hallucinated, salvage_repetition_loop)
+from scrivo import (LOOP_MIN_REPEATS, looks_hallucinated, salvage_repetition_loop)
 
 # the exact transcript prefix whisper produced before it started looping
 OBSERVED_PREFIX = (

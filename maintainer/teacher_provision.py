@@ -41,7 +41,7 @@ def provision(base: Path, qwen_python: Path, qwen_snapshot: Path, granite_python
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description="Provision verified offline Sotto teacher receipts")
+    p = argparse.ArgumentParser(description="Provision verified offline Scrivo teacher receipts")
     p.add_argument("--base-dir", required=True); p.add_argument("--qwen-python", required=True); p.add_argument("--qwen-snapshot", required=True)
     p.add_argument("--granite-python", required=True); p.add_argument("--granite-snapshot", required=True)
     args = p.parse_args(argv)

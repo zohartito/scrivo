@@ -1,7 +1,7 @@
 """Windows ASR backend: faster-whisper (CTranslate2) behind the mlx_whisper contract.
 
 ``LocalCT2Whisper.transcribe(samples, **kwargs) -> {"text": str}`` is what
-``sotto.transcribe_canonical_samples`` and ``sotto.warm_speech_runtime``
+``scrivo.transcribe_canonical_samples`` and ``scrivo.warm_speech_runtime``
 expect of ``mlx_whisper``: ``samples`` is a 16 kHz float32 numpy array and
 kwargs are ``path_or_hf_repo``, ``condition_on_previous_text``,
 ``word_timestamps``, optional ``language`` (None = per-capture auto-detect)
@@ -138,9 +138,9 @@ def resolve_model_dir(model: str, *, cache_dir: Path, offline: bool,
     if offline:
         raise ModelUnavailable(
             f"speech model {repo}@{revision[:12]} is not in {cache_dir} and offline "
-            "mode is on (SOTTO_OFFLINE / HF_HUB_OFFLINE / TRANSFORMERS_OFFLINE). "
+            "mode is on (SCRIVO_OFFLINE / HF_HUB_OFFLINE / TRANSFORMERS_OFFLINE). "
             "Run once without those variables and with network access to download "
-            "it, or point SOTTO_HF_HOME at the folder that already holds it.")
+            "it, or point SCRIVO_HF_HOME at the folder that already holds it.")
     if download is None:
         os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
         from huggingface_hub import snapshot_download as download
@@ -159,7 +159,7 @@ def resolve_model_dir(model: str, *, cache_dir: Path, offline: bool,
 
 
 def choose_language(probabilities: Mapping[str, float], allowed: Iterable[str]) -> str:
-    """Automatic's pick, the Mac's rule (``sotto.choose_language``).
+    """Automatic's pick, the Mac's rule (``scrivo.choose_language``).
 
     The most probable allowed language (ties keep the user's order) — unless
     the speech is clearly another language (every allowed one scores < 0.25
@@ -182,7 +182,7 @@ class LanguageRestricted:
     """One job's view of the model: Automatic picks among ``allowed`` only.
 
     ``last_language`` is the code Automatic chose (what the shared
-    ``sotto.transcribe_canonical_samples`` records as ``detected_language``).
+    ``scrivo.transcribe_canonical_samples`` records as ``detected_language``).
     """
 
     def __init__(self, model: Any, allowed: Iterable[str]) -> None:
@@ -247,9 +247,10 @@ def _transcribe_reusing(model: Any, samples: Any, options: dict, window: Any, ou
 
 
 def requested_device(cli: str | None = None, environ=None) -> str:
-    """``--device`` wins, then ``SOTTO_DEVICE``; blank means ``auto``."""
-    source = os.environ if environ is None else environ
-    value = (cli or source.get("SOTTO_DEVICE", "") or "auto").strip().lower() or "auto"
+    """``--device`` wins, then ``SCRIVO_DEVICE`` (or the old ``SOTTO_DEVICE``);
+    blank means ``auto``."""
+    from scrivo_paths import env
+    value = (cli or env("DEVICE", environ) or "auto").strip().lower() or "auto"
     if value not in DEVICE_CHOICES:
         raise ValueError(f"device must be one of {', '.join(DEVICE_CHOICES)}; got {value!r}")
     return value
@@ -381,6 +382,6 @@ class LocalCT2Whisper:
             self._model, self.device, self.compute_type = model, device, compute_type
             self._log(f"✓ ASR device: {device} ({compute_type})")
             return result
-        hint = (" — run with --device cpu (or SOTTO_DEVICE=cpu), or install the "
+        hint = (" — run with --device cpu (or SCRIVO_DEVICE=cpu), or install the "
                 "CUDA extras" if self.requested == "cuda" else "")
         raise SetupError("no usable ASR device: " + "; ".join(failures) + hint)

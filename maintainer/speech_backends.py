@@ -84,7 +84,7 @@ def _sha256_regular(path: Path) -> str:
 
 def _ffmpeg_runtime_identity(*, ffmpeg_path: Path | str | None = None,
                              run: Callable[..., Any] = subprocess.run) -> dict[str, str]:
-    configured=Path(ffmpeg_path or os.environ.get("SOTTO_FFMPEG","/opt/homebrew/bin/ffmpeg"))
+    configured=Path(ffmpeg_path or os.environ.get("SCRIVO_FFMPEG","/opt/homebrew/bin/ffmpeg"))
     raw,resolved,_info=_bound_regular_binary(configured,label="ffmpeg")
     try:
         completed=run([str(resolved),"-version"],shell=False,check=False,text=True,capture_output=True,
@@ -125,7 +125,7 @@ def _candidate_runtime_identity(stable_id: str, *, python_executable: Path | str
 def _candidate_runtime_marker(stable_id: str) -> tuple[Any, ...]:
     """Cheap identity-cache key; any executable/package drift forces rebind."""
     raw_python,resolved_python,python_info=_bound_regular_binary(sys.executable,label="python")
-    raw_ffmpeg,resolved_ffmpeg,ffmpeg_info=_bound_regular_binary(os.environ.get("SOTTO_FFMPEG","/opt/homebrew/bin/ffmpeg"),label="ffmpeg")
+    raw_ffmpeg,resolved_ffmpeg,ffmpeg_info=_bound_regular_binary(os.environ.get("SCRIVO_FFMPEG","/opt/homebrew/bin/ffmpeg"),label="ffmpeg")
     packages=_package_versions(); backend=("mlx-whisper","numpy") if stable_id.startswith("whisper") else ("parakeet-mlx","numpy")
     return (stable_id,str(raw_python),str(resolved_python),python_info.st_dev,python_info.st_ino,python_info.st_size,python_info.st_mtime_ns,python_info.st_ctime_ns,
             str(raw_ffmpeg),str(resolved_ffmpeg),ffmpeg_info.st_dev,ffmpeg_info.st_ino,ffmpeg_info.st_size,ffmpeg_info.st_mtime_ns,ffmpeg_info.st_ctime_ns,
@@ -206,7 +206,7 @@ def _strict_snapshot(snapshot: Path) -> None:
 
 
 def _snapshot_root(repo: str, hf_home: Path | str | None = None) -> tuple[Path,Path]:
-    home=Path(hf_home or os.environ.get("SOTTO_HF_HOME") or os.environ.get("HF_HOME") or Path.home()/".cache"/"huggingface")
+    home=Path(hf_home or os.environ.get("SCRIVO_HF_HOME") or os.environ.get("HF_HOME") or Path.home()/".cache"/"huggingface")
     if not home.is_absolute(): raise RuntimeError("HF cache root is not absolute")
     _safe_repo(repo); _strict_directory(home,label="HF cache root")
     hub=home/"hub"; model=hub/_repo_cache_name(repo); snapshots=model/"snapshots"
@@ -595,7 +595,7 @@ class LocalBackendManager:
                 from huggingface_hub import snapshot_download
             except ImportError as exc:
                 raise RuntimeError("huggingface_hub is required for online preflight download") from exc
-            downloaded = Path(snapshot_download(repo_id=repo, cache_dir=str(Path(hf_home or os.environ.get("SOTTO_HF_HOME") or os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface") / "hub")))
+            downloaded = Path(snapshot_download(repo_id=repo, cache_dir=str(Path(hf_home or os.environ.get("SCRIVO_HF_HOME") or os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface") / "hub")))
             revision = _safe_revision(downloaded.name)
             _resolved,snapshot=resolve_snapshot(repo,hf_home,revision)
         runtime_identity=_candidate_runtime_identity(stable_id)

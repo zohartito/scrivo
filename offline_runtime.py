@@ -5,7 +5,9 @@ import os
 from collections.abc import Mapping
 
 
-OFFLINE_FLAGS=("SOTTO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE")
+OFFLINE_FLAGS=("SCRIVO_OFFLINE","HF_HUB_OFFLINE","TRANSFORMERS_OFFLINE")
+# Scrivo was called Sotto: the old flag still asks for offline (it is never set).
+LEGACY_OFFLINE_FLAG="SOTTO_OFFLINE"
 
 
 def _truthy(value: object) -> bool:
@@ -15,7 +17,7 @@ def _truthy(value: object) -> bool:
 def offline_requested(environ: Mapping[str,str] | None = None) -> bool:
     """Any explicit offline flag fences download-capable paths."""
     source=os.environ if environ is None else environ
-    return any(_truthy(source.get(name)) for name in OFFLINE_FLAGS)
+    return any(_truthy(source.get(name)) for name in (*OFFLINE_FLAGS,LEGACY_OFFLINE_FLAG))
 
 
 def offline_subprocess_env(*, path: str = "/usr/bin:/bin") -> dict[str,str]:

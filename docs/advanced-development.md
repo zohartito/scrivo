@@ -94,7 +94,7 @@ venv/bin/python -m maintainer.calibration_worker --base-dir "$HOME/Library/Appli
   --test-parquet /absolute/en-test-00000-of-00001.parquet \
   --validation-parquet /absolute/en-validation-00000-of-00001.parquet \
   --pyarrow-python /absolute/pyenv/versions/3.11.7/bin/python3.11
-plutil -lint launchd/com.zohartito.sotto.adaptive-silver.plist
+plutil -lint launchd/com.zohartito.scrivo.adaptive-silver.plist
 ```
 
 Provisioning writes the private `adaptive-learning/silver/teacher-receipts.json`
@@ -105,10 +105,10 @@ must bind `family`, absolute `interpreter`, absolute `adapter`, `snapshot_path`,
 read. The worker, not caller-provided metrics, derives provisional
 authorization from frozen evidence; there is no CLI command that bypasses
 those gates. Parakeet requires FFmpeg under launchd; the template carries
-`__SOTTO_HOME__`/`__SOTTO_FFMPEG__` placeholders plus the required safe PATH.
+`__SCRIVO_HOME__`/`__SCRIVO_FFMPEG__` placeholders plus the required safe PATH.
 Never install a raw template: render it first with
 `/usr/bin/python3 -I -S -B maintainer/launchd_templates.py --template <template> --output <LaunchAgents plist>`
-(`scripts/rollout.sh` does this for the app agent; `SOTTO_FFMPEG` selects the
+(`scripts/rollout.sh` does this for the app agent; `SCRIVO_FFMPEG` selects the
 FFmpeg path, default `/opt/homebrew/bin/ffmpeg`).
 
 Calibration V2 validates both pinned parquet bytes and independently derives
@@ -155,12 +155,12 @@ collection policy is ready and otherwise fails closed without constructing or
 repairing state.
 
 ```bash
-venv/bin/python sotto.py learning-preflight   # the only deliberate model warmup
-venv/bin/python sotto.py --adaptive --language en
-venv/bin/python sotto.py learning-status
-venv/bin/python sotto.py learning-review-list
-venv/bin/python sotto.py learning-evaluate
-venv/bin/python sotto.py learning-rollback
+venv/bin/python scrivo.py learning-preflight   # the only deliberate model warmup
+venv/bin/python scrivo.py --adaptive --language en
+venv/bin/python scrivo.py learning-status
+venv/bin/python scrivo.py learning-review-list
+venv/bin/python scrivo.py learning-evaluate
+venv/bin/python scrivo.py learning-rollback
 ```
 
 All models, snapshots, receipts, audio, and evaluation remain on this Mac;
@@ -175,7 +175,7 @@ installs its input tap; key-up immediately stops the engine and removes the
 tap. Scrivo therefore does not capture or retain audio while idle, and the
 macOS microphone indicator is lit only for an active gesture. Production uses
 the receipt-independent Whisper baseline plus the sealed local
-`config/sotto-glossary.txt`; the adaptive candidate route remains an explicit,
+`config/scrivo-glossary.txt`; the adaptive candidate route remains an explicit,
 separately gated mode until its calibration and personal-evidence requirements
 pass.
 After four idle minutes, the next press queues one serialized model refresh
@@ -196,17 +196,17 @@ override is wanted.
 
 ```bash
 # Explicit language and model overrides remain local.
-venv/bin/python sotto.py --profile auto --language fr \
+venv/bin/python scrivo.py --profile auto --language fr \
   --model mlx-community/whisper-large-v3-turbo
 
 # Offer bounded proper names and terms to short captures.
-venv/bin/python sotto.py --glossary ~/Documents/sotto-glossary.txt
+venv/bin/python scrivo.py --glossary ~/Documents/scrivo-glossary.txt
 
 # Inspect, explicitly remove, or deliberately export the separately enrolled corpus.
-venv/bin/python sotto.py learning-status
-venv/bin/python sotto.py learning-list
-venv/bin/python sotto.py learning-remove --sample-id SAMPLE_ID
-venv/bin/python sotto.py export-learning --output <empty-dir>
+venv/bin/python scrivo.py learning-status
+venv/bin/python scrivo.py learning-list
+venv/bin/python scrivo.py learning-remove --sample-id SAMPLE_ID
+venv/bin/python scrivo.py export-learning --output <empty-dir>
 ```
 
 Model files download locally only when their profile or repository is selected

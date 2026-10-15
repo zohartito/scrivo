@@ -7,18 +7,18 @@ DeliveryQueue is the one FIFO for pastes and "scratch that" undos;
 PendingDeliveries counts what was handed to the main thread but not yet
 delivered. Main thread only, except where a docstring says otherwise.
 
-Moved verbatim out of sotto.py (restructure step 1); sotto re-exports the
-public names, so ``sotto.inject is delivery.inject``. The clipboard restore
+Moved verbatim out of scrivo.py (restructure step 1); scrivo re-exports the
+public names, so ``scrivo.inject is delivery.inject``. The clipboard restore
 state (``_pending_restore``, ``_restore_generation``) and the secure-input
 probe are module state rebound here, so they are read and patched here, never
-through sotto. Imports nothing from sotto.
+through scrivo. Imports nothing from scrivo.
 """
 from __future__ import annotations
 
 import threading
 import time
 
-from sotto_log import log
+from scrivo_log import log
 import voice_commands
 
 try:  # Keep content-free CLI/admin helpers importable on non-macOS test hosts.
@@ -49,7 +49,7 @@ DELIVERY_POLL_S = 0.15           # re-check a held key this often before pasting
 DELIVERY_WAIT_MAX_S = 30.0       # key held, no recording: give up, the text stays in History
 # The drop note for a dictation History could not keep (F16a/F16b, N16).
 NOT_IN_HISTORY_EITHER = "History could not save it either; please dictate again."
-SOTTO_EVENT_TAG = 0x534F5454     # "SOTT" in kCGEventSourceUserData on every key event Scrivo posts
+SCRIVO_EVENT_TAG = 0x53435256     # "SCRV" in kCGEventSourceUserData on every key event Scrivo posts
 
 
 _restore_generation = 0
@@ -111,13 +111,13 @@ def post_own_event(event) -> None:
     The event tap in run() skips tagged events, so a ⌘V or ⌘Z Scrivo posts can
     never be read as a chord that discards a live dictation, nor as the user
     typing (which would disarm "scratch that")."""
-    Quartz.CGEventSetIntegerValueField(event, Quartz.kCGEventSourceUserData, SOTTO_EVENT_TAG)
+    Quartz.CGEventSetIntegerValueField(event, Quartz.kCGEventSourceUserData, SCRIVO_EVENT_TAG)
     Quartz.CGEventPost(Quartz.kCGSessionEventTap, event)
 
 
 def is_own_event(event) -> bool:
     """Did Scrivo post this key event itself (see post_own_event)?"""
-    return Quartz.CGEventGetIntegerValueField(event, Quartz.kCGEventSourceUserData) == SOTTO_EVENT_TAG
+    return Quartz.CGEventGetIntegerValueField(event, Quartz.kCGEventSourceUserData) == SCRIVO_EVENT_TAG
 
 
 def post_command_key(keycode: int) -> None:

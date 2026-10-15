@@ -1,10 +1,10 @@
 """Scrivo's log: lines on stderr, which Scrivo.app routes to a small rotating
 file. Logs hold counts and timings only, never what was said.
 
-Moved verbatim out of sotto.py so the modules split from it (delivery,
-lifecycle, gestures, capture) can log without importing sotto. sotto re-exports the
-public names, so ``sotto.log is sotto_log.log``; the rotation state stays
-private here, so patch it here (``sotto_log._point_output_at``).
+Moved verbatim out of scrivo.py so the modules split from it (delivery,
+lifecycle, gestures, capture) can log without importing scrivo. scrivo re-exports the
+public names, so ``scrivo.log is scrivo_log.log``; the rotation state stays
+private here, so patch it here (``scrivo_log._point_output_at``).
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def route_app_logs(data_dir: Path, max_bytes: int = 2_000_000) -> Path:
     Logs hold counts and timings only, never what was said."""
     folder = data_dir / "logs"
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path = folder / "sotto.log"
+    path = folder / "scrivo.log"
     _rotate_if_large(path, max_bytes)
     _point_output_at(path)
     _app_log.update(path=path, max_bytes=max_bytes)
@@ -41,7 +41,7 @@ def route_app_logs(data_dir: Path, max_bytes: int = 2_000_000) -> Path:
 
 
 def _rotate_if_large(path: Path, max_bytes: int) -> bool:
-    """Move a log past max_bytes to sotto.log.1 (replacing the older one)."""
+    """Move a log past max_bytes to scrivo.log.1 (replacing the older one)."""
     if path.exists() and path.stat().st_size > max_bytes:
         os.replace(path, path.with_suffix(".log.1"))
         return True

@@ -53,11 +53,11 @@ class LauncherBehaviourTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, temporary)
         record = temporary / "record.txt"
         script = temporary / "child.sh"
-        script.write_text(f'printf "%s\\n" "$@" "$SOTTO_DATA_DIR" "$SOTTO_LAUNCHER" > "{record}"\n{body}\n')
+        script.write_text(f'printf "%s\\n" "$@" "$SCRIVO_DATA_DIR" "$SCRIVO_LAUNCHER" > "{record}"\n{body}\n')
         source = install_app.launcher_source(
             python=Path("/bin/sh"), script=script, data_dir=temporary / "data dir",
-            hf_home=temporary / "hf", app_executable=temporary / "Sotto")
-        binary = install_app.compile_launcher(source, temporary / "Sotto")
+            hf_home=temporary / "hf", app_executable=temporary / "Scrivo")
+        binary = install_app.compile_launcher(source, temporary / "Scrivo")
         return binary, record, temporary
 
     def test_environment_arguments_and_exit_code_pass_through(self):
@@ -85,7 +85,7 @@ class LauncherBehaviourTests(unittest.TestCase):
         self.assertEqual(app.name, "Scrivo.app")
         self.assertTrue((app / "Contents/MacOS/Scrivo").is_file())
         self.assertTrue((app / "Contents/Resources/Scrivo.icns").is_file())
-        self.assertTrue(mac_app.launcher_runs(app, ROOT / "sotto.py"))
+        self.assertTrue(mac_app.launcher_runs(app, ROOT / "scrivo.py"))
         verify = subprocess.run(["/usr/bin/codesign", "--verify", str(app)], capture_output=True)
         self.assertEqual(verify.returncode, 0, verify.stderr)
         before = (app / "Contents/MacOS/Scrivo").stat().st_mtime_ns
@@ -156,38 +156,38 @@ class InstallLocationTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "darwin", "Scrivo.app is macOS only")
     def test_dialogs_use_the_icon_of_the_app_that_launched_python(self):
-        import sotto
+        import scrivo
         # Scrivo.app, and the Sotto.app of earlier versions (its launcher can still start this code).
-        for app_name, name in (("Scrivo.app", "Scrivo"), ("Sotto.app", "Sotto")):
+        for app_name, name in (("Scrivo.app", "Scrivo"), ("Sotto.app", "Scrivo")):
             with self.subTest(app=app_name), tempfile.TemporaryDirectory() as temporary:
                 contents = Path(temporary) / app_name / "Contents"
                 (contents / "Resources").mkdir(parents=True)
                 executable = contents / "MacOS" / name
-                with unittest.mock.patch.dict(os.environ, {"SOTTO_APP_EXECUTABLE": str(executable)}):
-                    self.assertIsNone(sotto.sotto_icon_path())
+                with unittest.mock.patch.dict(os.environ, {"SCRIVO_APP_EXECUTABLE": str(executable)}):
+                    self.assertIsNone(scrivo.scrivo_icon_path())
                     (contents / "Resources" / f"{name}.icns").write_bytes(b"icns")
-                    self.assertEqual(sotto.sotto_icon_path(), contents / "Resources" / f"{name}.icns")
-            with unittest.mock.patch.dict(os.environ, {"SOTTO_APP_EXECUTABLE": " "}):
-                self.assertIsNone(sotto.sotto_icon_path())
+                    self.assertEqual(scrivo.scrivo_icon_path(), contents / "Resources" / f"{name}.icns")
+            with unittest.mock.patch.dict(os.environ, {"SCRIVO_APP_EXECUTABLE": " "}):
+                self.assertIsNone(scrivo.scrivo_icon_path())
 
 
 @unittest.skipUnless(sys.platform == "darwin", "Sotto.app is macOS only")
 class AccessibilityProbeTests(unittest.TestCase):
     def test_each_check_asks_a_fresh_interpreter(self):
-        import sotto
+        import scrivo
         results = iter([1, 0])
         with unittest.mock.patch("subprocess.run", side_effect=lambda argv, **kw: unittest.mock.Mock(
                 returncode=next(results))) as run:
-            self.assertFalse(sotto.accessibility_granted_now())
-            self.assertTrue(sotto.accessibility_granted_now())
+            self.assertFalse(scrivo.accessibility_granted_now())
+            self.assertTrue(scrivo.accessibility_granted_now())
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args.args[0][:4], [sys.executable, "-I", "-S", "-c"])
         with unittest.mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("python", 5)):
-            self.assertFalse(sotto.accessibility_granted_now())
+            self.assertFalse(scrivo.accessibility_granted_now())
 
     def test_probe_runs_and_answers_with_an_exit_code(self):
-        import sotto
-        result = subprocess.run([sys.executable, "-I", "-S", "-c", sotto.ACCESSIBILITY_PROBE])
+        import scrivo
+        result = subprocess.run([sys.executable, "-I", "-S", "-c", scrivo.ACCESSIBILITY_PROBE])
         self.assertIn(result.returncode, (0, 1))
 
 
@@ -234,7 +234,7 @@ case "$1 $2" in
     "-c import platform"*) echo "${FAKE_ARCH:-arm64}"; exit 0 ;;
     "-c import sys"*) echo 3.12; exit 0 ;;
 esac
-[ "$1 $2" = "-m pip" ] || exit 0  # sotto.py setup, install_app.py
+[ "$1 $2" = "-m pip" ] || exit 0  # scrivo.py setup, install_app.py
 shift 2
 pin() {  # set one name==version line in the state
     grep -v "^${1%%==*}==" "$FAKE_STATE" > "$FAKE_STATE.new"; echo "$1" >> "$FAKE_STATE.new"
@@ -312,7 +312,7 @@ class UpdateOrderTests(unittest.TestCase):
         self.state = base / "installed.txt"
         self.state.write_text("numpy==1.0\n")
         self.env = dict(os.environ, FAKE_LOG=str(self.log), FAKE_STATE=str(self.state),
-                        SOTTO_DATA_DIR=str(base / "data"))
+                        SCRIVO_DATA_DIR=str(base / "data"))
 
     def update(self, **env):
         return subprocess.run(["/bin/bash", str(self.user / "scripts/install-mac.sh"), "--update",
@@ -387,18 +387,20 @@ class UpdateOrderTests(unittest.TestCase):
                 process.wait()
         self.assert_rolled_back(subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr))
 
-    def test_an_update_refuses_while_sotto_runs_from_this_copy(self):
+    def test_an_update_refuses_while_scrivo_runs_from_this_copy(self):
         # [N26] A re-run swapped source and packages under the running app.
         # The app runs the resolved path (install_app.py ROOT); a terminal run
-        # (venv-alpha/bin/python sotto.py run) a path relative to its working
+        # (venv-alpha/bin/python scrivo.py run) a path relative to its working
         # directory, which the check missed [PR21 review].
         other = self.user.parent / "another-copy"
         other.mkdir()
-        elsewhere = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", "sotto.py", "run"], cwd=other)
+        elsewhere = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", "scrivo.py", "run"], cwd=other)
         self.addCleanup(elsewhere.wait)
         self.addCleanup(elsewhere.kill)
-        for arguments, cwd in (([str(self.user.resolve() / "sotto.py")], None), (["sotto.py", "run"], self.user),
-                               (["./sotto.py", "run"], self.user), (["../sotto.py"], self.user / "scripts")):
+        # sotto.py: the stand-in that launchers built before the rename still run.
+        for arguments, cwd in (([str(self.user.resolve() / "scrivo.py")], None), (["scrivo.py", "run"], self.user),
+                               (["./scrivo.py", "run"], self.user), (["../scrivo.py"], self.user / "scripts"),
+                               ([str(self.user.resolve() / "sotto.py")], None), (["sotto.py", "run"], self.user)):
             with self.subTest(arguments=arguments, cwd=cwd):
                 running = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", *arguments], cwd=cwd)
                 try:
@@ -411,15 +413,19 @@ class UpdateOrderTests(unittest.TestCase):
                 self.assertIn(f"Scrivo is running from this copy (process {running.pid})", refused.stderr)
                 self.assertFalse(self.log.exists())  # no package install ran
                 self.assertEqual(self.git(self.user, "rev-parse", "HEAD"), self.old)
-        # Check for Updates runs the installer from inside that Sotto, which then restarts.
-        # A sotto.py in another folder (still running) is not this copy.
-        running = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", "sotto.py", "run"], cwd=self.user)
-        self.addCleanup(running.wait)
-        self.addCleanup(running.kill)
-        time.sleep(0.2)
-        from_app = self.update(SOTTO_UPDATE_FROM_PID=str(running.pid))
-        self.assertEqual(from_app.returncode, 0, from_app.stderr)
-        self.assertEqual(self.git(self.user, "rev-parse", "HEAD"), self.new)
+        # Check for Updates runs the installer from inside that Scrivo, which then restarts.
+        # A scrivo.py in another folder (still running) is not this copy. A Scrivo
+        # started before the rename names itself in SOTTO_UPDATE_FROM_PID.
+        for script, variable in (("sotto.py", "SOTTO_UPDATE_FROM_PID"), ("scrivo.py", "SCRIVO_UPDATE_FROM_PID")):
+            with self.subTest(variable=variable):
+                running = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", script, "run"], cwd=self.user)
+                self.addCleanup(running.wait)
+                self.addCleanup(running.kill)
+                time.sleep(0.2)
+                from_app = self.update(**{variable: str(running.pid)})
+                self.assertEqual(from_app.returncode, 0, from_app.stderr)
+                self.assertEqual(self.git(self.user, "rev-parse", "HEAD"), self.new)
+                running.kill()
 
     @unittest.skipUnless(any(Path(p).is_file() for p in ("/opt/homebrew/bin/python3.12", "/usr/local/bin/python3.12")),
                          "needs a native Python 3.12 in /opt/homebrew or /usr/local")
@@ -470,7 +476,7 @@ def fake_bundle(folder: Path, app_name: str, bundle_id: str, executable: str, sc
     (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": bundle_id,
                                                           "CFBundleExecutable": executable}))
     (contents / "MacOS" / executable).write_bytes(
-        b"\xcf\xfa\xed\xfe code\0SOTTO_DATA_DIR\0" + os.fsencode(str(script)) + b"\0run\0--idle-release\0")
+        b"\xcf\xfa\xed\xfe code\0SCRIVO_DATA_DIR\0" + os.fsencode(str(script)) + b"\0run\0--idle-release\0")
     return contents.parent
 
 
@@ -478,7 +484,8 @@ def fake_bundle(folder: Path, app_name: str, bundle_id: str, executable: str, sc
 class SottoToScrivoTests(unittest.TestCase):
     """Scrivo was called Sotto. After Update Now on the last Sotto build, the
     old process restarts through the old Sotto.app (or its login item), whose
-    launcher runs this folder's new sotto.py; that start opens Scrivo.app, and
+    launcher runs this folder's sotto.py, now the stand-in that runs the new
+    scrivo.py; that start opens Scrivo.app, and
     Scrivo.app's start retires the old app and login item. Fakes stand in for
     open and launchctl; nothing outside the temp folder is touched."""
 
@@ -487,8 +494,8 @@ class SottoToScrivoTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, base)
         self.home = base / "home"
         self.folders = [base / "Applications", self.home / "Applications"]
-        self.script = base / "sotto" / "sotto.py"
-        self.other_script = base / "another-copy" / "sotto.py"
+        self.script = base / "scrivo" / "scrivo.py"
+        self.other_script = base / "another-copy" / "scrivo.py"
         self.calls = []
 
     def fake_run(self, returncode=0, error=None):
@@ -500,7 +507,9 @@ class SottoToScrivoTests(unittest.TestCase):
         return run
 
     def old_app(self, folder=None, bundle_id=mac_app.LEGACY_BUNDLE_ID, script=None) -> Path:
-        return fake_bundle(folder or self.folders[0], "Sotto.app", bundle_id, "Sotto", script or self.script)
+        # Its launcher runs the sotto.py of the folder it was built for.
+        return fake_bundle(folder or self.folders[0], "Sotto.app", bundle_id, "Sotto",
+                           (script or self.script).with_name(mac_app.LEGACY_SCRIPT))
 
     def new_app(self, folder=None, bundle_id=mac_app.BUNDLE_ID, script=None) -> Path:
         return fake_bundle(folder or self.folders[0], "Scrivo.app", bundle_id, "Scrivo", script or self.script)
@@ -526,7 +535,7 @@ class SottoToScrivoTests(unittest.TestCase):
 
     @unittest.skipUnless(HAVE_CLANG, "needs macOS with Apple's command line tools")
     def test_the_launcher_check_finds_the_script_path_in_the_compiled_launcher(self):
-        script = self.folders[0].parent / "x" / "sotto" / "sotto.py"
+        script = self.folders[0].parent / "x" / "scrivo" / "scrivo.py"
         app = self.folders[0] / "Sotto.app"
         (app / "Contents" / "MacOS").mkdir(parents=True)
         (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps({"CFBundleExecutable": "Sotto"}))
@@ -535,7 +544,7 @@ class SottoToScrivoTests(unittest.TestCase):
             app_executable=app / "Contents" / "MacOS" / "Sotto"), app / "Contents" / "MacOS" / "Sotto")
         self.assertTrue(mac_app.launcher_runs(app, script))
         self.assertFalse(mac_app.launcher_runs(app, self.other_script))
-        self.assertFalse(mac_app.launcher_runs(app, Path("/sotto/sotto.py")))  # only a suffix of the real path
+        self.assertFalse(mac_app.launcher_runs(app, Path("/scrivo/scrivo.py")))  # only a suffix of the real path
 
     def test_the_old_app_started_after_the_update_opens_scrivo_and_exits(self):
         old, new = self.old_app(), self.new_app()
@@ -569,6 +578,38 @@ class SottoToScrivoTests(unittest.TestCase):
         for run in (self.fake_run(returncode=1), self.fake_run(error=OSError("no open")),
                     self.fake_run(error=subprocess.TimeoutExpired("open", 30))):
             self.assertIsNone(mac_app.hand_off(executable, self.script, folders=self.folders, run=run))
+
+    def test_a_scrivo_app_built_before_the_module_rename_is_opened_too(self):
+        # Its launcher runs this folder's sotto.py (the stand-in) until the
+        # update rebuilds it; a hand-off must still find it.
+        old, new = self.old_app(), self.new_app(script=self.script.with_name("sotto.py"))
+        self.assertEqual(mac_app.hand_off(str(old / "Contents/MacOS/Sotto"), self.script, folders=self.folders,
+                                          run=self.fake_run()), new)
+
+    def test_the_old_app_of_an_earlier_archive_beside_this_one_is_retired(self):
+        # A source archive extracts to scrivo-alpha/; the one before the
+        # rename extracted to sotto-alpha/ next to it, and its Sotto.app runs
+        # that folder's sotto.py.
+        base = self.script.parent.parent
+        self.script = base / "scrivo-alpha" / "scrivo.py"
+        earlier = base / "sotto-alpha" / "scrivo.py"
+        self.assertEqual(mac_app.legacy_scripts(self.script),
+                         [base / "scrivo-alpha" / "sotto.py", base / "sotto-alpha" / "sotto.py"])
+        old, new = self.old_app(script=earlier), self.new_app()
+        legacy_plist = self.old_login_item(old / "Contents/MacOS/Sotto")
+        self.assertEqual(len(self.retire(new / "Contents/MacOS/Scrivo")), 2)
+        self.assertFalse(old.exists())
+        self.assertFalse(legacy_plist.exists())
+        self.assertEqual(plistlib.loads(login_item.plist_path(self.home).read_bytes())["ProgramArguments"],
+                         [str(new / "Contents/MacOS/Scrivo")])
+
+    def test_only_an_archive_folder_takes_over_its_sibling(self):
+        base = self.script.parent.parent
+        self.assertEqual(mac_app.legacy_scripts(self.script), [self.script.with_name("sotto.py")])
+        old = self.old_app(script=base / "sotto-alpha" / "scrivo.py")
+        self.old_login_item(old / "Contents/MacOS/Sotto")
+        self.assertEqual(self.retire(self.new_app() / "Contents/MacOS/Scrivo"), [])
+        self.assertTrue(old.exists())
 
     def test_only_a_start_from_the_old_app_hands_off(self):
         new = self.new_app()
@@ -677,51 +718,58 @@ class SottoToScrivoTests(unittest.TestCase):
                 unittest.mock.patch.object(mac_app, "remove_legacy", return_value=[old]) as remove_legacy:
             self.assertTrue(install_app.uninstall(self.folders))
         disable.assert_called_once_with(unload=True)
-        remove_legacy.assert_called_once_with(install_app.ROOT / "sotto.py", folders=self.folders)
+        remove_legacy.assert_called_once_with(install_app.ROOT / "scrivo.py", folders=self.folders)
         self.assertFalse(new.exists())
 
     @unittest.skipUnless(sys.platform == "darwin", "Scrivo.app is macOS only")
-    def test_sotto_py_exits_cleanly_after_handing_off_and_otherwise_retires_the_old_app(self):
-        import sotto
+    def test_scrivo_py_exits_cleanly_after_handing_off_and_otherwise_retires_the_old_app(self):
+        import scrivo
         retired = []
-        with unittest.mock.patch.object(sotto, "log"):
-            self.assertTrue(sotto.move_from_legacy_app(hand_off=lambda executable, script: Path("/A/Scrivo.app"),
+        with unittest.mock.patch.object(scrivo, "log"):
+            self.assertTrue(scrivo.move_from_legacy_app(hand_off=lambda executable, script: Path("/A/Scrivo.app"),
                                                        retire=lambda executable, script: retired.append(1) or []))
             self.assertEqual(retired, [], "a hand-off never retires: Scrivo.app does that")
-            self.assertFalse(sotto.move_from_legacy_app(hand_off=lambda executable, script: None,
+            self.assertFalse(scrivo.move_from_legacy_app(hand_off=lambda executable, script: None,
                                                         retire=lambda executable, script: retired.append(script) or []))
-            self.assertEqual(retired, [Path(sotto.__file__).resolve()])
+            self.assertEqual(retired, [Path(scrivo.__file__).resolve()])
 
             def broken(executable, script):
                 raise PermissionError("Operation not permitted")
-            self.assertFalse(sotto.move_from_legacy_app(hand_off=lambda executable, script: None, retire=broken))
+            self.assertFalse(scrivo.move_from_legacy_app(hand_off=lambda executable, script: None, retire=broken))
 
     @unittest.skipUnless(sys.platform == "darwin", "Scrivo.app is macOS only")
     def test_a_handed_off_start_never_reaches_the_app_or_its_permission_checks(self):
-        import sotto
-        with unittest.mock.patch.object(sys, "argv", ["sotto.py", "run", "--idle-release", "0"]), \
-                unittest.mock.patch.dict(os.environ, {"SOTTO_LAUNCHER": "app"}), \
-                unittest.mock.patch.object(sotto, "route_app_logs"), \
-                unittest.mock.patch.object(sotto, "move_from_legacy_app", return_value=True) as moved, \
-                unittest.mock.patch.object(sotto, "run") as run:
-            sotto.main()
+        import scrivo
+        with unittest.mock.patch.object(sys, "argv", ["scrivo.py", "run", "--idle-release", "0"]), \
+                unittest.mock.patch.dict(os.environ, {"SCRIVO_LAUNCHER": "app"}), \
+                unittest.mock.patch.object(scrivo, "route_app_logs"), \
+                unittest.mock.patch.object(scrivo, "move_from_legacy_app", return_value=True) as moved, \
+                unittest.mock.patch.object(scrivo, "run") as run:
+            scrivo.main()
         moved.assert_called_once_with()
         run.assert_not_called()
 
 
-@unittest.skipUnless(HAVE_LEGACY_COMMIT and HAVE_CLANG,
-                     f"needs this repository's git history ({LEGACY_COMMIT}) on macOS")
+LAST_SCRIVO_COMMIT = "f221967"  # main before the module rename (sotto.py -> scrivo.py): the next Update Now
+HAVE_LAST_SCRIVO_COMMIT = HAVE_LEGACY_COMMIT and subprocess.run(
+    ["git", "-C", str(ROOT), "cat-file", "-e", f"{LAST_SCRIVO_COMMIT}^{{commit}}"], capture_output=True).returncode == 0
+
+
+@unittest.skipUnless(HAVE_LAST_SCRIVO_COMMIT and HAVE_CLANG,
+                     f"needs this repository's git history ({LEGACY_COMMIT}, {LAST_SCRIVO_COMMIT}) on macOS")
 class UpdateFromLastSottoTests(unittest.TestCase):
-    """The real first update: the installer of the last Sotto build (21ce68b),
-    read by bash while it fast-forwards its own file, finishes with this
-    version's sotto.py setup and install_app.py."""
+    """The real first update: the installer of the last Sotto build (21ce68b)
+    or of the last build before the module rename (f221967), read by bash
+    while it fast-forwards its own file, finishes with this version's files.
+    It runs this folder's sotto.py setup (now the stand-in that runs
+    scrivo.py) with only the old SOTTO_* variables, then install_app.py."""
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
                                "-c", "init.defaultBranch=main", *args],
                               cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
-    def test_the_old_installer_runs_the_new_install_app_with_its_old_arguments(self):
+    def update_from(self, commit: str, *, stand_in: bool = True):
         base = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, base)
         remote, publisher, user = base / "remote.git", base / "publisher", base / "user"
@@ -729,55 +777,77 @@ class UpdateFromLastSottoTests(unittest.TestCase):
         self.git(base, "clone", str(remote), str(publisher))
         (publisher / "scripts").mkdir()
         for name in ("scripts/install-mac.sh", "scripts/install_app.py", "sotto.py"):
-            (publisher / name).write_text(self.git(ROOT, "show", f"{LEGACY_COMMIT}:{name}") + "\n")
+            (publisher / name).write_text(self.git(ROOT, "show", f"{commit}:{name}") + "\n")
         (publisher / "requirements-alpha.txt").write_text("-r requirements.txt\n-c constraints-alpha.txt\n")
         (publisher / "requirements.txt").write_text("numpy\n")
         (publisher / "constraints-alpha.txt").write_text("numpy==1.0\n")
         (publisher / ".gitignore").write_text("venv-alpha/\n")
         self.git(publisher, "add", ".")
-        self.git(publisher, "commit", "-m", "The last Sotto")
+        self.git(publisher, "commit", "-m", "The installed version")
         self.git(publisher, "push", "origin", "HEAD:main")
         self.git(base, "clone", "--branch", "main", str(remote), str(user))
-        for name in ("scripts/install-mac.sh", "scripts/install_app.py", "sotto.py", "mac_app.py"):
+        for name in ("scripts/install-mac.sh", "scripts/install_app.py", "scrivo.py", "sotto.py", "mac_app.py",
+                     "scrivo_paths.py"):
             shutil.copy2(ROOT / name, publisher / name)
-        self.git(publisher, "add", ".")
-        self.git(publisher, "commit", "-m", "Scrivo")
+        if not stand_in:
+            (publisher / "sotto.py").unlink()
+        self.git(publisher, "add", "-A", ".")
+        self.git(publisher, "commit", "-m", "Scrivo, internals renamed")
         self.git(publisher, "push", "origin", "HEAD:main")
         fake = user / "venv-alpha" / "bin" / "python"
         fake.parent.mkdir(parents=True)
         log = base / "ran.txt"
-        # Record what the installer runs after the source switch, and whether
-        # the file it runs is this version's (the new names are in it).
+        # Record what the installer runs after the source switch, with which
+        # variables; like python, a missing script file fails with status 2.
         fake.write_text(FAKE_PYTHON.replace(
             '[ "$1 $2" = "-m pip" ] || exit 0',
-            'case "$1" in */install_app.py|*/sotto.py)\n'
-            '    echo "ran: $* new=$(grep -c "Scrivo" "$1")" >> "$FAKE_RUN_LOG"; exit 0 ;; esac\n'
-            '[ "$1 $2" = "-m pip" ] || exit 0'))
+            'case "$1" in */install_app.py|*/sotto.py|*/scrivo.py)\n'
+            '    [ -f "$1" ] || { echo "python: can\'t open file \'$1\'" >&2; exit 2; }\n'
+            '    echo "ran: $* old=${SOTTO_DATA_DIR:-} new=${SCRIVO_DATA_DIR:-}" >> "$FAKE_RUN_LOG"; exit 0 ;; esac\n'
+            '[ "$1 $2" = "-m pip" ] || exit 0', 1))
         fake.chmod(0o755)
         state = base / "installed.txt"
         state.write_text("numpy==1.0\n")
         data = base / "data"
+        environment = {name: value for name, value in os.environ.items() if not name.startswith(("SOTTO_", "SCRIVO_"))}
         result = subprocess.run(
             ["/bin/bash", str(user / "scripts/install-mac.sh"), "--update", "--python", str(fake)],
-            env=dict(os.environ, FAKE_LOG=str(base / "pip.log"), FAKE_STATE=str(state), FAKE_RUN_LOG=str(log),
-                     SOTTO_DATA_DIR=str(data)),
+            env=dict(environment, FAKE_LOG=str(base / "pip.log"), FAKE_STATE=str(state), FAKE_RUN_LOG=str(log),
+                     SOTTO_DATA_DIR=str(data)),  # what the running app's launcher exports
             capture_output=True, text=True, timeout=120)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Scrivo", (user / "scripts/install_app.py").read_text(), "the source moved to this version")
-        ran = log.read_text().splitlines()
-        self.assertEqual(len(ran), 2, ran)
-        self.assertRegex(ran[0], rf"^ran: {re.escape(str(user.resolve()))}/sotto.py setup new=[1-9]")
-        self.assertRegex(ran[1], rf"^ran: {re.escape(str(user.resolve()))}/scripts/install_app.py --data-dir "
-                                 rf"{re.escape(str(data))} new=[1-9]")
-        # bash went on reading the old file (git replaced it, never rewrote it in place):
-        # the closing message in update.log is the old one.
-        self.assertIn("open -a Sotto", result.stdout)
+        return result, (log.read_text().splitlines() if log.exists() else []), user.resolve(), data
+
+    def test_the_old_installer_runs_the_stand_in_and_the_new_install_app(self):
+        for commit, closing in ((LEGACY_COMMIT, "open -a Sotto"), (LAST_SCRIVO_COMMIT, "open -a Scrivo")):
+            with self.subTest(commit=commit):
+                result, ran, user, data = self.update_from(commit)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue((user / "scrivo.py").is_file(), "the source moved to this version")
+                self.assertIn('with_name("scrivo.py")', (user / "sotto.py").read_text(), "sotto.py is the stand-in")
+                self.assertEqual(len(ran), 2, ran)
+                # Only the old variable: bash went on reading the old file (git
+                # replaced it, never rewrote it in place), so scrivo.py must
+                # read SOTTO_DATA_DIR too.
+                self.assertEqual(ran[0], f"ran: {user}/sotto.py setup old={data} new=")
+                self.assertEqual(ran[1], f"ran: {user}/scripts/install_app.py --data-dir {data} old={data} new=")
+                self.assertIn(closing, result.stdout)
+                self.assertIn('script=ROOT / "scrivo.py"', (user / "scripts/install_app.py").read_text(),
+                              "the app it rebuilds runs scrivo.py")
+
+    def test_without_the_stand_in_the_old_installer_stops_after_the_source_moved(self):
+        # Why sotto.py stays: the old installer calls it by path after the
+        # merge, under set -e, and an old launcher would crash-loop on it.
+        result, ran, user, _data = self.update_from(LAST_SCRIVO_COMMIT, stand_in=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("can't open file", result.stderr)
+        self.assertTrue((user / "scrivo.py").is_file(), "the source had already moved")
+        self.assertEqual(ran, [])
 
 
 @unittest.skipUnless(sys.platform != "win32" and shutil.which("bash") and shutil.which("perl"), "needs bash and perl")
 class UninstallFallbackLauncherTests(unittest.TestCase):
     """install-mac.sh --uninstall without its venv removes an old Sotto.app
-    only when the launcher starts exactly this folder's sotto.py (Codex review
+    only when the launcher starts exactly this folder's scrivo.py (Codex review
     on #40: a substring match would also take a launcher built for a path that
     merely contains this one)."""
 
@@ -786,7 +856,7 @@ class UninstallFallbackLauncherTests(unittest.TestCase):
         function = re.search(r"^launcher_runs_this\(\) \{\n.*?^\}\n", text, re.S | re.M)
         self.assertIsNotNone(function, "install-mac.sh lost launcher_runs_this")
         with tempfile.TemporaryDirectory() as temporary:
-            launcher = Path(temporary) / "Sotto"
+            launcher = Path(temporary) / "Scrivo"
             launcher.write_bytes(launcher_bytes)
             script = (f"ROOT={shlex.quote(str(root))}\n{function.group(0)}"
                       f"launcher_runs_this {shlex.quote(str(launcher))}\n")
@@ -794,7 +864,7 @@ class UninstallFallbackLauncherTests(unittest.TestCase):
 
     def test_only_the_exact_nul_terminated_path_counts(self):
         root = Path("/Users/someone/sotto")
-        exact = os.fsencode(str(root / "sotto.py"))
+        exact = os.fsencode(str(root / "sotto.py"))  # what an old Sotto.app's launcher runs
         self.assertEqual(self.launcher_runs_this(root, b"\xcf\xfa\0" + exact + b"\0rest"), 0)
         self.assertNotEqual(self.launcher_runs_this(root, b"\0/Volumes/backup" + exact + b"\0"), 0)
         self.assertNotEqual(self.launcher_runs_this(root, b"\0" + exact + b".bak\0"), 0)

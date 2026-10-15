@@ -16,7 +16,7 @@ busy, oversized, holding GDI/private handles, or marked sensitive by its owner
 Spacing: ``trailing`` appends one space so consecutive dictations don't run
 together; ``none`` appends nothing.  ``smart`` behaves like ``trailing``:
 Windows offers no reliable, app-independent way to read the character before
-the caret, so no leading space is ever guessed (sotto.compose_insertion with
+the caret, so no leading space is ever guessed (scrivo.compose_insertion with
 an unknown context).
 
 Every event Scrivo injects carries ``INJECTED_TAG`` in ``dwExtraInfo`` so the
@@ -46,7 +46,7 @@ KEYEVENTF_UNICODE = 0x0004
 VK_CONTROL = 0x11
 VK_V = 0x56
 VK_MENU_MASK = 0xE8  # unassigned; cancels Alt's menu activation (win_hotkey)
-INJECTED_TAG = 0x534F54544F  # "SOTTO" — marks Scrivo's own synthetic keys
+INJECTED_TAG = 0x53435249564F  # "SCRIVO" — marks Scrivo's own synthetic keys
 _CHUNK = 256  # inputs per SendInput call (dictations are far smaller)
 
 RENDER_WAIT_S = 10.0    # an app that has not read the offer by now never pastes it
@@ -252,7 +252,7 @@ for _name, _restype, _argtypes in (
     _function = getattr(_kernel32, _name)
     _function.restype, _function.argtypes = _restype, _argtypes
 
-_WINDOW_CLASS = "SottoClipboardOwner"
+_WINDOW_CLASS = "ScrivoClipboardOwner"
 _windows: dict[int, "_ClipboardWindow"] = {}
 _class_lock = threading.Lock()
 _class_registered = False
@@ -297,7 +297,7 @@ class _ClipboardWindow:
                          for name in (*OFFER_MARKERS, *SENSITIVE_MARKERS)}
         started = threading.Event()
         self._thread = threading.Thread(target=self._run, args=(started,), daemon=True,
-                                        name="sotto-clipboard")
+                                        name="scrivo-clipboard")
         self._thread.start()
         if not started.wait(5) or not self.hwnd:
             raise OSError("the clipboard window could not be created")
@@ -522,7 +522,7 @@ class _Pending:
 
 
 def _spawn(function: Callable[[], None]) -> None:
-    threading.Thread(target=function, daemon=True, name="sotto-clipboard-restore").start()
+    threading.Thread(target=function, daemon=True, name="scrivo-clipboard-restore").start()
 
 
 class ClipboardPaster:

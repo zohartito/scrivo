@@ -4,7 +4,7 @@ Each scenario drives the worker with fakes (no model, no mic, no clipboard,
 no AppKit main loop) and records everything observable: History appends,
 Retry commits, deliveries (inject / undo / copy), UI calls, progress totals
 and log lines. The expected values were recorded from the original
-``run().transcribe_worker`` closure in sotto.py, so the extracted class must
+``run().transcribe_worker`` closure in scrivo.py, so the extracted class must
 reproduce them exactly.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ import numpy as np
 
 import dictionary
 import settings
-import sotto
+import scrivo
 from audio_codec import prepare_canonical
 from speech_config import resolve_speech_config
 import transcription
@@ -36,7 +36,7 @@ WHISPER = resolve_speech_config("auto", language="en")
 NEMOTRON = resolve_speech_config("nemotron-en")
 LOOP = "difference " * 40
 PREFIX = "That is part of the plan we agreed on last week."
-RECORD = os.environ.get("SOTTO_GOLDEN_RECORD") == "1"
+RECORD = os.environ.get("SCRIVO_GOLDEN_RECORD") == "1"
 
 
 # --- fakes -------------------------------------------------------------------
@@ -72,7 +72,7 @@ class FakeStream:
 
     def finish(self):
         self.finished += 1
-        return self.text, prepare_canonical(sotto.prepare_for_whisper(self.raw, self.rate))
+        return self.text, prepare_canonical(scrivo.prepare_for_whisper(self.raw, self.rate))
 
     def close(self):
         self.closed += 1
@@ -94,7 +94,7 @@ class FakeCoordinator:
             return self._append(text, prepared, seconds, model, **kw)
         row = {"id": kw.get("entry_id") or "row1", "text": text, "provenance": kw.get("provenance")}
         self.appended.append({"text": text, "seconds": round(seconds, 3), "model": model,
-                              "prepared_seconds": round(len(prepared.asr_samples) / sotto.SAMPLE_RATE, 3),
+                              "prepared_seconds": round(len(prepared.asr_samples) / scrivo.SAMPLE_RATE, 3),
                               **kw})
         return row
 
@@ -178,7 +178,7 @@ class Harness:
         self.copied: list[str] = []
         self.totals: list[tuple[str, float]] = []
         self.refreshed = 0
-        self.shutdown = sotto.ShutdownBoundary()
+        self.shutdown = scrivo.ShutdownBoundary()
         self.jobs: queue.Queue = queue.Queue()
         self.coordinator = FakeCoordinator(snapshot, append=append)
         self.status_ui = FakeStatusUI()
@@ -1017,7 +1017,7 @@ class UntranscribedAtShutdownTests(TemporaryUserFiles, unittest.TestCase):
 
 def read_only_history():
     """What History hands back while history.jsonl is unreadable (F16b)."""
-    return sotto.UnsavedHistory(types.SimpleNamespace(unreadable="damaged line 3"), None).append_live
+    return scrivo.UnsavedHistory(types.SimpleNamespace(unreadable="damaged line 3"), None).append_live
 
 
 class RoundTwoWorkerTests(TemporaryUserFiles, unittest.TestCase):
@@ -1095,8 +1095,8 @@ class RoundTwoWorkerTests(TemporaryUserFiles, unittest.TestCase):
 
     def test_n19_the_retry_copy_is_counted_until_the_main_thread_runs_it(self):
         h = Harness(says("Please call me back at four"), snapshot=snapshot(speech(2.0)))
-        deliveries, main_loop = sotto.PendingDeliveries(), []
-        ui_call, deliver_call = sotto.main_thread_dispatch(
+        deliveries, main_loop = scrivo.PendingDeliveries(), []
+        ui_call, deliver_call = scrivo.main_thread_dispatch(
             True, lambda method, *args: main_loop.append((method, args)), deliveries)
         h.worker.ui_call, h.worker.deliver_call = ui_call, deliver_call
         h.run_jobs(h.retry_job())

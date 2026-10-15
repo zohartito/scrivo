@@ -9,10 +9,10 @@ dictation_in_flight, end_capture_now, main_thread_dispatch) and the exit and
 drain constants live here too. ShutdownBoundary, CaptureGate and the drain
 constants are shared with the Windows app.
 
-Moved verbatim out of sotto.py (restructure step 2); sotto re-exports every
-public name, so ``sotto.Lifecycle is lifecycle.Lifecycle``. Patch the launchd
+Moved verbatim out of scrivo.py (restructure step 2); scrivo re-exports every
+public name, so ``scrivo.Lifecycle is lifecycle.Lifecycle``. Patch the launchd
 probes RestartController calls (launchd_owns_this_process,
-launched_as_sealed_job) here, not through sotto. Imports nothing from sotto.
+launched_as_sealed_job) here, not through scrivo. Imports nothing from scrivo.
 """
 from __future__ import annotations
 
@@ -28,7 +28,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from gestures import HANDS_FREE_MAX_S
-from sotto_log import log
+from scrivo_log import log
+from scrivo_paths import env
 
 if TYPE_CHECKING:
     from delivery import PendingDeliveries
@@ -169,12 +170,17 @@ def commit_if_running(boundary: ShutdownBoundary, commit) -> bool:
     return True
 
 
-LAUNCHD_LABEL = "com.zohartito.sotto.app"  # must match launchd/ and scripts/rollout.sh
+LAUNCHD_LABEL = "com.zohartito.scrivo.app"  # must match launchd/ and scripts/rollout.sh
 
 
 def app_mode() -> bool:
     """Started by the installed Scrivo.app launcher (not a terminal)."""
-    return os.environ.get("SOTTO_LAUNCHER") == "app"
+    return env("LAUNCHER") == "app"
+
+
+def app_executable() -> str:
+    """The Scrivo.app launcher that started this process ('' from a terminal)."""
+    return env("APP_EXECUTABLE")
 
 
 def launchd_owns_this_process() -> bool:
@@ -252,7 +258,7 @@ class RestartController:
     def exec_foreground(self) -> None:
         if not self.foreground_pending:
             return
-        if app_mode() and os.environ.get("SOTTO_APP_EXECUTABLE", "").strip():
+        if app_mode() and app_executable():
             relaunch_app_after_exit()
             return
         os.execv(sys.executable, self.argv)
@@ -270,9 +276,9 @@ def relaunch_app_after_exit() -> None:
     starts the login item if it is loaded, otherwise opens the app again."""
     import subprocess
     import login_item
-    bundle = Path(os.environ["SOTTO_APP_EXECUTABLE"].strip()).parents[2]
+    bundle = Path(app_executable()).parents[2]
     subprocess.Popen(
-        ["/bin/sh", "-c", APP_RELAUNCH_SCRIPT, "sotto-relaunch", str(os.getppid()), login_item.LABEL, str(bundle)],
+        ["/bin/sh", "-c", APP_RELAUNCH_SCRIPT, "scrivo-relaunch", str(os.getppid()), login_item.LABEL, str(bundle)],
         start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, close_fds=True)
     log("restarting Scrivo.app")
@@ -494,4 +500,4 @@ class Lifecycle:
                 log(f"! {verb} without waiting: {str(exc)[:160]}")
             finally:
                 then()
-        threading.Thread(target=work, daemon=True, name=f"sotto-{verb}").start()
+        threading.Thread(target=work, daemon=True, name=f"scrivo-{verb}").start()

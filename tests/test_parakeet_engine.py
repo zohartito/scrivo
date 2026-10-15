@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-import sotto
+import scrivo
 import speech_config
 from speech_config import MODEL_PROFILES, MODEL_REVISIONS, resolve_speech_config, with_language
 
@@ -24,7 +24,7 @@ class ParakeetConfigTests(unittest.TestCase):
         self.assertIsNone(with_language(config, "en").language)
         with self.assertRaises(ValueError):
             resolve_speech_config("parakeet", model="someone/else")
-        kwargs, metadata = sotto._transcription_kwargs(config, ("Sotto",), 3.0)
+        kwargs, metadata = scrivo._transcription_kwargs(config, ("Scrivo",), 3.0)
         self.assertEqual(kwargs, {})
         self.assertIn("disabled", metadata["prompt"])
 
@@ -52,7 +52,7 @@ class LocalParakeetTests(unittest.TestCase):
     def local(self, offline=False):
         with patch("offline_runtime.offline_requested", return_value=offline), \
              patch("huggingface_hub.snapshot_download", return_value=str(self.snapshot)) as snapshot:
-            local = sotto.LocalParakeet(REPO)
+            local = scrivo.LocalParakeet(REPO)
         self.assertEqual(snapshot.call_args.kwargs["revision"], MODEL_REVISIONS[REPO])
         self.assertTrue(snapshot.call_args.kwargs["local_files_only"])
         return local
@@ -68,7 +68,7 @@ class LocalParakeetTests(unittest.TestCase):
             generate=lambda mel: [types.SimpleNamespace(text=f" part{len(seen)} ")])
         with patch.object(local, "_load", return_value=model), \
              patch("parakeet_mlx.audio.get_logmel", side_effect=lambda audio, config: seen.append(audio.shape[0])):
-            samples = np.zeros(int((local.CHUNK_SECONDS * 2 + 5) * sotto.SAMPLE_RATE), dtype=np.float32)
+            samples = np.zeros(int((local.CHUNK_SECONDS * 2 + 5) * scrivo.SAMPLE_RATE), dtype=np.float32)
             result = local.transcribe(samples, path_or_hf_repo="ignored", language="en")
         self.assertEqual(len(seen), 3)                       # 120 s + 120 s + 5 s
         self.assertEqual(result["text"], "part1 part2 part3")

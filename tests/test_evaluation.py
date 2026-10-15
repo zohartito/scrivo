@@ -24,7 +24,7 @@ class EvaluationTests(unittest.TestCase):
 
     def test_terms_and_numbers(self) -> None:
         accuracy, matched, total = required_term_accuracy(
-            "Sotto met in الدار البيضاء", ["Sotto", "الدار البيضاء", "missing"]
+            "Scrivo met in الدار البيضاء", ["Scrivo", "الدار البيضاء", "missing"]
         )
         self.assertEqual((accuracy, matched, total), (2 / 3, 2, 3))
         numeric, matched_numbers, total_numbers = numeric_token_accuracy("έχω 12 μήλα και 3 αχλάδια", "έχω 12 μήλα")

@@ -1,4 +1,4 @@
-# benchmark-gate — the EVENT-on-push benchmark gate for sotto (+ a monthly
+# benchmark-gate — the EVENT-on-push benchmark gate for scrivo (+ a monthly
 # re-benchmark reminder).
 #
 # On every push (and on-demand) it runs `benchmark.py --dry-run` against a tiny

@@ -452,9 +452,9 @@ class SilverLaneTests(unittest.TestCase):
         """The pinned reader can publish and reload V2 without teachers."""
         from maintainer import calibration_manifest_builder as builder
         from maintainer.calibration_worker import load_manifest
-        reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
-        test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
-        validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
+        reader=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
+        test=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
+        validation=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
         if not (reader.is_file() and test.is_file() and validation.is_file()):
             self.skipTest("pinned reader fixture unavailable")
         output=self.root / "built"
@@ -472,9 +472,9 @@ class SilverLaneTests(unittest.TestCase):
     def test_builder_exact_source_bundle_failure_cleans_stage_and_preserves_target(self):
         """A post-audio bundle failure never publishes or overwrites output."""
         from maintainer import calibration_manifest_builder as builder
-        reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
-        test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
-        validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
+        reader=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
+        test=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
+        validation=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
         if not (reader.is_file() and test.is_file() and validation.is_file()):
             self.skipTest("pinned reader fixture unavailable")
         output=self.root / "atomic-built"; captured=[]; original=builder.derive_plan_with_reader
@@ -495,9 +495,9 @@ class SilverLaneTests(unittest.TestCase):
     def test_worker_rejects_source_plan_mismatch_before_store_or_teacher(self):
         from maintainer import calibration_manifest_builder as builder
         from maintainer import calibration_worker as worker
-        reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
-        test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
-        validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
+        reader=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
+        test=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
+        validation=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
         if not (reader.is_file() and test.is_file() and validation.is_file()):
             self.skipTest("pinned reader fixture unavailable")
         records=builder.derive_plan_with_reader(test,validation,reader)
@@ -514,9 +514,9 @@ class SilverLaneTests(unittest.TestCase):
     def test_worker_releases_lease_without_terminal_on_mid_item_receipt_rotation(self):
         from maintainer import calibration_manifest_builder as builder
         from maintainer import calibration_worker as worker
-        reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
-        test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
-        validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
+        reader=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
+        test=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
+        validation=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
         if not (reader.is_file() and test.is_file() and validation.is_file()):
             self.skipTest("pinned reader fixture unavailable")
         records=builder.derive_plan_with_reader(test,validation,reader)
@@ -696,9 +696,9 @@ class SilverLaneTests(unittest.TestCase):
 
     def test_v2_exact_reader_ledger_claim_finish_and_finalize(self):
         """No-teacher durable V2 happy path over the compiled public plan."""
-        reader=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
-        test=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
-        validation=Path(os.environ.get("SOTTO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
+        reader=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "python3.11"
+        test=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "test.parquet"
+        validation=Path(os.environ.get("SCRIVO_CALIBRATION_FIXTURES", str(self.root / "no-calibration-fixtures"))) / "validation.parquet"
         if not (reader.is_file() and test.is_file() and validation.is_file()): self.skipTest("pinned reader fixture unavailable")
         records=derive_plan_with_reader(test,validation,reader)
         expected=[]
@@ -951,7 +951,7 @@ class SilverLaneTests(unittest.TestCase):
         candidate=candidate_manifest(PARAKEET_ID,revision="e2e-parakeet",package_versions=packages,
                                      runtime_identity=frozen_runtime[PARAKEET_ID])
         hf_home=self.root/"hf"
-        self.enterContext(mock.patch.dict(os.environ,{"SOTTO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False))
+        self.enterContext(mock.patch.dict(os.environ,{"SCRIVO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False))
         self.enterContext(mock.patch.object(PreflightReceipts,"_current_runtime_identity",
                                              side_effect=lambda stable_id: dict(frozen_runtime[str(stable_id)])))
         receipts=PreflightReceipts(self.root)
@@ -1692,7 +1692,7 @@ class SilverLaneTests(unittest.TestCase):
         key=store.enqueue(**job_args); self.assertIsNotNone(key)
         job=store.claim("owner"); self.assertIsNotNone(job)
         self.assertTrue(store.finish(job,outcome="accepted",reference="candidate",vote_digest="vote"))
-        AdaptiveLearning(self.root).revoke(row["id"],reason="history_deleted")  # sotto.nonadaptive_delete order
+        AdaptiveLearning(self.root).revoke(row["id"],reason="history_deleted")  # scrivo.nonadaptive_delete order
         self.assertTrue(self.coordinator.delete(row["id"]))
         self.assertIsNone(self.history.get(row["id"]))
         with store._connect() as db:
@@ -2231,7 +2231,7 @@ class SilverLaneTests(unittest.TestCase):
         inspected=(store.path,receipts,deployment,*preflight.glob("*.json"),*(hf_home.rglob("*")),*(self.root/"teacher-hf").rglob("*"),*(self.root.glob("*-adapter.py")))
         inspected=tuple(path for path in inspected if path.is_file() and not path.is_symlink()); before={path:(path.read_bytes(),path.stat().st_mtime_ns) for path in inspected}
         from maintainer import adaptive_worker as worker_module
-        with mock.patch.dict(os.environ,{"SOTTO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
+        with mock.patch.dict(os.environ,{"SCRIVO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
              mock.patch("maintainer.speech_backends._candidate_runtime_identity",side_effect=lambda stable: dict(candidate_identities[stable])), \
              mock.patch("maintainer.teacher_backends.runtime_identity",side_effect=lambda _path,packages,expected=None: next(dict(teacher_identities[family.stable_id]) for family in REQUIRED_TEACHERS if tuple(packages)==family.critical_packages)):
             status=sealed_readiness_status(self.root)

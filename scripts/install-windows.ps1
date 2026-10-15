@@ -8,9 +8,9 @@
   nvidia-smi sees a GPU; a re-run or update keeps the set recorded at
   install; -Cpu / -Cuda override), prepares the alpha data
   folder, downloads the pinned speech model and voice detection into it
-  (sotto_win.py setup; -SkipSetup leaves that to the first launch), and adds a
+  (scrivo_win.py setup; -SkipSetup leaves that to the first launch), and adds a
   Start Menu shortcut "Scrivo" that starts the tray app without a console
-  window, with SOTTO_DATA_DIR applied.
+  window, with SCRIVO_DATA_DIR applied.
 
   Nothing is installed system-wide: no admin rights, services or scheduled
   tasks. Python itself is never installed for you; the script says exactly
@@ -18,7 +18,9 @@
   runs from this environment (Windows would swap its packages underneath it)
   and never replaces a Start Menu "Scrivo" shortcut that starts another copy;
   the "Sotto" entry of earlier versions (Scrivo's former name) is removed
-  when it starts this copy.
+  when it starts this copy. A source archive (folder scrivo-alpha) extracted
+  next to an earlier one (folder sotto-alpha) takes over that copy's Start
+  Menu entry and launch-at-login entry.
   -Uninstall removes only what
   this script recorded creating (and the login entry the Settings window may
   have added); your data folder stays unless you add -RemoveData.
@@ -58,8 +60,8 @@ $ErrorActionPreference = 'Stop'
 # compared by their long names: Windows PowerShell's GetFullPath expands only
 # a path that exists and PowerShell 7's never does, so the part that exists
 # goes through GetLongPathName.
-if (-not ('SottoPaths.Native' -as [type])) {
-  Add-Type -Namespace SottoPaths -Name Native -MemberDefinition @'
+if (-not ('ScrivoPaths.Native' -as [type])) {
+  Add-Type -Namespace ScrivoPaths -Name Native -MemberDefinition @'
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 public static extern uint GetLongPathNameW(string shortPath, System.Text.StringBuilder longPath, uint size);
 '@
@@ -73,7 +75,7 @@ function Long-Path([string]$Path) {
     $existing = [IO.Path]::GetDirectoryName($existing)
   }
   $buffer = New-Object Text.StringBuilder 32768
-  if (-not $existing -or [SottoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
+  if (-not $existing -or [ScrivoPaths.Native]::GetLongPathNameW($existing, $buffer, $buffer.Capacity) -eq 0) { return $full }
   if ($rest) { return $buffer.ToString().TrimEnd('\') + $rest }
   return $buffer.ToString()
 }
@@ -95,8 +97,17 @@ $VenvDir = Long-Path $VenvDir
 $Shortcut = Join-Path $ShortcutDir 'Scrivo.lnk'
 # Scrivo was called Sotto: the entry earlier versions made, replaced when it starts this copy.
 $LegacyShortcut = Join-Path $ShortcutDir 'Sotto.lnk'
-$Manifest = Join-Path $VenvDir 'sotto-install.json'
+$Manifest = Join-Path $VenvDir 'scrivo-install.json'
+$LegacyManifest = Join-Path $VenvDir 'sotto-install.json'  # the record's name before the rename
 $LegacyData = Join-Path $env:APPDATA 'sotto'
+# The login entry keeps the value name 'Sotto' from before the rename.
+$RunValue = 'Sotto'
+# A source archive extracted next to the archive of an earlier version: that
+# copy's launcher (Scrivo was called Sotto, and so was the archive's folder).
+$EarlierLauncher = ''
+if ((Split-Path -Leaf $Root) -eq 'scrivo-alpha') {
+  $EarlierLauncher = Join-Path (Split-Path -Parent $Root) 'sotto-alpha\win_launch.py'
+}
 
 function Say([string]$Text) { Write-Host $Text }
 # Windows PowerShell 5.1 turns redirected native stderr into terminating
@@ -115,8 +126,10 @@ function Native([scriptblock]$Block) {
 }
 
 function Read-Manifest {
-  if (Test-Path -LiteralPath $Manifest -PathType Leaf) {
-    return Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+  foreach ($path in $Manifest, $LegacyManifest) {
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+      return Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
   }
   return $null
 }
@@ -127,24 +140,30 @@ function Write-Manifest([bool]$CreatedVenv, [bool]$CreatedData, [string]$Flavor,
       schema = 1; created_venv = $CreatedVenv; created_data = $CreatedData; data_dir = $DataDir
       shortcut = $Shortcut; flavor = $Flavor; python = $Python
     } | ConvertTo-Json | Set-Content -LiteralPath $Manifest -Encoding UTF8
+    Remove-Item -LiteralPath $LegacyManifest -Force -ErrorAction SilentlyContinue  # its content is in $Manifest now
   }
 }
 
 # Does this command line (a shortcut's arguments, a login entry) start this
-# copy's launcher? Its paths are quoted only when they contain a space.
-function Points-Here([string]$Command) {
+# launcher? Its paths are quoted only when they contain a space.
+function Points-At([string]$Command, [string]$Target) {
   foreach ($word in [regex]::Matches("$Command", '"([^"]*)"|(\S+)')) {
     $path = if ($word.Groups[1].Success) { $word.Groups[1].Value } else { $word.Groups[2].Value }
-    if ($path -match '^([A-Za-z]:\\|\\\\)' -and (Same-Path $path $Launcher)) { return $true }
+    if ($path -match '^([A-Za-z]:\\|\\\\)' -and (Same-Path $path $Target)) { return $true }
   }
   return $false
 }
+function Points-Here([string]$Command) { return Points-At $Command $Launcher }
+# ... or the earlier archive's copy this one replaces.
+function Points-Earlier([string]$Command) { return [bool]$EarlierLauncher -and (Points-At $Command $EarlierLauncher) }
 
-# The Start Menu entry of earlier versions ("Sotto"), only when it starts this copy.
-function Remove-LegacyShortcut {
+# The Start Menu entry of earlier versions ("Sotto"), only when it starts this
+# copy (or, installing, the earlier archive's copy this one replaces).
+function Remove-LegacyShortcut([bool]$Earlier = $false) {
   if (-not (Test-Path -LiteralPath $LegacyShortcut -PathType Leaf)) { return }
   $link = (New-Object -ComObject WScript.Shell).CreateShortcut($LegacyShortcut)
-  if ((Points-Here $link.Arguments) -and $PSCmdlet.ShouldProcess($LegacyShortcut, 'Remove the Start Menu shortcut "Sotto" of earlier versions')) {
+  $ours = (Points-Here $link.Arguments) -or ($Earlier -and (Points-Earlier $link.Arguments))
+  if ($ours -and $PSCmdlet.ShouldProcess($LegacyShortcut, 'Remove the Start Menu shortcut "Sotto" of earlier versions')) {
     Remove-Item -LiteralPath $LegacyShortcut -Force
     Say "removed the old Start Menu shortcut $LegacyShortcut (Sotto is now called Scrivo)"
   }
@@ -176,11 +195,10 @@ if ($Uninstall) {
     } else { Say "kept $Shortcut (it does not start this copy of Scrivo)" }
   }
   Remove-LegacyShortcut
-  # The login entry keeps the value name 'Sotto' from before the rename.
-  $run = Get-ItemProperty -Path $RunKey -Name 'Sotto' -ErrorAction SilentlyContinue
-  if ($run -and (Points-Here $run.Sotto)) {
-    if ($PSCmdlet.ShouldProcess("$RunKey\Sotto", 'Remove launch-at-login entry')) {
-      Remove-ItemProperty -Path $RunKey -Name 'Sotto'
+  $run = Get-ItemProperty -Path $RunKey -Name $RunValue -ErrorAction SilentlyContinue
+  if ($run -and (Points-Here $run.$RunValue)) {
+    if ($PSCmdlet.ShouldProcess("$RunKey\$RunValue", 'Remove launch-at-login entry')) {
+      Remove-ItemProperty -Path $RunKey -Name $RunValue
       Say 'removed the launch-at-login entry'
     }
   }
@@ -219,7 +237,7 @@ if ($running.Count -gt 0) {
 # another program). One whose copy no longer exists is replaced.
 if (Test-Path -LiteralPath $Shortcut -PathType Leaf) {
   $existing = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
-  if (-not (Points-Here $existing.Arguments)) {
+  if (-not (Points-Here $existing.Arguments) -and -not (Points-Earlier $existing.Arguments)) {
     $gone = ($existing.Arguments -match '^\s*"([^"]*win_launch\.py)"') -and -not (Test-Path -LiteralPath $Matches[1])
     if (-not $gone) {
       Fail "$Shortcut already starts another copy of Scrivo or another program ($($existing.TargetPath) $($existing.Arguments)). Remove that copy with its own install-windows.ps1 -Uninstall, or pass -ShortcutDir with another folder."
@@ -327,14 +345,14 @@ if (Test-Path -LiteralPath $DataDir) {
 if (-not $SkipSetup -and $PSCmdlet.ShouldProcess($DataDir, 'Download the pinned speech model (about 1.6 GB, once) and voice detection')) {
   # Set only for the setup child and put back afterwards: a script run from an
   # interactive shell must not leave them in that shell.
-  $savedData, $savedHf = $env:SOTTO_DATA_DIR, $env:SOTTO_HF_HOME
+  $savedData, $savedHf = $env:SCRIVO_DATA_DIR, $env:SCRIVO_HF_HOME
   try {
-    $env:SOTTO_DATA_DIR = $DataDir
-    $env:SOTTO_HF_HOME = Join-Path $DataDir 'huggingface'
-    Native { & $VenvPython (Join-Path $Root 'sotto_win.py') setup }
+    $env:SCRIVO_DATA_DIR = $DataDir
+    $env:SCRIVO_HF_HOME = Join-Path $DataDir 'huggingface'
+    Native { & $VenvPython (Join-Path $Root 'scrivo_win.py') setup }
     $setupExit = $LASTEXITCODE
   } finally {
-    $env:SOTTO_DATA_DIR, $env:SOTTO_HF_HOME = $savedData, $savedHf
+    $env:SCRIVO_DATA_DIR, $env:SCRIVO_HF_HOME = $savedData, $savedHf
   }
   if ($setupExit -ne 0) {
     Say '! The model download did not finish; Scrivo downloads it on first launch (or run this script again).'
@@ -355,7 +373,23 @@ if ($PSCmdlet.ShouldProcess($Shortcut, 'Create Start Menu shortcut "Scrivo" (tra
   $link.Save()
   Say "OK Start Menu shortcut $Shortcut"
 }
-Remove-LegacyShortcut
+Remove-LegacyShortcut $true
+# Launch at login of the earlier archive's copy: now this copy, with the
+# command the Settings window writes (win_startup.launch_command).
+$run = Get-ItemProperty -Path $RunKey -Name $RunValue -ErrorAction SilentlyContinue
+if ($run -and (Points-Earlier $run.$RunValue) -and $RunKey -match '^HKCU:\\(.+)$' -and
+    $PSCmdlet.ShouldProcess("$RunKey\$RunValue", 'Start this copy at login instead of the earlier one')) {
+  $subkey = $Matches[1]
+  $relink = "import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; import win_startup; " +
+    "win_startup.set_enabled(True, win_startup.launch_command(Path(sys.argv[2]), Path(sys.argv[3])), key=sys.argv[4])"
+  Native { & $VenvPython -c $relink $Root $DataDir (Join-Path $DataDir 'huggingface') $subkey }
+  if ($LASTEXITCODE -eq 0) { Say 'OK launch at login now starts this copy' }
+  else {
+    # Never leave it starting the earlier copy (whose single-instance lock would then keep this one out).
+    Remove-ItemProperty -Path $RunKey -Name $RunValue
+    Say '! Launch at login started the earlier copy and could not be moved here (see above), so it is off; turn it on in Settings.'
+  }
+}
 
 Write-Manifest $createdVenv $createdData $flavor $BasePython
 
@@ -364,8 +398,8 @@ Say 'Scrivo is installed. Start it from the Start Menu: Scrivo (a tray icon appe
 Say '"Ready" notification; if the model was not downloaded above, the first launch does it).'
 Say 'Settings (tray menu) can turn on launch at login.'
 Say 'Console run and checks, in PowerShell:'
-Say "  `$env:SOTTO_DATA_DIR = `"$DataDir`"; `$env:SOTTO_HF_HOME = `"$DataDir\huggingface`""
-Say "  & `"$VenvPython`" `"$(Join-Path $Root 'sotto_win.py')`" doctor"
-Say "  & `"$VenvPython`" `"$(Join-Path $Root 'sotto_win.py')`""
+Say "  `$env:SCRIVO_DATA_DIR = `"$DataDir`"; `$env:SCRIVO_HF_HOME = `"$DataDir\huggingface`""
+Say "  & `"$VenvPython`" `"$(Join-Path $Root 'scrivo_win.py')`" doctor"
+Say "  & `"$VenvPython`" `"$(Join-Path $Root 'scrivo_win.py')`""
 Say "Remove: powershell -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Uninstall"
 exit 0

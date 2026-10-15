@@ -79,32 +79,32 @@ class CleanTests(unittest.TestCase):
         self.assertFalse(is_english(""))
 
     def test_portuguese_parakeet_text_keeps_every_word(self):
-        import sotto
+        import scrivo
         text = "Eu comprei um carro e um livro."
         with tempfile.TemporaryDirectory() as folder, \
                 patch.object(settings, "SETTINGS_PATH", Path(folder) / "settings.json"):
-            self.assertEqual(sotto.apply_voice_cleanup(text, {}, None), (text, None))
+            self.assertEqual(scrivo.apply_voice_cleanup(text, {}, None), (text, None))
 
 
 class PipelineTests(unittest.TestCase):
     def test_cleanup_reads_settings_and_records_what_the_model_heard(self):
         import settings
-        import sotto
+        import scrivo
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "settings.json"
             with patch.object(settings, "SETTINGS_PATH", path):
                 receipt = {}
-                self.assertEqual(sotto.apply_voice_cleanup("Um, hello. New line.", receipt, "en"),
+                self.assertEqual(scrivo.apply_voice_cleanup("Um, hello. New line.", receipt, "en"),
                                  ("Hello.\n", None))
                 self.assertEqual(receipt["voice"]["asr_text"], "Um, hello. New line.")
                 untouched = {}
-                self.assertEqual(sotto.apply_voice_cleanup("Um, olá.", untouched, "pt"), ("Um, olá.", None))
+                self.assertEqual(scrivo.apply_voice_cleanup("Um, olá.", untouched, "pt"), ("Um, olá.", None))
                 self.assertEqual(untouched, {})
                 settings.save({"remove_fillers": False, "voice_commands": False}, path)
-                self.assertEqual(sotto.apply_voice_cleanup("Scratch that.", {}, "en"), ("Scratch that.", None))
+                self.assertEqual(scrivo.apply_voice_cleanup("Scratch that.", {}, "en"), ("Scratch that.", None))
                 settings.save({"voice_commands": True}, path)
                 scratch = {}
-                self.assertEqual(sotto.apply_voice_cleanup("Scratch that.", scratch, "en"), ("", "scratch"))
+                self.assertEqual(scrivo.apply_voice_cleanup("Scratch that.", scratch, "en"), ("", "scratch"))
                 self.assertEqual(scratch["voice"]["action"], "scratch")
 
     def test_defaults_are_on_and_only_booleans_are_kept(self):

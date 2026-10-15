@@ -20,12 +20,12 @@ from unittest import mock
 
 import numpy as np
 
-import sotto
+import scrivo
 
 
 class RepairLadderTest(unittest.TestCase):
     def _service(self, *, active=None, repairs=0, age=9_999.0):
-        service = sotto.CaptureService()
+        service = scrivo.CaptureService()
         service._engine = mock.Mock(isRunning=mock.Mock(return_value=True))
         service._engine_obj = mock.Mock()
         service._device_id = 101
@@ -80,7 +80,7 @@ class RepairLadderTest(unittest.TestCase):
         self.assertEqual(service._silence_repairs, 2)
 
     def test_the_ladder_stops_after_the_restart_rung(self):
-        # a permanently muted input must not restart sotto in a loop
+        # a permanently muted input must not restart scrivo in a loop
         service = self._service(active=[np.zeros(4096, dtype=np.float32)],
                                 repairs=2)
         release, start, restart = self._tick(service)
@@ -124,7 +124,7 @@ class ShortHoldRepairTest(unittest.TestCase):
     """A 1.4s press ends before the 3s in-capture watch can fire."""
 
     def _service(self, blocks, *, rate=48000.0, repairs=0):
-        service = sotto.CaptureService()
+        service = scrivo.CaptureService()
         service._engine_obj = mock.Mock()
         service.native_rate = rate
         service._silence_repairs = repairs
@@ -159,7 +159,7 @@ class ShortHoldRepairTest(unittest.TestCase):
                          service._rebuild_engine)
 
     def test_key_up_repair_never_starts_an_engine(self):
-        # idle sotto must not hold the microphone (--idle-release 0)
+        # idle scrivo must not hold the microphone (--idle-release 0)
         service = self._service([np.zeros(96_000, dtype=np.float32)])
         with mock.patch.object(service, "_release_engine"), \
              mock.patch.object(service, "_start_engine") as start:
@@ -197,7 +197,7 @@ class RepairRearmTest(unittest.TestCase):
         service._tap(buffer, mock.Mock(sampleTime=mock.Mock(return_value=0)))
 
     def test_real_audio_rearms_the_ladder(self):
-        service = sotto.CaptureService()
+        service = scrivo.CaptureService()
         service._silence_repairs = 2
         self._tap(service, np.full(512, 0.01, dtype=np.float32))
         self.assertEqual(service._silence_repairs, 0)
@@ -206,13 +206,13 @@ class RepairRearmTest(unittest.TestCase):
     def test_quiet_nonzero_audio_counts_as_alive(self):
         # whispered dictation sits at ~1e-5, far below any energy gate but
         # far above the dead route's exact zero (2026-08-13/14)
-        service = sotto.CaptureService()
+        service = scrivo.CaptureService()
         service._silence_repairs = 1
         self._tap(service, np.full(512, 1e-5, dtype=np.float32))
         self.assertEqual(service._silence_repairs, 0)
 
     def test_zero_buffers_start_the_silence_clock_without_rearming(self):
-        service = sotto.CaptureService()
+        service = scrivo.CaptureService()
         service._silence_repairs = 1
         self._tap(service, np.zeros(512, dtype=np.float32))
         self.assertIsNotNone(service._zero_since)

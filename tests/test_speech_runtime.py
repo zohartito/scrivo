@@ -34,7 +34,7 @@ from runtime_source_manifest import RUNTIME_SOURCE_SCHEMA, runtime_source_digest
 from maintainer.calibration_manifest_builder import SOURCE_HASH, _protocol_hash, LEDGER_HASH
 from maintainer.teacher_consensus import policy_hash
 from speech_config import resolve_speech_config
-import sotto
+import scrivo
 
 
 class _FakeWhisper:
@@ -75,11 +75,11 @@ class SpeechRuntimeTests(unittest.TestCase):
         self.assertEqual(config.language, "en")
         fake = _FakeWhisper()
         prepared = prepare_canonical(np.zeros(1600, np.float32))
-        text, metadata = sotto.transcribe_prepared(fake, prepared, config, ("Sotto",))
+        text, metadata = scrivo.transcribe_prepared(fake, prepared, config, ("Scrivo",))
         self.assertEqual(text, "model output")
         self.assertIs(fake.calls[0][0], prepared.asr_samples)
         self.assertEqual(fake.calls[0][1]["language"], "en")
-        self.assertEqual(fake.calls[0][1]["initial_prompt"], "Speech context: Sotto.")
+        self.assertEqual(fake.calls[0][1]["initial_prompt"], "Speech context: Scrivo.")
         self.assertFalse(fake.calls[0][1]["word_timestamps"])
         self.assertNotIn("hallucination_silence_threshold", fake.calls[0][1])
         self.assertEqual(metadata["profile"], "auto")
@@ -87,7 +87,7 @@ class SpeechRuntimeTests(unittest.TestCase):
     def test_multilingual_model_auto_detects_or_accepts_a_language_hint(self):
         prepared = prepare_canonical(np.zeros(1600, np.float32))
         automatic = _FakeWhisper()
-        text, metadata = sotto.transcribe_prepared(
+        text, metadata = scrivo.transcribe_prepared(
             automatic, prepared, resolve_speech_config("auto", language="auto"), ()
         )
         self.assertEqual(text, "model output")
@@ -95,7 +95,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         self.assertIsNone(metadata["language"])
 
         hinted = _FakeWhisper()
-        _text, metadata = sotto.transcribe_prepared(
+        _text, metadata = scrivo.transcribe_prepared(
             hinted, prepared, resolve_speech_config("auto", language="pt"), ()
         )
         self.assertEqual(hinted.calls[0][1]["language"], "pt")
@@ -108,33 +108,33 @@ class SpeechRuntimeTests(unittest.TestCase):
             def __init__(self): self.calls = []
             def warmup_baseline(self, samples): self.calls.append(samples)
         runtime = Runtime()
-        sotto.warm_speech_runtime(adaptive=False, model="repo/main", speech_config=config, mlx_whisper=generic)
+        scrivo.warm_speech_runtime(adaptive=False, model="repo/main", speech_config=config, mlx_whisper=generic)
         self.assertEqual(generic.calls[0][1]["path_or_hf_repo"], "repo/main")
-        sotto.warm_speech_runtime(adaptive=True, model="repo/main", speech_config=config, adaptive_runtime=runtime)
+        scrivo.warm_speech_runtime(adaptive=True, model="repo/main", speech_config=config, adaptive_runtime=runtime)
         self.assertEqual(len(runtime.calls), 1)
         self.assertEqual(len(generic.calls), 1)
 
     def test_model_rewarm_is_single_flight_baseline_only(self):
-        due = sotto.MODEL_REWARM_AFTER_S
-        self.assertFalse(sotto.model_rewarm_due(10.0, 10.0 + due - 0.01,
+        due = scrivo.MODEL_REWARM_AFTER_S
+        self.assertFalse(scrivo.model_rewarm_due(10.0, 10.0 + due - 0.01,
                                                 rewarming=False, queue_idle=True,
                                                 adaptive=False))
-        self.assertTrue(sotto.model_rewarm_due(10.0, 10.0 + due,
+        self.assertTrue(scrivo.model_rewarm_due(10.0, 10.0 + due,
                                                rewarming=False, queue_idle=True,
                                                adaptive=False))
-        self.assertFalse(sotto.model_rewarm_due(10.0, 10.0 + due,
+        self.assertFalse(scrivo.model_rewarm_due(10.0, 10.0 + due,
                                                 rewarming=True, queue_idle=True,
                                                 adaptive=False))
-        self.assertFalse(sotto.model_rewarm_due(10.0, 10.0 + due,
+        self.assertFalse(scrivo.model_rewarm_due(10.0, 10.0 + due,
                                                 rewarming=False, queue_idle=False,
                                                 adaptive=False))
-        self.assertFalse(sotto.model_rewarm_due(10.0, 10.0 + due,
+        self.assertFalse(scrivo.model_rewarm_due(10.0, 10.0 + due,
                                                 rewarming=False, queue_idle=True,
                                                 adaptive=True))
 
     def test_capture_service_construction_does_not_start_microphone(self):
-        with patch.object(sotto.CaptureService, "_start_engine") as start:
-            capture = sotto.CaptureService()
+        with patch.object(scrivo.CaptureService, "_start_engine") as start:
+            capture = scrivo.CaptureService()
         start.assert_not_called()
         self.assertIsNone(capture._engine)
         self.assertIsNone(capture._node)
@@ -149,7 +149,7 @@ class SpeechRuntimeTests(unittest.TestCase):
             def __init__(self): self.removals = []
             def removeTapOnBus_(self, bus): self.removals.append(bus)
 
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         engine, node = Engine(), Node()
         capture._engine = engine
         capture._node = node
@@ -168,9 +168,9 @@ class SpeechRuntimeTests(unittest.TestCase):
         self.assertEqual((capture._ring, capture._ring_samples), ([], 0))
 
     def test_cli_zero_idle_release_means_immediate_not_never(self):
-        with patch.object(sys, "argv", ["sotto.py", "run", "--idle-release", "0"]), \
-             patch.object(sotto, "run") as run:
-            sotto.main()
+        with patch.object(sys, "argv", ["scrivo.py", "run", "--idle-release", "0"]), \
+             patch.object(scrivo, "run") as run:
+            scrivo.main()
         self.assertEqual(run.call_args.kwargs["idle_release"], 0.0)
 
     def test_shutdown_signal_discards_active_capture_and_queued_jobs(self):
@@ -179,11 +179,11 @@ class SpeechRuntimeTests(unittest.TestCase):
             def abort(self): self.calls.append("abort")
             def release_soon(self): self.calls.append("release")
 
-        boundary = sotto.ShutdownBoundary()
+        boundary = scrivo.ShutdownBoundary()
         jobs: queue.Queue = queue.Queue()
         jobs.put(("live", "captured")); jobs.put(("retry", "queued"))
         prior = signal.getsignal(signal.SIGTERM)
-        with sotto.shutdown_signal_handlers(boundary):
+        with scrivo.shutdown_signal_handlers(boundary):
             handler = signal.getsignal(signal.SIGTERM)
             self.assertIsNot(handler, prior)
             handler(signal.SIGTERM, None)  # deterministic handler invocation, no OS signal
@@ -200,7 +200,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         self.assertFalse(boundary.enqueue(jobs, ("live", "late")))
 
     def test_shutdown_drops_blocked_inference_result_but_normal_commit_works(self):
-        boundary = sotto.ShutdownBoundary()
+        boundary = scrivo.ShutdownBoundary()
         entered, release = threading.Event(), threading.Event()
         pasted: list[str] = []
 
@@ -211,7 +211,7 @@ class SpeechRuntimeTests(unittest.TestCase):
 
         def worker() -> None:
             text = blocked_backend()
-            sotto.commit_if_running(boundary, lambda: pasted.append(text))
+            scrivo.commit_if_running(boundary, lambda: pasted.append(text))
 
         thread = threading.Thread(target=worker, daemon=True)
         started = time.monotonic()
@@ -219,13 +219,13 @@ class SpeechRuntimeTests(unittest.TestCase):
         self.assertTrue(entered.wait(1))
         boundary.request()
         release.set()
-        thread.join(sotto.APP_DRAIN_TIMEOUT)
+        thread.join(scrivo.APP_DRAIN_TIMEOUT)
         self.assertFalse(thread.is_alive())
         self.assertLess(time.monotonic() - started, 1.5)
         self.assertEqual(pasted, [])
 
-        normal = sotto.ShutdownBoundary()
-        self.assertTrue(sotto.commit_if_running(normal, lambda: pasted.append("complete text")))
+        normal = scrivo.ShutdownBoundary()
+        self.assertTrue(scrivo.commit_if_running(normal, lambda: pasted.append("complete text")))
         self.assertEqual(pasted, ["complete text"])
 
     def test_primary_live_delivery_never_schedules_cursor_before_durable_authority(self):
@@ -233,7 +233,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         publication={"comparator_publication":{"opaque":"token"}}
         for failure in ("append","register","ack","shutdown"):
             with self.subTest(failure=failure):
-                events=[]; boundary=sotto.ShutdownBoundary()
+                events=[]; boundary=scrivo.ShutdownBoundary()
                 class Runtime:
                     def register_live(_self,row):
                         events.append("register")
@@ -250,28 +250,28 @@ class SpeechRuntimeTests(unittest.TestCase):
                     return {"id":"history"}
                 if failure in {"append","register","ack"}:
                     with self.assertRaises(RuntimeError):
-                        sotto.finalize_primary_live_delivery(append=append,adaptive_runtime=Runtime(),
+                        scrivo.finalize_primary_live_delivery(append=append,adaptive_runtime=Runtime(),
                             appended_publication=publication,shutdown=boundary,
                             inject=lambda: events.append("inject"))
                 else:
-                    self.assertEqual(sotto.finalize_primary_live_delivery(append=append,adaptive_runtime=Runtime(),
+                    self.assertEqual(scrivo.finalize_primary_live_delivery(append=append,adaptive_runtime=Runtime(),
                         appended_publication=publication,shutdown=boundary,
                         inject=lambda: events.append("inject")),{"id":"history"})
                 self.assertNotIn("inject",events)
-        events=[]; boundary=sotto.ShutdownBoundary()
+        events=[]; boundary=scrivo.ShutdownBoundary()
         class Success:
             def register_live(_self,row): events.append("register")
             def acknowledge_comparator_publication(_self,value): events.append("ack"); return True
             def cancel_comparator_publication(_self,value): raise AssertionError("unexpected cancel")
             def fail_comparator_publication(_self,value): raise AssertionError("unexpected fail")
-        self.assertEqual(sotto.finalize_primary_live_delivery(append=lambda: events.append("append") or {"id":"history"},
+        self.assertEqual(scrivo.finalize_primary_live_delivery(append=lambda: events.append("append") or {"id":"history"},
             adaptive_runtime=Success(),appended_publication=publication,shutdown=boundary,
             inject=lambda: events.append("inject")),{"id":"history"})
         self.assertEqual(events,["append","register","ack","inject"])
 
     def test_learning_remove_dependency_revoke_precedes_artifact(self):
         calls = []
-        self.assertTrue(sotto.remove_learning_sample("sample", history_id_lookup=lambda _: "history",
+        self.assertTrue(scrivo.remove_learning_sample("sample", history_id_lookup=lambda _: "history",
                         adaptive_revoke=lambda ident: calls.append(("adaptive", ident)),
                         artifact_revoke=lambda ident: calls.append(("artifact", ident)) or True))
         self.assertEqual(calls, [("adaptive", "history"), ("artifact", "sample")])
@@ -289,10 +289,10 @@ class SpeechRuntimeTests(unittest.TestCase):
             def clear(self): calls.append(("clear",))
             def revoke_history(self, ident): calls.append(("learning", ident)); return 1
         guard, coordinator = Guard(), Coordinator()
-        sotto.nonadaptive_correct(guard, coordinator, "x", "text")
-        sotto.nonadaptive_delete(guard, coordinator, "x")
-        sotto.nonadaptive_clear(guard, coordinator)
-        sotto.nonadaptive_revoke_learning(guard, coordinator, "x")
+        scrivo.nonadaptive_correct(guard, coordinator, "x", "text")
+        scrivo.nonadaptive_delete(guard, coordinator, "x")
+        scrivo.nonadaptive_clear(guard, coordinator)
+        scrivo.nonadaptive_revoke_learning(guard, coordinator, "x")
         self.assertEqual(calls, [("revoke", "x"), ("correct", "x"), ("revoke", "x"), ("delete", "x"),
                                  ("all",), ("clear",), ("revoke", "x"), ("learning", "x")])
 
@@ -329,7 +329,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         fake = _FakeWhisper()
         prepared = prepare_canonical(np.linspace(-.2, .2, 16000 * 31, dtype=np.float32))
         config = resolve_speech_config("auto")
-        _, metadata = sotto.transcribe_prepared(fake, prepared, config, ("Sotto",))
+        _, metadata = scrivo.transcribe_prepared(fake, prepared, config, ("Scrivo",))
         self.assertIs(fake.calls[0][0], prepared.asr_samples)
         self.assertNotIn("initial_prompt", fake.calls[0][1])
         self.assertIn("disabled", metadata["prompt"])
@@ -373,7 +373,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         ledger=hashlib.sha256(json.dumps([(index,row["item_hash"],row["cluster_hash"]) for index,row in enumerate(expected)],separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
         self.assertEqual((len(expected),ledger),(500,LEDGER_HASH))
         receipt_hash="fixture-receipt"; store=SilverStore(self.root)
-        with patch.dict(os.environ,{"SOTTO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
+        with patch.dict(os.environ,{"SCRIVO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
              patch.object(PreflightReceipts,"_current_runtime_identity",new=lambda _self,stable: dict(identities[str(stable)])):
             store.begin_calibration_v2(holdout_key=SOURCE_HASH,manifest_hash="fixture-manifest",source_hash=SOURCE_HASH,
                 protocol_hash=_protocol_hash(),policy_hash=policy_hash(),receipt_hash=receipt_hash,expected=expected)
@@ -411,7 +411,7 @@ class SpeechRuntimeTests(unittest.TestCase):
                     return "calm blue river",{"repo":manifest["repo"]}
             runtime.backends=Backend()
             prepared=prepare_canonical(np.zeros(16_000,np.float32))
-            text,metadata,staged=sotto.adaptive_live_transcribe_prepared(runtime,prepared,"primary-real")
+            text,metadata,staged=scrivo.adaptive_live_transcribe_prepared(runtime,prepared,"primary-real")
             self.assertEqual(text,"calm blue river"); self.assertTrue(metadata["comparator_pending"]); self.assertEqual(calls,[PARAKEET_ID])
             self.assertEqual(staged,self.history.audio_path("primary-real")); disk,identity=read_canonical_wav(staged)
             self.assertEqual(identity,prepared.identity); self.assertTrue(np.array_equal(disk,prepared.asr_samples))
@@ -430,14 +430,14 @@ class SpeechRuntimeTests(unittest.TestCase):
         prepared=prepare_canonical(np.zeros(1600,np.float32))
         runtime.live_transcribe=lambda *_args,**_kwargs: (_ for _ in ()).throw(RuntimeError("route failed"))  # type: ignore[method-assign]
         with self.assertRaisesRegex(RuntimeError,"route failed"):
-            sotto.adaptive_live_transcribe_prepared(runtime,prepared,"failed-capture")
+            scrivo.adaptive_live_transcribe_prepared(runtime,prepared,"failed-capture")
         self.assertFalse(runtime.history.audio_path("failed-capture").exists())
 
     def test_retry_snapshot_cas_cannot_overwrite_correction(self):
         row, _ = self._enrolled()
         snapshot = self.coordinator.snapshot_for_retry(row["id"])
         fake = _FakeWhisper()
-        sotto.transcribe_canonical_samples(
+        scrivo.transcribe_canonical_samples(
             fake, snapshot.samples, resolve_speech_config(), ())
         self.assertIs(fake.calls[0][0], snapshot.samples)
         self.coordinator.correct(row["id"], "later human correction")
@@ -448,18 +448,18 @@ class SpeechRuntimeTests(unittest.TestCase):
     def test_overlay_status_and_export_are_headless_and_manifest_compatible(self):
         row, _ = self._enrolled()
         snapshots = self.coordinator.export_learning_snapshot()
-        overlaid = sotto.overlay_learning_state(
+        overlaid = scrivo.overlay_learning_state(
             self.history.entries(10), {row["id"]})
         self.assertEqual(overlaid[0]["learning_state"], "active")
-        self.assertEqual(sotto.learning_status_text(snapshots), "1 active learning item(s)")
+        self.assertEqual(scrivo.learning_status_text(snapshots), "1 active learning item(s)")
         sys.modules.pop("mlx_whisper", None)
         with patch.object(HistoryStore, "__init__", side_effect=AssertionError("history constructor")), \
              patch.object(LearningStore, "__init__", side_effect=AssertionError("learning constructor")), \
              patch.object(LearningCoordinator, "__init__", side_effect=AssertionError("coordinator constructor")), \
              patch.object(LearningStore, "admin_snapshot", return_value=snapshots) as admin_snapshot, \
-             patch.object(sys, "argv", ["sotto.py", "learning-status"]), \
+             patch.object(sys, "argv", ["scrivo.py", "learning-status"]), \
              patch("sys.stdout", new_callable=StringIO) as stdout:
-            sotto.main()
+            scrivo.main()
         self.assertIn("1 active", stdout.getvalue())
         admin_snapshot.assert_called_once_with()
         self.assertNotIn("mlx_whisper", sys.modules)
@@ -474,9 +474,9 @@ class SpeechRuntimeTests(unittest.TestCase):
              patch.object(LearningStore, "__init__", side_effect=AssertionError("learning constructor")), \
              patch.object(LearningCoordinator, "__init__", side_effect=AssertionError("coordinator constructor")), \
              patch.object(LearningStore, "admin_snapshot", return_value=list_snapshots) as admin_snapshot, \
-             patch.object(sys, "argv", ["sotto.py", "learning-list"]), \
+             patch.object(sys, "argv", ["scrivo.py", "learning-list"]), \
              patch("sys.stdout", new_callable=StringIO) as stdout:
-            sotto.main()
+            scrivo.main()
         self.assertEqual(stdout.getvalue().splitlines(), [
             "sample_id=a-sample history_id=history-a",
             "sample_id=z-sample history_id=history-z",
@@ -488,18 +488,18 @@ class SpeechRuntimeTests(unittest.TestCase):
              patch.object(LearningStore, "__init__", side_effect=AssertionError("learning constructor")), \
              patch.object(LearningCoordinator, "__init__", side_effect=AssertionError("coordinator constructor")), \
              patch.object(LearningStore, "admin_snapshot", return_value=[]), \
-             patch.object(sys, "argv", ["sotto.py", "learning-list"]), \
+             patch.object(sys, "argv", ["scrivo.py", "learning-list"]), \
              patch("sys.stdout", new_callable=StringIO) as stdout:
-            sotto.main()
+            scrivo.main()
         self.assertEqual(stdout.getvalue(), "0 active learning item(s)\n")
 
         with patch.object(HistoryStore, "__init__", side_effect=AssertionError("history constructor")), \
              patch.object(LearningStore, "__init__", side_effect=AssertionError("learning constructor")), \
              patch.object(LearningCoordinator, "__init__", side_effect=AssertionError("coordinator constructor")), \
              patch.object(LearningStore, "admin_revoke", return_value=True) as admin_revoke, \
-             patch.object(sys, "argv", ["sotto.py", "learning-remove", "--sample-id", "a-sample"]), \
+             patch.object(sys, "argv", ["scrivo.py", "learning-remove", "--sample-id", "a-sample"]), \
              patch("sys.stdout", new_callable=StringIO) as stdout:
-            sotto.main()
+            scrivo.main()
         self.assertEqual(stdout.getvalue(), "Removed learning sample a-sample\n")
         admin_revoke.assert_called_once_with("a-sample")
 
@@ -507,10 +507,10 @@ class SpeechRuntimeTests(unittest.TestCase):
              patch.object(LearningStore, "__init__", side_effect=AssertionError("learning constructor")), \
              patch.object(LearningCoordinator, "__init__", side_effect=AssertionError("coordinator constructor")), \
              patch.object(LearningStore, "admin_revoke", return_value=False) as admin_revoke, \
-             patch.object(sys, "argv", ["sotto.py", "learning-remove", "--sample-id", "gone"]), \
+             patch.object(sys, "argv", ["scrivo.py", "learning-remove", "--sample-id", "gone"]), \
              patch("sys.stderr", new_callable=StringIO) as stderr:
             with self.assertRaises(SystemExit) as exit_error:
-                sotto.main()
+                scrivo.main()
         self.assertEqual(exit_error.exception.code, 2)
         self.assertIn("not found or was already removed", stderr.getvalue())
         admin_revoke.assert_called_once_with("gone")
@@ -535,9 +535,9 @@ class SpeechRuntimeTests(unittest.TestCase):
              patch.object(LearningStore, "__init__", side_effect=AssertionError("learning constructor")), \
              patch.object(LearningCoordinator, "__init__", side_effect=AssertionError("coordinator constructor")), \
              patch.object(LearningStore, "admin_export_guard", side_effect=export_guard) as admin_guard, \
-             patch.object(sys, "argv", ["sotto.py", "export-learning", "--output", str(output)]), \
+             patch.object(sys, "argv", ["scrivo.py", "export-learning", "--output", str(output)]), \
              patch("sys.stdout", new_callable=StringIO) as stdout:
-            sotto.main()
+            scrivo.main()
         self.assertIn("Exported 1 learning item", stdout.getvalue())
         admin_guard.assert_called_once_with()
         self.assertEqual(guard_exited, [True])
@@ -549,7 +549,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         self.assertFalse(snapshots[0].inference_audio_path.exists())
         self.assertFalse(snapshots[0].raw_audio_path.exists())
         with self.assertRaises(ValueError):
-            sotto.export_learning_snapshot(output)
+            scrivo.export_learning_snapshot(output)
         self.assertNotIn("mlx_whisper", sys.modules)
 
     def test_adaptive_status_reads_only_current_deployment_jsonl(self):
@@ -559,14 +559,14 @@ class SpeechRuntimeTests(unittest.TestCase):
         deploy.write_text(json.dumps({"schema":1,"tier":"provisional_silver","canary":{"stage":"five_percent"}})+"\n")
         before={path:(path.read_bytes(),path.stat().st_mtime_ns) for path in (state,deploy)}
         with patch("maintainer.silver_store.read_only_status",return_value={"state":"ok","accepted":2,"abstained":1,"jobs":{"pending":3},"worker":{"state":"idle"}}):
-            value=sotto.adaptive_status_text([],base_dir=root)
+            value=scrivo.adaptive_status_text([],base_dir=root)
         self.assertIn("deployment=provisional_silver",value); self.assertIn("silver=2 accepted/1 abstained",value)
         self.assertEqual(before,{path:(path.read_bytes(),path.stat().st_mtime_ns) for path in (state,deploy)})
         deploy.write_text("not-json\n")
         with patch("maintainer.silver_store.read_only_status",return_value={"state":"ok"}):
-            self.assertIn("unavailable (fail closed)",sotto.adaptive_status_text([],base_dir=root))
+            self.assertIn("unavailable (fail closed)",scrivo.adaptive_status_text([],base_dir=root))
         deploy.unlink()
-        self.assertIn("unavailable (fail closed)",sotto.adaptive_status_text([],base_dir=root))
+        self.assertIn("unavailable (fail closed)",scrivo.adaptive_status_text([],base_dir=root))
 
     def test_concurrent_export_same_destination_has_one_clean_winner(self):
         _, _ = self._enrolled()
@@ -585,7 +585,7 @@ class SpeechRuntimeTests(unittest.TestCase):
         def export() -> None:
             start.wait(timeout=2)
             try:
-                successes.append(sotto.export_learning_snapshot(output))
+                successes.append(scrivo.export_learning_snapshot(output))
             except Exception as exc:
                 failures.append(exc)
 

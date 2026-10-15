@@ -173,7 +173,7 @@ def apply_mac(root: Path, python: str, log_path: Path, run=subprocess.run,
     source_changed False left this copy's code untouched.
 
     Side effects: the installer runs in its own process group, named as
-    started from this Scrivo (SOTTO_UPDATE_FROM_PID, so its running-Scrivo check
+    started from this Scrivo (SCRIVO_UPDATE_FROM_PID, so its running-Scrivo check
     lets it through); after UPDATE_TIMEOUT_S that whole group is stopped.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +182,7 @@ def apply_mac(root: Path, python: str, log_path: Path, run=subprocess.run,
         with open(log_path, "w", encoding="utf-8") as log:
             installer = popen(["/bin/bash", str(root / "scripts" / "install-mac.sh"), "--update", "--python", python],
                               cwd=str(root), stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                              env=dict(os.environ, SOTTO_UPDATE_FROM_PID=str(os.getpid())))
+                              env=dict(os.environ, SCRIVO_UPDATE_FROM_PID=str(os.getpid())))
             try:
                 finished, stopped = installer.wait(timeout=UPDATE_TIMEOUT_S) == 0, False
             except subprocess.TimeoutExpired:

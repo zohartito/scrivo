@@ -116,7 +116,7 @@ def _immutable_observed_wav(source: Path, expected_wav_sha: str, expected_pcm_sh
                 raise RuntimeError("unsafe calibration audio")
         except OSError as exc:
             raise RuntimeError("unsafe calibration audio") from exc
-        root=Path(tempfile.mkdtemp(prefix="sotto-calibration-observed-"))
+        root=Path(tempfile.mkdtemp(prefix="scrivo-calibration-observed-"))
         os.chmod(root,0o700)
         destination=root/"observed.wav"
         output=os.open(destination,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
@@ -330,7 +330,7 @@ def run(base_dir: Path, manifest_path: Path, *, test_parquet: Path, validation_p
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description="Run frozen offline Sotto public calibration")
+    p = argparse.ArgumentParser(description="Run frozen offline Scrivo public calibration")
     p.add_argument("--base-dir", required=True); p.add_argument("--manifest", required=True); p.add_argument("--test-parquet",required=True); p.add_argument("--validation-parquet",required=True); p.add_argument("--pyarrow-python",required=True)
     args = p.parse_args(argv)
     # One content-free machine result for automation.  Neither reference text

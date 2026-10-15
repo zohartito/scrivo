@@ -25,7 +25,7 @@ from unittest import mock
 import numpy as np
 
 import capture as capture_module
-import sotto
+import scrivo
 
 
 # -- fake AVFoundation ---------------------------------------------------------
@@ -230,11 +230,11 @@ class TeardownTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def live_capture(self, engine):
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         engine.running = True
         capture._engine_obj = engine
         capture._engine, capture._node = engine, engine.node
-        capture._last_device_scan = sotto.time.monotonic()  # skip the device scan
+        capture._last_device_scan = scrivo.time.monotonic()  # skip the device scan
         return capture
 
     def test_engine_is_stopped_even_if_tap_removal_raises(self):
@@ -242,7 +242,7 @@ class TeardownTest(unittest.TestCase):
         capture = self.live_capture(engine)
         self.assertTrue(capture._release_engine())           # key-up release
         self.assertIn("stop", engine.calls)
-        self.assertFalse(engine.isRunning(), "idle Sotto left the mic engine running")
+        self.assertFalse(engine.isRunning(), "idle Scrivo left the mic engine running")
         for _ in range(3):
             capture.tick()                                   # 1 Hz idle health check
         self.assertFalse(engine.isRunning())
@@ -270,13 +270,13 @@ class IdleReleaseTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def live_capture(self, idle_release):
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         engine = FakeEngine()
         engine.running = True
         capture._engine_obj = capture._engine = engine
         capture._node = engine.node
         capture.idle_release_s = idle_release
-        capture._last_device_scan = sotto.time.monotonic()  # skip the device scan
+        capture._last_device_scan = scrivo.time.monotonic()  # skip the device scan
         return capture, engine
 
     def test_negative_idle_release_means_never_for_tick_too(self):
@@ -329,12 +329,12 @@ def dominant_hz(samples, rate):
 class JoinCaptureBlocksTest(unittest.TestCase):
     def test_same_rate_blocks_concatenate_untouched(self):
         blocks = [tone(440, 0.1, 48000), tone(440, 0.1, 48000)]
-        joined = sotto.join_capture_blocks(blocks, [48000.0, 48000.0], 48000.0)
+        joined = scrivo.join_capture_blocks(blocks, [48000.0, 48000.0], 48000.0)
         np.testing.assert_array_equal(joined, np.concatenate(blocks))
 
     def test_each_same_rate_run_is_resampled_before_joining(self):
         blocks = [tone(440, 0.5, 48000), tone(440, 0.5, 48000), tone(440, 1.0, 24000)]
-        joined = sotto.join_capture_blocks(blocks, [48000.0, 48000.0, 24000.0], 24000.0)
+        joined = scrivo.join_capture_blocks(blocks, [48000.0, 48000.0, 24000.0], 24000.0)
         self.assertEqual(len(joined), 48000)                 # 2.0 s at 24 kHz
         self.assertAlmostEqual(dominant_hz(joined[:24000], 24000), 440, delta=5)
         self.assertAlmostEqual(dominant_hz(joined[24000:], 24000), 440, delta=5)
@@ -344,12 +344,12 @@ class RouteChangeMidCaptureTest(unittest.TestCase):
     def test_batch_audio_keeps_true_duration_and_pitch(self):
         node = FakeNode(rate=48000.0)
         engine = FakeEngine(node)
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         capture._engine_obj = engine
         with fake_avfoundation(lambda: engine), \
              mock.patch.object(capture_module, "log", lambda msg: None), \
              mock.patch.object(capture_module, "_pin_input_to_builtin", lambda n: 77), \
-             mock.patch.object(sotto.threading, "Thread", InlineThread):
+             mock.patch.object(scrivo.threading, "Thread", InlineThread):
             capture._start_engine()                          # built-in mic, 48 kHz
             capture.begin()                                  # key down
             feed(capture, tone(440, 1.0, 48000), 48000)      # 1 s spoken at 48 kHz
@@ -363,7 +363,7 @@ class RouteChangeMidCaptureTest(unittest.TestCase):
         rate = capture.native_rate                           # what on_finish enqueues
         self.assertEqual(rate, 24000.0)
         self.assertAlmostEqual(len(raw) / rate, 2.0, delta=0.05)
-        whisper_in = sotto.prepare_for_whisper(raw, rate)
+        whisper_in = scrivo.prepare_for_whisper(raw, rate)
         third = len(whisper_in) // 3
         self.assertAlmostEqual(dominant_hz(whisper_in[:third], 16000), 440, delta=10)
         self.assertAlmostEqual(dominant_hz(whisper_in[-third:], 16000), 440, delta=10)
@@ -372,20 +372,20 @@ class RouteChangeMidCaptureTest(unittest.TestCase):
 # -- F45: a failed microphone start surfaces ----------------------------------
 
 def run_closures(names, namespace):
-    """Compile the named functions nested directly inside sotto.run() verbatim
+    """Compile the named functions nested directly inside scrivo.run() verbatim
     (same file, same line numbers) into `namespace`, whose entries stand in
     for the closure variables they read. This exercises the real start /
     finish / discard wiring without a menu bar, an event tap or a mic."""
-    tree = ast.parse(Path(sotto.__file__).read_text(encoding="utf-8"))
+    tree = ast.parse(Path(scrivo.__file__).read_text(encoding="utf-8"))
     run = next(node for node in tree.body
                if isinstance(node, ast.FunctionDef) and node.name == "run")
     found = {node.name: node for node in run.body
              if isinstance(node, ast.FunctionDef) and node.name in names}
     missing = [name for name in names if name not in found]
     if missing:
-        raise AssertionError(f"sotto.run() defines no closure(s) {missing}")
+        raise AssertionError(f"scrivo.run() defines no closure(s) {missing}")
     module = ast.Module(body=[found[name] for name in names], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
+    exec(compile(module, scrivo.__file__, "exec"), namespace)
     return namespace
 
 
@@ -416,8 +416,8 @@ class FailedMicStartTest(unittest.TestCase):
         RecordingThread.started = []
         self.logs = []
         real_sleep = time.sleep
-        for patcher in (mock.patch.object(sotto.threading, "Thread", RecordingThread),
-                        mock.patch.object(sotto.time, "sleep", lambda s: None),  # retry pauses
+        for patcher in (mock.patch.object(scrivo.threading, "Thread", RecordingThread),
+                        mock.patch.object(scrivo.time, "sleep", lambda s: None),  # retry pauses
                         mock.patch.object(capture_module, "log", self.logs.append)):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -426,7 +426,7 @@ class FailedMicStartTest(unittest.TestCase):
                                                sleep=real_sleep, time=time.time)
 
     def wire(self, *, with_handler):
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         capture._engine_obj = FakeEngine(start_ok=False)   # device busy or gone
         ui, jobs = StatusUI(), queue.Queue()
 
@@ -439,7 +439,7 @@ class FailedMicStartTest(unittest.TestCase):
                                               enqueue=lambda q, job: q.put(job) or True,
                                               stop_capture=lambda c: None),
             "capture_gate": types.SimpleNamespace(starting=starting),
-            "pending_deliveries": sotto.PendingDeliveries(), "finishing": sotto.PendingDeliveries(),
+            "pending_deliveries": scrivo.PendingDeliveries(), "finishing": scrivo.PendingDeliveries(),
             "use_nemotron": False, "capture": capture, "jobs": jobs,
             "model_rewarm_due": lambda *a, **k: False,
             "model_activity": {"last_finished": 0.0, "rewarming": False},
@@ -452,7 +452,7 @@ class FailedMicStartTest(unittest.TestCase):
         if with_handler:
             names.append("on_mic_failed")
         run_closures(names, namespace)
-        gesture = sotto.GestureEngine(namespace["on_start"], namespace["on_finish"],
+        gesture = scrivo.GestureEngine(namespace["on_start"], namespace["on_finish"],
                                       namespace["on_discard"])
         namespace["engine"] = gesture
         if with_handler:
@@ -517,7 +517,7 @@ class DoctorProbeTest(unittest.TestCase):
         with fake_avfoundation(lambda: engine), \
              mock.patch.object(capture_module, "_pin_input_to_builtin", pin), \
              contextlib.redirect_stdout(out):
-            status = sotto.doctor_input_probe()
+            status = scrivo.doctor_input_probe()
         self.assertEqual(status, 0)
         self.assertEqual(pinned, [node])
         self.assertEqual(node.calls, ["pin", "inputFormat"],
@@ -526,25 +526,25 @@ class DoctorProbeTest(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "darwin",
                          "macOS doctor: patches ApplicationServices.AXIsProcessTrusted")
-    def test_doctor_runs_the_probe_through_sotto_not_an_unpinned_output_bus(self):
+    def test_doctor_runs_the_probe_through_scrivo_not_an_unpinned_output_bus(self):
         logs = []
         completed = types.SimpleNamespace(returncode=0, stdout="48000 Hz, 1 ch\n",
                                           stderr="  mic: built-in mic\n")
         with mock.patch("subprocess.run", return_value=completed) as run, \
-             mock.patch.object(sotto, "microphone_permission", return_value=True), \
+             mock.patch.object(scrivo, "microphone_permission", return_value=True), \
              mock.patch("ApplicationServices.AXIsProcessTrusted", return_value=True), \
-             mock.patch.object(sotto, "log", logs.append):
-            sotto.doctor()
+             mock.patch.object(scrivo, "log", logs.append):
+            scrivo.doctor()
         command = run.call_args.args[0]
         self.assertEqual(command[0], sys.executable)
         probe = " ".join(command)
         self.assertIn("doctor_input_probe", probe)
         self.assertNotIn("outputFormatForBus_", probe)
-        self.assertEqual(run.call_args.kwargs.get("cwd"), str(Path(sotto.__file__).resolve().parent))
+        self.assertEqual(run.call_args.kwargs.get("cwd"), str(Path(scrivo.__file__).resolve().parent))
         self.assertIn("✓ input device: 48000 Hz, 1 ch (built-in mic)", logs)
 
 
-# -- which mic a key press records from, pinned before capture moves out of sotto.py
+# -- which mic a key press records from, pinned before capture moves out of scrivo.py
 
 def device(dev_id, name, transport, inputs=(0x0201,), outputs=()):
     return {"id": dev_id, "name": name, "transport": fourcc(transport),
@@ -678,7 +678,7 @@ class IdleDeviceScanTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def idle_capture(self, wanted):
-        capture = sotto.CaptureService()
+        capture = scrivo.CaptureService()
         engine = FakeEngine()
         engine.running = True
         capture._engine_obj = capture._engine = engine

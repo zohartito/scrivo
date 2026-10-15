@@ -2,7 +2,7 @@
 audit rows F1c, N3, N6, N8, N9, N12, N18, N27, N40, N44).
 
 The menu actions are AppController methods (app_controller.py); the gesture
-callbacks and the main-loop teardown are closures inside sotto.run(), which
+callbacks and the main-loop teardown are closures inside scrivo.run(), which
 these tests compile against fakes. Either way there is no AppKit run loop,
 no mic, no model, no clipboard and no exec, and the tests check what the
 real code does.
@@ -25,7 +25,7 @@ if sys.platform != "darwin":
     raise unittest.SkipTest("the Mac app lifecycle — macOS-only")
 
 import lifecycle
-import sotto
+import scrivo
 from app_controller import AppController
 
 WAIT_S = 5.0
@@ -41,10 +41,10 @@ def controller(**parts):
 
 
 def closures(names, namespace):
-    """Compile the named functions defined in sotto.run() — directly or under
+    """Compile the named functions defined in scrivo.run() — directly or under
     its ``if``/``with``/``try`` blocks, never inside another function — into
     ``namespace``, whose entries stand in for the closure variables they read."""
-    source = Path(sotto.__file__).read_text(encoding="utf-8")
+    source = Path(scrivo.__file__).read_text(encoding="utf-8")
     run = next(node for node in ast.parse(source).body
                if isinstance(node, ast.FunctionDef) and node.name == "run")
     found = {}
@@ -62,7 +62,7 @@ def closures(names, namespace):
     missing = set(names) - set(found)
     assert not missing, f"not defined in run(): {sorted(missing)}"
     module = ast.Module(body=[found[name] for name in names], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
+    exec(compile(module, scrivo.__file__, "exec"), namespace)
     return namespace
 
 
@@ -102,14 +102,14 @@ class World:
     dictation that is in flight until the test says it is done."""
 
     def __init__(self, frozen=False):
-        self.shutdown = sotto.ShutdownBoundary()
-        self.gate = sotto.CaptureGate()
+        self.shutdown = scrivo.ShutdownBoundary()
+        self.gate = scrivo.CaptureGate()
         self.clock = Clock(frozen)
         self.busy = threading.Event()
         self.ended = []
         self.lifecycle = None
-        if hasattr(sotto, "Lifecycle"):
-            self.lifecycle = sotto.Lifecycle(
+        if hasattr(scrivo, "Lifecycle"):
+            self.lifecycle = scrivo.Lifecycle(
                 self.shutdown, self.gate, end_recording=self.end_recording,
                 busy=self.busy.is_set, clock=self.clock, sleep=self.clock.sleep)
 
@@ -122,8 +122,8 @@ class World:
 
 class SignalStopTests(unittest.TestCase):
     def test_the_first_signal_asks_for_a_drained_stop_not_an_immediate_one(self):
-        boundary = sotto.ShutdownBoundary()
-        with sotto.shutdown_signal_handlers(boundary):
+        boundary = scrivo.ShutdownBoundary()
+        with scrivo.shutdown_signal_handlers(boundary):
             handler = signal.getsignal(signal.SIGTERM)
             handler(signal.SIGTERM, None)  # no OS signal: call the installed handler
             self.assertFalse(boundary.requested(), "SIGTERM discarded the dictation at once")
@@ -146,15 +146,15 @@ class SignalStopTests(unittest.TestCase):
         self.assertTrue(world.shutdown.event.wait(WAIT_S))
 
     def test_sigterm_stops_inside_launchds_exit_timeout(self):
-        # launchd SIGKILLs Sotto's job 5 s after SIGTERM ("exit timeout = 5"):
+        # launchd SIGKILLs Scrivo's job 5 s after SIGTERM ("exit timeout = 5"):
         # the drain must leave time to keep the rest in History.
         world = World()
         world.busy.set()  # a wedged model call: never idle
         threading.Thread(target=world.lifecycle.watch_signals, daemon=True).start()
         world.shutdown.request_stop(signal.SIGTERM)
         self.assertTrue(world.shutdown.event.wait(WAIT_S))
-        self.assertLessEqual(world.clock(), sotto.SIGTERM_DRAIN_S + 0.5)
-        self.assertLess(sotto.SIGTERM_DRAIN_S, 5.0)
+        self.assertLessEqual(world.clock(), scrivo.SIGTERM_DRAIN_S + 0.5)
+        self.assertLess(scrivo.SIGTERM_DRAIN_S, 5.0)
 
     def test_sigterm_during_a_menu_quit_still_fits_launchds_window(self):
         world = World(frozen=True)
@@ -163,7 +163,7 @@ class SignalStopTests(unittest.TestCase):
         self.assertTrue(world.lifecycle.quit())          # the menu's Quit: 10 s
         world.shutdown.request_stop(signal.SIGTERM)      # then logout / launchd
         time.sleep(0.05)
-        world.clock.now = sotto.SIGTERM_DRAIN_S + 0.2
+        world.clock.now = scrivo.SIGTERM_DRAIN_S + 0.2
         self.assertTrue(world.shutdown.event.wait(1.0), "SIGTERM left the 10 s Quit drain in place")
 
     def test_ctrl_c_waits_like_quit(self):
@@ -172,7 +172,7 @@ class SignalStopTests(unittest.TestCase):
         threading.Thread(target=world.lifecycle.watch_signals, daemon=True).start()
         world.shutdown.request_stop(signal.SIGINT)
         self.assertTrue(world.shutdown.event.wait(WAIT_S))
-        self.assertGreaterEqual(world.clock(), sotto.QUIT_DRAIN_S)
+        self.assertGreaterEqual(world.clock(), scrivo.QUIT_DRAIN_S)
 
 
 # -- Quit, through the real AppController.quit (N44: behaviour, not source) ----
@@ -197,8 +197,8 @@ class QuitTests(unittest.TestCase):
         world.busy.set()
         self.wire(world)()
         self.assertTrue(world.shutdown.event.wait(WAIT_S))
-        self.assertGreaterEqual(world.clock(), sotto.QUIT_DRAIN_S)
-        self.assertLess(world.clock(), sotto.QUIT_DRAIN_S + 1.0)
+        self.assertGreaterEqual(world.clock(), scrivo.QUIT_DRAIN_S)
+        self.assertLess(world.clock(), scrivo.QUIT_DRAIN_S + 1.0)
 
 
 # -- N12: the menu Restart drains like Quit ----------------------------------
@@ -233,7 +233,7 @@ class MenuRestartTests(unittest.TestCase):
 
     def test_a_failed_restart_reopens_the_gate(self):
         world = World()
-        self.wire(world, fail="launchd could not restart Sotto")()
+        self.wire(world, fail="launchd could not restart Scrivo")()
         self.assertTrue(wait_for(lambda: self.errors))
         self.assertTrue(gate_open(world.gate))
         self.assertIsNone(world.lifecycle.closed)
@@ -267,7 +267,7 @@ class ClosedGateTests(unittest.TestCase):
             "model_rewarm_due": lambda *a, **k: False,
             "model_activity": {"last_finished": 0.0, "rewarming": False},
             "adaptive": False, "status_ui": status_ui, "ui_call": lambda method, *a: method(*a),
-            "log": self.logs.append, "time": time, "threading": threading, "uuid": sotto.uuid,
+            "log": self.logs.append, "time": time, "threading": threading, "uuid": scrivo.uuid,
             "current_speech_config": lambda: "config", "binding": {"trigger": "fn"},
             "hands_free_hint": lambda trigger: "",
         }
@@ -275,7 +275,7 @@ class ClosedGateTests(unittest.TestCase):
         if world.lifecycle is not None:
             names.append("hide_refused_start")
         closures(names, namespace)
-        engine = sotto.GestureEngine(namespace["on_start"], lambda: self.ui.append("finish"),
+        engine = scrivo.GestureEngine(namespace["on_start"], lambda: self.ui.append("finish"),
                                      lambda: self.ui.append("discard"),
                                      on_hands_free=namespace["on_hands_free"])
         namespace["engine"] = engine
@@ -355,7 +355,7 @@ class EngineSwitchTests(unittest.TestCase):
 
     def test_a_failed_switch_reopens_the_gate(self):
         world = World()
-        self.wire(world, fail="launchd could not restart Sotto")("parakeet")
+        self.wire(world, fail="launchd could not restart Scrivo")("parakeet")
         self.assertTrue(self.errors)
         self.assertTrue(gate_open(world.gate))
 
@@ -372,12 +372,12 @@ class EngineSwitchTests(unittest.TestCase):
 class WarmupIsNotDictationTests(unittest.TestCase):
     def test_a_queued_rewarm_alone_is_not_in_flight(self):
         capture = types.SimpleNamespace(is_active=lambda: False)
-        jobs, deliveries = queue.Queue(), sotto.PendingDeliveries()
+        jobs, deliveries = queue.Queue(), scrivo.PendingDeliveries()
         jobs.put(("warmup",))
-        self.assertFalse(sotto.dictation_in_flight(capture, jobs, deliveries, warming=True))
+        self.assertFalse(scrivo.dictation_in_flight(capture, jobs, deliveries, warming=True))
         jobs.put(("live",))
-        self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries, warming=True))
-        self.assertTrue(sotto.dictation_in_flight(capture, jobs, deliveries))
+        self.assertTrue(scrivo.dictation_in_flight(capture, jobs, deliveries, warming=True))
+        self.assertTrue(scrivo.dictation_in_flight(capture, jobs, deliveries))
 
 
 # -- the main-loop teardown: N6, N9, N27 ---------------------------------------
@@ -390,7 +390,7 @@ class TeardownTests(unittest.TestCase):
         takes its full cap: a restore not yet due, a wedged worker).
         ``sigterm_at``: the stop came from SIGTERM at that clock time."""
         self.events, self.exits, self.kept, self.kept_at, self.failed = [], [], [], [], []
-        shutdown = sotto.ShutdownBoundary()
+        shutdown = scrivo.ShutdownBoundary()
         if sigterm_at is not None:
             shutdown.stop_signal, shutdown.stop_at = signal.SIGTERM, sigterm_at
         shutdown.request()
@@ -448,13 +448,13 @@ class TeardownTests(unittest.TestCase):
             "log": lambda line: None, "os": types.SimpleNamespace(_exit=self.exits.append),
             "Quartz": quartz, "tap": None, "status_ui": None, "ui_call": lambda *a: None,
             "flush_clipboard_restore": restore,
-            "signal": signal, "finishing": finishing or sotto.PendingDeliveries(),
-            "wait_until_idle": (sotto.wait_until_idle if clock is None else
-                                functools.partial(sotto.wait_until_idle, sleep=clock.sleep, clock=clock)),
+            "signal": signal, "finishing": finishing or scrivo.PendingDeliveries(),
+            "wait_until_idle": (scrivo.wait_until_idle if clock is None else
+                                functools.partial(scrivo.wait_until_idle, sleep=clock.sleep, clock=clock)),
         }
         for name in ("SIGTERM_RESTORE_WAIT_S", "RESTORE_DELAY_S", "RESTART_FAILED_EXIT"):
-            namespace[name] = getattr(sotto, name, None)
-        names = ["stop_runtime_on_main"] + (["keep_untranscribed"] if hasattr(sotto, "Lifecycle") else [])
+            namespace[name] = getattr(scrivo, name, None)
+        names = ["stop_runtime_on_main"] + (["keep_untranscribed"] if hasattr(scrivo, "Lifecycle") else [])
         return closures(names, namespace)["stop_runtime_on_main"], jobs
 
     def test_n6_the_clipboard_is_put_back_before_the_process_ends(self):
@@ -507,7 +507,7 @@ class TeardownTests(unittest.TestCase):
     def test_n9_the_teardown_waits_for_a_finish_that_holds_the_audio(self):
         # Codex: on_finish has the audio but has not reached the enqueue yet.
         live = ("live", "raw", 48000.0, 1.0, 2.0, "cap8", None, None)
-        finishing = sotto.PendingDeliveries()
+        finishing = scrivo.PendingDeliveries()
         finishing.add()
 
         def finish_late():
@@ -524,9 +524,9 @@ class TeardownTests(unittest.TestCase):
         # (1 s), a finish still short of the queue (1 s) and the join on a
         # wedged worker (1 s) put the keep at 5 s, when launchd SIGKILLs.
         clock = Clock()
-        clock.now = sotto.SIGTERM_DRAIN_S  # SIGTERM came at 0; the drain ran out
+        clock.now = scrivo.SIGTERM_DRAIN_S  # SIGTERM came at 0; the drain ran out
         live = ("live", "raw", 48000.0, 1.0, 2.0, "cap9", None, None)
-        finishing = sotto.PendingDeliveries()
+        finishing = scrivo.PendingDeliveries()
         finishing.add()  # a finish that never reaches the queue
         stop, _ = self.wire(worker_job=live, worker_alive=True, finishing=finishing,
                             clock=clock, sigterm_at=0.0)
@@ -536,36 +536,36 @@ class TeardownTests(unittest.TestCase):
         self.assertLessEqual(self.kept_at[0], 4.0, "kept less than a second before launchd's SIGKILL at 5 s")
 
     def test_sigterm_records_when_it_came(self):
-        boundary = sotto.ShutdownBoundary()
+        boundary = scrivo.ShutdownBoundary()
         boundary.request_stop(signal.SIGTERM)
         self.assertIsNotNone(boundary.stop_at)
         self.assertLessEqual(boundary.stop_at, time.monotonic())
 
-    def test_n27_a_failed_exec_exits_so_launchd_starts_sotto_again(self):
+    def test_n27_a_failed_exec_exits_so_launchd_starts_scrivo_again(self):
         for error in (OSError(7, "Argument list too long"), IndexError("tuple index out of range")):
             with self.subTest(error=type(error).__name__):
                 stop, _ = self.wire(foreground=True, exec_error=error)
                 stop()
                 self.assertTrue(self.failed, "the failure callback (engine choice restore) did not run")
-                self.assertEqual(self.exits, [sotto.RESTART_FAILED_EXIT])
-                self.assertNotEqual(sotto.RESTART_FAILED_EXIT, 0)  # KeepAlive: SuccessfulExit false
+                self.assertEqual(self.exits, [scrivo.RESTART_FAILED_EXIT])
+                self.assertNotEqual(scrivo.RESTART_FAILED_EXIT, 0)  # KeepAlive: SuccessfulExit false
 
     def test_n27_a_failure_callback_that_raises_still_exits(self):
         stop, _ = self.wire(foreground=True, exec_error=OSError(8, "Exec format error"), failed_raises=True)
         stop()
-        self.assertEqual(self.exits, [sotto.RESTART_FAILED_EXIT])
+        self.assertEqual(self.exits, [scrivo.RESTART_FAILED_EXIT])
 
 
 class RelaunchTests(unittest.TestCase):
-    """N44/N27: Sotto.app's relaunch helper that cannot start reaches the
+    """N44/N27: Scrivo.app's relaunch helper that cannot start reaches the
     teardown as an exception (which exits RESTART_FAILED_EXIT), never as a
     silent success that would end in exit 0."""
 
     def test_a_relaunch_helper_that_cannot_start_raises(self):
         with patch.object(lifecycle, "launchd_owns_this_process", return_value=False), \
              patch.object(lifecycle, "launched_as_sealed_job", return_value=False):
-            restart = sotto.RestartController(sotto.ShutdownBoundary())
-        env = {"SOTTO_LAUNCHER": "app", "SOTTO_APP_EXECUTABLE": "/Applications/Sotto.app/Contents/MacOS/Sotto"}
+            restart = scrivo.RestartController(scrivo.ShutdownBoundary())
+        env = {"SCRIVO_LAUNCHER": "app", "SCRIVO_APP_EXECUTABLE": "/Applications/Scrivo.app/Contents/MacOS/Scrivo"}
         with patch.dict(os.environ, env), patch("os.execv") as execute, \
              patch("subprocess.Popen", side_effect=OSError(35, "Resource temporarily unavailable")):
             self.assertTrue(restart.request())
@@ -580,8 +580,8 @@ class FinishAtShutdownTests(unittest.TestCase):
 
     def test_a_capture_refused_by_the_queue_is_kept(self):
         kept, ui = [], []
-        raw = sotto.np.full(48_000, 0.1, dtype=sotto.np.float32)
-        shutdown, jobs = sotto.ShutdownBoundary(), queue.Queue()
+        raw = scrivo.np.full(48_000, 0.1, dtype=scrivo.np.float32)
+        shutdown, jobs = scrivo.ShutdownBoundary(), queue.Queue()
 
         def end(include_stream):
             shutdown.request()  # the Quit drain ran out while the audio was being joined
@@ -590,8 +590,8 @@ class FinishAtShutdownTests(unittest.TestCase):
         namespace = {
             "shutdown": shutdown, "capture": capture, "jobs": jobs, "status_ui": None,
             "ui_call": lambda *a: ui.append(a), "log": lambda line: None, "time": time,
-            "uuid": sotto.uuid, "current_speech_config": lambda: "config",
-            "pending_deliveries": sotto.PendingDeliveries(), "finishing": sotto.PendingDeliveries(),
+            "uuid": scrivo.uuid, "current_speech_config": lambda: "config",
+            "pending_deliveries": scrivo.PendingDeliveries(), "finishing": scrivo.PendingDeliveries(),
             "worker": types.SimpleNamespace(keep_untranscribed=kept.append),
             "spool": types.SimpleNamespace(submit=lambda *a: None),  # N9b; tests/test_capture_spool.py
         }
@@ -604,7 +604,7 @@ class FinishAtShutdownTests(unittest.TestCase):
     def test_a_capture_discarded_by_the_enqueue_race_is_kept(self):
         kept, jobs = [], queue.Queue()
 
-        class LateShutdown(sotto.ShutdownBoundary):
+        class LateShutdown(scrivo.ShutdownBoundary):
             def requested(self):
                 answer = jobs.qsize() > 1  # shutdown lands right after the put
                 if answer:

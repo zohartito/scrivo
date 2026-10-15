@@ -1,10 +1,10 @@
 """Start Menu and login entry point for the Windows tray app.
 
-    pythonw win_launch.py --data-dir DIR [--hf-home DIR] [sotto_win options]
+    pythonw win_launch.py --data-dir DIR [--hf-home DIR] [scrivo_win options]
 
 A shortcut or Run value cannot set environment variables, so this sets
-SOTTO_DATA_DIR (and SOTTO_HF_HOME, default DIR\\huggingface) before any Scrivo
-module resolves its paths, then starts ``sotto_win`` with ``--tray``.
+SCRIVO_DATA_DIR (and SCRIVO_HF_HOME, default DIR\\huggingface) before any Scrivo
+module resolves its paths, then starts ``scrivo_win`` with ``--tray``.
 """
 from __future__ import annotations
 
@@ -38,13 +38,13 @@ def split_paths(argv: list[str]) -> tuple[str | None, str | None, list[str]]:
 def main(argv: list[str] | None = None) -> None:
     data_dir, hf_home, rest = split_paths(list(sys.argv[1:] if argv is None else argv))
     if data_dir:
-        os.environ["SOTTO_DATA_DIR"] = data_dir
-        os.environ["SOTTO_HF_HOME"] = hf_home or str(Path(data_dir) / "huggingface")
+        os.environ["SCRIVO_DATA_DIR"] = data_dir
+        os.environ["SCRIVO_HF_HOME"] = hf_home or str(Path(data_dir) / "huggingface")
     elif hf_home:
-        os.environ["SOTTO_HF_HOME"] = hf_home
+        os.environ["SCRIVO_HF_HOME"] = hf_home
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import sotto_win  # after the environment: sotto_paths reads it at import
-    sotto_win.main(["--tray", *rest])
+    import scrivo_win  # after the environment: scrivo_paths reads it at import
+    scrivo_win.main(["--tray", *rest])
 
 
 if __name__ == "__main__":

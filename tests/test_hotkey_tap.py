@@ -1,4 +1,4 @@
-"""Characterization of the event tap through the real ``sotto.run()``.
+"""Characterization of the event tap through the real ``scrivo.run()``.
 
 Restructure step 6 pins what the tap decides before it moves out of run():
 these tests build the whole app with fakes (no menu bar, no event tap, no
@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import history
 import learning
-import sotto
+import scrivo
 from speech_config import resolve_speech_config
 
 if sys.platform == "darwin":
@@ -242,7 +242,7 @@ class App:
 
 
 def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", create_ok=True):
-    """sotto.run() with every OS boundary faked; drive(app) runs as the main
+    """scrivo.run() with every OS boundary faked; drive(app) runs as the main
     loop, then shutdown is requested and run() returns. Returns the App."""
     tap_os, gate = FakeTapOS(create_ok=create_ok), PollerGate()
     app = test.app = App(tap_os, gate)  # test.app: also when run() raises
@@ -266,12 +266,12 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
             super().__init__(*args, **kwargs)
             app.engines.append(self)
 
-    class RecordingBoundary(sotto.ShutdownBoundary):
+    class RecordingBoundary(scrivo.ShutdownBoundary):
         def __init__(self):
             super().__init__()
             app.boundaries.append(self)
 
-    class Capture(sotto.CaptureService):
+    class Capture(scrivo.CaptureService):
         def __init__(self):
             super().__init__()
             self.ticks = 0
@@ -288,7 +288,7 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
         fake.close = lambda: None
         return fake
 
-    real_delivery, real_controller = sotto.DeliveryQueue, sotto.AppController
+    real_delivery, real_controller = scrivo.DeliveryQueue, scrivo.AppController
 
     def delivery_queue(**kwargs):
         app.delivery_kwargs.update(kwargs)
@@ -311,14 +311,14 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
         real_store, real_learning = history.HistoryStore, learning.LearningStore
         replacements = {
             **tap_os.replacements(),
-            "sotto.CaptureService": Capture,
-            "sotto.ShutdownBoundary": RecordingBoundary,
-            "sotto.GestureEngine": RecordingEngine,
-            "sotto.DeliveryQueue": delivery_queue,
-            "sotto.AppController": app_controller,
-            "sotto.log": app.logs.append,
-            "sotto.microphone_permission": lambda **_kw: True,
-            "sotto.inject": lambda text, **_kw: test.fail(f"pasted {text!r}"),
+            "scrivo.CaptureService": Capture,
+            "scrivo.ShutdownBoundary": RecordingBoundary,
+            "scrivo.GestureEngine": RecordingEngine,
+            "scrivo.DeliveryQueue": delivery_queue,
+            "scrivo.AppController": app_controller,
+            "scrivo.log": app.logs.append,
+            "scrivo.microphone_permission": lambda **_kw: True,
+            "scrivo.inject": lambda text, **_kw: test.fail(f"pasted {text!r}"),
             "nemotron_backend.NemotronRuntime": runtime,
             "history.HistoryStore": lambda **kw: real_store(root, **kw),
             "learning.LearningStore": lambda **kw: real_learning(root, **kw),
@@ -333,7 +333,7 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
         for name, replacement in replacements.items():
             stack.enter_context(patch(name, replacement))
         try:
-            sotto.run(trigger, speech_config=resolve_speech_config("nemotron-en"), hotkey_spec=hotkey_spec)
+            scrivo.run(trigger, speech_config=resolve_speech_config("nemotron-en"), hotkey_spec=hotkey_spec)
         finally:
             for boundary in app.boundaries:
                 boundary.request()  # also when run() exits early: let its worker thread end
@@ -347,7 +347,7 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
     return app
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class TapSetupTests(unittest.TestCase):
     def test_run_records_the_commit_it_started_from_once(self):
         # Check for Updates compares the folder's HEAD with it (2026-10-10:
@@ -355,7 +355,7 @@ class TapSetupTests(unittest.TestCase):
         started = "c2e7f0f" + "0" * 33
         with patch("updates.started_from", return_value=started) as started_from:
             app = run_app(self, lambda app: None)
-        started_from.assert_called_once_with(Path(sotto.__file__).resolve().parent)
+        started_from.assert_called_once_with(Path(scrivo.__file__).resolve().parent)
         self.assertEqual(app.controller_kwargs["started_from"], started)
 
     def test_a_listen_only_session_tap_on_flags_and_keys_is_added_to_the_run_loop_and_enabled(self):
@@ -406,7 +406,7 @@ class TapSetupTests(unittest.TestCase):
         self.assertNotIn("remote-friendly", app.logged("listening on")[0])
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class TriggerEdgeTests(unittest.TestCase):
     def test_press_and_release_edges_reach_the_engine_once_each(self):
         def drive(app):
@@ -454,11 +454,11 @@ class TriggerEdgeTests(unittest.TestCase):
         run_app(self, drive)
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class OwnEventAndTypingTests(unittest.TestCase):
-    def test_sottos_own_tagged_events_are_never_a_chord_typing_or_a_trigger_edge(self):
+    def test_scrivos_own_tagged_events_are_never_a_chord_typing_or_a_trigger_edge(self):
         def drive(app):
-            tag = sotto.SOTTO_EVENT_TAG
+            tag = scrivo.SCRIVO_EVENT_TAG
             app.press_trigger()
             app.key_down(9, Quartz.kCGEventFlagMaskCommand, user_data=tag)   # own ⌘V
             app.key_up(9, Quartz.kCGEventFlagMaskCommand, user_data=tag)
@@ -507,7 +507,7 @@ class OwnEventAndTypingTests(unittest.TestCase):
         run_app(self, drive, trigger="fn")
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class HotkeyTests(unittest.TestCase):
     def test_a_tap_starts_and_the_next_tap_finishes(self):
         def drive(app):
@@ -526,7 +526,7 @@ class HotkeyTests(unittest.TestCase):
     def test_a_hold_finishes_on_release(self):
         def drive(app):
             app.key_down(D, app.hotkey_flags())
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.key_up(D)                            # key-up flags are gone: keycode alone
             self.assertEqual(app.engine.calls, ["force_start", "force_finish"])
 
@@ -537,7 +537,7 @@ class HotkeyTests(unittest.TestCase):
         def drive(app):
             app.key_down(D, app.hotkey_flags())
             app.engine.recording = False             # ended some other way meanwhile
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.key_up(D)
             self.assertEqual(app.engine.calls, ["force_start"])
 
@@ -549,7 +549,7 @@ class HotkeyTests(unittest.TestCase):
             app.key_up(D)
             app.key_down(D, app.hotkey_flags())      # finishes
             app.engine.recording = True              # a new session started meanwhile
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.key_up(D)                            # must not finish that one
             self.assertEqual(app.engine.calls, ["force_start", "force_finish"])
 
@@ -568,10 +568,10 @@ class HotkeyTests(unittest.TestCase):
     def test_a_stray_key_up_without_an_accepted_key_down_finishes_nothing(self):
         def drive(app):
             app.engine.recording = True              # a trigger-started recording
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.key_up(D, app.hotkey_flags())
             app.key_down(D)                          # a plain D press is not the hotkey
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.key_up(D)
             self.assertEqual(app.engine.calls, [])
             self.assertTrue(app.engine.recording)
@@ -582,7 +582,7 @@ class HotkeyTests(unittest.TestCase):
         def drive(app):
             app.engine.start_ok = False
             app.key_down(D, app.hotkey_flags())
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.engine.recording = True
             app.key_up(D)
             self.assertEqual(app.engine.calls, ["force_start"])
@@ -609,7 +609,7 @@ class HotkeyTests(unittest.TestCase):
         run_app(self, drive)
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class ReviveTests(unittest.TestCase):
     def test_a_disabled_tap_event_re_enables_it_and_reports_health(self):
         for event_type in ("kCGEventTapDisabledByTimeout", "kCGEventTapDisabledByUserInput"):
@@ -667,7 +667,7 @@ class ReviveTests(unittest.TestCase):
         run_app(self, drive)
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class PollerTests(unittest.TestCase):
     def test_each_poll_sleeps_a_second_and_ticks_the_capture(self):
         def drive(app):
@@ -748,7 +748,7 @@ class PollerTests(unittest.TestCase):
         run_app(self, drive)
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class RebindTests(unittest.TestCase):
     def test_a_new_trigger_takes_over_and_resets_the_gesture(self):
         def drive(app):
@@ -775,7 +775,7 @@ class RebindTests(unittest.TestCase):
     def test_the_hands_free_hint_follows_the_new_trigger(self):
         def drive(app):
             app.controller_kwargs["rebind"](new_trigger="left-cmd")
-            self.assertEqual(sotto.hands_free_hint(app.controller_kwargs["binding"]["trigger"]),
+            self.assertEqual(scrivo.hands_free_hint(app.controller_kwargs["binding"]["trigger"]),
                              "tap left ⌘ to stop")
 
         run_app(self, drive)
@@ -785,7 +785,7 @@ class RebindTests(unittest.TestCase):
             app.key_down(D, app.hotkey_flags())      # pressed under the old hotkey...
             app.controller_kwargs["rebind"](new_hotkey_spec="f13")
             self.assertEqual(app.controller_kwargs["binding"]["hotkey_spec"], "f13")
-            REAL_SLEEP(sotto.HOLD_THRESHOLD_S + 0.05)
+            REAL_SLEEP(scrivo.HOLD_THRESHOLD_S + 0.05)
             app.key_up(F13)                          # ...its press state is dropped
             self.assertEqual(app.engine.calls, ["force_start"])
             app.key_down(D, app.hotkey_flags())      # the old chord is plain typing now
@@ -811,7 +811,7 @@ class RebindTests(unittest.TestCase):
                 self.assertEqual(app.logged("● alternate hotkey"), ["● alternate hotkey off"])
 
 
-@unittest.skipUnless(sys.platform == "darwin", "drives sotto.run(), which needs PyObjC; macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
 class ShutdownTests(unittest.TestCase):
     def test_once_shutdown_is_requested_every_event_passes_through_untouched(self):
         def drive(app):

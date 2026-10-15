@@ -16,7 +16,7 @@ import unittest
 
 import numpy as np
 
-from sotto import (DEAD_ROUTE_TEXT, asr_skip_reason, is_dead_route,
+from scrivo import (DEAD_ROUTE_TEXT, asr_skip_reason, is_dead_route,
                    looks_hallucinated, salvage_repetition_loop)
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import gestures
-import sotto
+import scrivo
 
 gestures.HOLD_THRESHOLD_S = 0.08  # the engine reads its timing from gestures.py
 gestures.DOUBLE_TAP_WINDOW_S = 0.12
@@ -25,7 +25,7 @@ class Probe:
     def __init__(self, fail_start: bool = False):
         self.events: list[str] = []
         self.fail_start = fail_start
-        self.engine = sotto.GestureEngine(self._start, self._finish, self._discard)
+        self.engine = scrivo.GestureEngine(self._start, self._finish, self._discard)
 
     def _start(self):
         if self.fail_start:

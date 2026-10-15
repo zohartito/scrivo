@@ -12,7 +12,7 @@ from pathlib import Path
 import sys
 import tempfile
 
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 SETTINGS_PATH = DATA_DIR / "settings.json"
 TRIGGER_KEYS = ("fn", "right-option", "left-option", "right-cmd", "left-cmd",

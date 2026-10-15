@@ -79,9 +79,9 @@ class ScriptShapeTests(unittest.TestCase):
         for line in code:
             if re.search(r"(?i)\bexit\b", line):
                 # [N41] Only a run as a file exits, with the failure's code.
-                self.assertIn("${function:Install-Sotto}.File", line,
+                self.assertIn("${function:Install-Scrivo}.File", line,
                               "iex runs in the user's session; exit would close it")
-        self.assertEqual([line for line in code if line.startswith("Install-Sotto")], ["Install-Sotto"],
+        self.assertEqual([line for line in code if line.startswith("Install-Scrivo")], ["Install-Scrivo"],
                          "one call, after every definition")
 
 
@@ -96,9 +96,9 @@ class MacInstallerTests(unittest.TestCase):
     def test_downloads_then_updates_and_refuses_a_foreign_folder(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            dest = folder / "sotto"
-            env = dict(os.environ, SOTTO_REPO=str(bare_copy_of_this_checkout(folder)), SOTTO_SOURCE=str(dest),
-                       SOTTO_PYTHON=sys.executable, SOTTO_GET_DRY_RUN="1")
+            dest = folder / "scrivo"
+            env = dict(os.environ, SCRIVO_REPO=str(bare_copy_of_this_checkout(folder)), SCRIVO_SOURCE=str(dest),
+                       SCRIVO_PYTHON=sys.executable, SCRIVO_GET_DRY_RUN="1")
             first = self.run_piped(env)
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertIn("Downloading Scrivo", first.stdout)
@@ -109,7 +109,7 @@ class MacInstallerTests(unittest.TestCase):
             self.assertIn("Updating Scrivo", again.stdout)
             foreign = folder / "notes"
             foreign.mkdir()
-            refused = self.run_piped(dict(env, SOTTO_SOURCE=str(foreign)))
+            refused = self.run_piped(dict(env, SCRIVO_SOURCE=str(foreign)))
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn("is not a copy of Scrivo", refused.stderr)
 
@@ -118,11 +118,11 @@ class MacInstallerTests(unittest.TestCase):
             folder = Path(temporary)
             other_remote = folder / "other.git"
             subprocess.run(["git", "init", "--quiet", "--bare", str(other_remote)], check=True)
-            dest = folder / "sotto"
+            dest = folder / "scrivo"
             subprocess.run(["git", "clone", "--quiet", str(other_remote), str(dest)], check=True,
                            capture_output=True)
-            env = dict(os.environ, SOTTO_REPO=str(bare_copy_of_this_checkout(folder)), SOTTO_SOURCE=str(dest),
-                       SOTTO_PYTHON=sys.executable, SOTTO_GET_DRY_RUN="1")
+            env = dict(os.environ, SCRIVO_REPO=str(bare_copy_of_this_checkout(folder)), SCRIVO_SOURCE=str(dest),
+                       SCRIVO_PYTHON=sys.executable, SCRIVO_GET_DRY_RUN="1")
             refused = self.run_piped(env)
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn("not Scrivo", refused.stderr)
@@ -134,10 +134,10 @@ class MacInstallerTests(unittest.TestCase):
 
     def installed_copy(self, folder: Path) -> tuple[dict, Path, str]:
         """A copy downloaded by get.sh, with a stand-in venv, and a newer version on 'GitHub'."""
-        dest = folder / "sotto"
+        dest = folder / "scrivo"
         remote = bare_copy_of_this_checkout(folder)
-        env = dict(os.environ, SOTTO_REPO=str(remote), SOTTO_SOURCE=str(dest), SOTTO_PYTHON=sys.executable,
-                   SOTTO_GET_DRY_RUN="1")
+        env = dict(os.environ, SCRIVO_REPO=str(remote), SCRIVO_SOURCE=str(dest), SCRIVO_PYTHON=sys.executable,
+                   SCRIVO_GET_DRY_RUN="1")
         first = self.run_piped(env)
         self.assertEqual(first.returncode, 0, first.stderr)
         upstream = folder / "upstream"
@@ -157,16 +157,16 @@ class MacInstallerTests(unittest.TestCase):
                                 ("git@github.com:zohartito/sotto.git", "git@github.com:zohartito/scrivo.git")):
             with self.subTest(legacy=legacy), tempfile.TemporaryDirectory() as temporary:
                 folder = Path(temporary)
-                dest = folder / "sotto"
+                dest = folder / "scrivo"
                 subprocess.run(["git", "clone", "--quiet", str(bare_copy_of_this_checkout(folder)), str(dest)],
                                check=True, capture_output=True)
                 self.git(dest, "remote", "set-url", "origin", legacy)
-                env = dict(os.environ, SOTTO_SOURCE=str(dest), SOTTO_PYTHON=sys.executable, SOTTO_GET_DRY_RUN="1")
-                env.pop("SOTTO_REPO", None)
-                fork = self.run_piped(dict(env, SOTTO_REPO="https://github.com/someone/scrivo.git"))
+                env = dict(os.environ, SCRIVO_SOURCE=str(dest), SCRIVO_PYTHON=sys.executable, SCRIVO_GET_DRY_RUN="1")
+                env.pop("SCRIVO_REPO", None)
+                fork = self.run_piped(dict(env, SCRIVO_REPO="https://github.com/someone/scrivo.git"))
                 self.assertNotEqual(fork.returncode, 0)
                 self.assertIn("not Scrivo", fork.stderr)
-                running = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", "sotto.py", "run"], cwd=dest)
+                running = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", "scrivo.py", "run"], cwd=dest)
                 try:
                     time.sleep(0.2)
                     refused = self.run_piped(env)
@@ -181,6 +181,47 @@ class MacInstallerTests(unittest.TestCase):
                 self.assertIn("Updating Scrivo", result.stdout)
                 self.assertIn(f"would run {dest}/scripts/install-mac.sh --update", result.stdout)
                 self.assertEqual(self.git(dest, "remote", "get-url", "origin"), renamed)
+
+    def test_new_installs_go_to_scrivo_and_a_copy_from_before_the_rename_stays_in_sotto(self):
+        # Scrivo was called Sotto: a copy in ~/sotto is run by that path (its
+        # Scrivo.app launcher), so it is updated where it is.
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            remote = bare_copy_of_this_checkout(folder)
+            home = folder / "home"
+            home.mkdir()
+            inherited = {name: value for name, value in os.environ.items()
+                         if not name.startswith(("SCRIVO_", "SOTTO_"))}
+            env = dict(inherited, HOME=str(home), SCRIVO_PYTHON=sys.executable, SCRIVO_GET_DRY_RUN="1")
+            legacy = home / "sotto"
+            subprocess.run(["git", "clone", "--quiet", str(remote), str(legacy)], check=True, capture_output=True)
+            self.git(legacy, "remote", "set-url", "origin", "https://github.com/zohartito/sotto.git")
+            result = self.run_piped(env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"Updating Scrivo in {legacy}", result.stdout)
+            self.assertIn(f"would run {legacy}/scripts/install-mac.sh --update", result.stdout)
+            self.assertFalse((home / "scrivo").exists())
+            # The old variable names still choose the folder and the project;
+            # the new ones win when both are set.
+            elsewhere, chosen = folder / "elsewhere", folder / "chosen"
+            result = self.run_piped(dict(env, SOTTO_SOURCE=str(elsewhere), SOTTO_REPO=str(remote)))
+            self.assertIn(f"Downloading Scrivo into {elsewhere}", result.stdout, result.stderr)
+            result = self.run_piped(dict(env, SOTTO_SOURCE=str(elsewhere), SCRIVO_SOURCE=str(chosen),
+                                         SOTTO_REPO="https://github.com/someone/else.git", SCRIVO_REPO=str(remote)))
+            self.assertIn(f"Downloading Scrivo into {chosen}", result.stdout, result.stderr)
+            # A ~/sotto of another project is not this copy: a new install goes to ~/scrivo.
+            shutil.rmtree(legacy)
+            other = folder / "other.git"
+            subprocess.run(["git", "init", "--quiet", "--bare", str(other)], check=True)
+            subprocess.run(["git", "clone", "--quiet", str(other), str(legacy)], check=True, capture_output=True)
+            result = self.run_piped(dict(env, SCRIVO_REPO=str(remote)))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"Downloading Scrivo into {home / 'scrivo'}", result.stdout)
+            # Once ~/scrivo exists it is the one, even with this project's old copy beside it.
+            shutil.rmtree(legacy)
+            subprocess.run(["git", "clone", "--quiet", str(remote), str(legacy)], check=True, capture_output=True)
+            result = self.run_piped(dict(env, SCRIVO_REPO=str(remote)))
+            self.assertIn(f"Updating Scrivo in {home / 'scrivo'}", result.stdout, result.stderr)
 
     @unittest.skipUnless(HAVE_CLANG, "install-mac.sh needs Apple's command line tools")
     def test_an_update_whose_packages_fail_leaves_the_source_where_it_was(self):
@@ -198,23 +239,25 @@ class MacInstallerTests(unittest.TestCase):
             opener = bin_dir / "open"  # never start a real Scrivo
             opener.write_text(f'#!/bin/bash\necho "$@" >> "{folder / "opened.txt"}"\n')
             opener.chmod(0o755)
-            env = dict(env, SOTTO_PYTHON=str(fake), PIP_FAILS="1", SOTTO_DATA_DIR=str(folder / "data"),
+            env = dict(env, SCRIVO_PYTHON=str(fake), PIP_FAILS="1", SCRIVO_DATA_DIR=str(folder / "data"),
                        PATH=f"{bin_dir}:{os.environ['PATH']}")
-            env.pop("SOTTO_GET_DRY_RUN")
+            env.pop("SCRIVO_GET_DRY_RUN")
             failed = self.run_piped(env)
             self.assertNotEqual(failed.returncode, 0)
             self.assertIn("source was not switched", failed.stderr)
             self.assertEqual(self.git(dest, "rev-parse", "HEAD"), before)
             self.assertFalse((folder / "opened.txt").exists())
 
-    def test_an_update_refuses_while_sotto_runs_from_the_copy(self):
-        # [N26] get.sh pulled and reinstalled under a running Sotto.
+    def test_an_update_refuses_while_scrivo_runs_from_the_copy(self):
+        # [N26] get.sh pulled and reinstalled under a running Scrivo.
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             env, dest, before = self.installed_copy(folder)
-            # Sotto.app runs the resolved path; a terminal run (venv-alpha/bin/python
-            # sotto.py run) one relative to its working directory [PR21 review].
-            for arguments, cwd in (([str(dest.resolve() / "sotto.py")], None), (["sotto.py", "run"], dest)):
+            # Scrivo.app runs the resolved path; a terminal run (venv-alpha/bin/python
+            # scrivo.py run) one relative to its working directory [PR21 review];
+            # a launcher built before the rename runs sotto.py, the stand-in.
+            for arguments, cwd in (([str(dest.resolve() / "scrivo.py")], None), (["scrivo.py", "run"], dest),
+                                   ([str(dest.resolve() / "sotto.py")], None), (["sotto.py", "run"], dest)):
                 with self.subTest(arguments=arguments):
                     running = subprocess.Popen(["/bin/bash", "-c", "sleep 60; true", *arguments], cwd=cwd)
                     try:
@@ -239,10 +282,10 @@ class MacInstallerTests(unittest.TestCase):
             intel = bin_dir / "python3.12"
             intel.write_text(FAKE_VENV_PYTHON)
             intel.chmod(0o755)
-            env = dict(os.environ, SOTTO_REPO=str(bare_copy_of_this_checkout(folder)),
-                       SOTTO_SOURCE=str(folder / "sotto"), SOTTO_GET_DRY_RUN="1", FAKE_ARCH="x86_64",
+            env = dict(os.environ, SCRIVO_REPO=str(bare_copy_of_this_checkout(folder)),
+                       SCRIVO_SOURCE=str(folder / "scrivo"), SCRIVO_GET_DRY_RUN="1", FAKE_ARCH="x86_64",
                        PATH=f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin")
-            env.pop("SOTTO_PYTHON", None)
+            env.pop("SCRIVO_PYTHON", None)
             result = self.run_piped(env)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("would run", result.stdout)
@@ -255,7 +298,7 @@ class MacInstallerTests(unittest.TestCase):
                          '"https://github.com/zohartito/sotto.git" ' \
                          '&& same_repo "https://github.com/zohartito/sotto/" ' \
                          '"https://github.com/zohartito/sotto.git" ' \
-                         '&& ! same_repo "https://github.com/someone/sotto.git" ' \
+                         '&& ! same_repo "https://github.com/someone/scrivo.git" ' \
                          '"https://github.com/zohartito/sotto.git" ' \
                          '&& ! same_repo "https://github.com/zohartito/sotto.git" "https://github.com/zohartito/scrivo.git"'
         result = subprocess.run(["/bin/bash", "-c", check.replace('\nmain "$@"', '')], capture_output=True, text=True)
@@ -271,7 +314,7 @@ class WindowsInstallerTests(unittest.TestCase):
         checks = ("@((Test-SameRepo 'git@github.com:zohartito/sotto.git' 'https://github.com/zohartito/sotto.git'),"
                   " (Test-SameRepo 'ssh://git@github.com/zohartito/sotto.git' 'https://github.com/zohartito/sotto.git'),"
                   " (Test-SameRepo 'https://github.com/zohartito/sotto/' 'https://github.com/zohartito/sotto.git'),"
-                  " -not (Test-SameRepo 'https://github.com/someone/sotto.git' 'https://github.com/zohartito/sotto.git'),"
+                  " -not (Test-SameRepo 'https://github.com/someone/scrivo.git' 'https://github.com/zohartito/sotto.git'),"
                   " -not (Test-SameRepo 'https://github.com/zohartito/sotto.git' 'https://github.com/zohartito/scrivo.git')"
                   ") -join ','")
         result = subprocess.run(["powershell", "-NoProfile", "-Command", f"{function}\n{checks}"],
@@ -281,9 +324,9 @@ class WindowsInstallerTests(unittest.TestCase):
     def test_downloads_then_updates_without_running_the_installer(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            dest = folder / "sotto"
-            env = dict(os.environ, SOTTO_REPO=str(bare_copy_of_this_checkout(folder)), SOTTO_SOURCE=str(dest),
-                       SOTTO_GET_DRY_RUN="1")
+            dest = folder / "scrivo"
+            env = dict(os.environ, SCRIVO_REPO=str(bare_copy_of_this_checkout(folder)), SCRIVO_SOURCE=str(dest),
+                       SCRIVO_GET_DRY_RUN="1")
             command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                        str(windows_get_script(folder)[0])]
             first = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
@@ -297,11 +340,11 @@ class WindowsInstallerTests(unittest.TestCase):
             folder = Path(temporary)
             other_remote = folder / "other.git"
             subprocess.run(["git", "init", "--quiet", "--bare", str(other_remote)], check=True)
-            dest = folder / "sotto"
+            dest = folder / "scrivo"
             subprocess.run(["git", "clone", "--quiet", str(other_remote), str(dest)], check=True,
                            capture_output=True)
-            env = dict(os.environ, SOTTO_REPO=str(bare_copy_of_this_checkout(folder)), SOTTO_SOURCE=str(dest),
-                       SOTTO_GET_DRY_RUN="1")
+            env = dict(os.environ, SCRIVO_REPO=str(bare_copy_of_this_checkout(folder)), SCRIVO_SOURCE=str(dest),
+                       SCRIVO_GET_DRY_RUN="1")
             command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                        str(windows_get_script(folder)[0])]
             refused = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
@@ -314,14 +357,14 @@ class WindowsInstallerTests(unittest.TestCase):
         # stand-in for GitHub, never the network).
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            dest = folder / "sotto"
+            dest = folder / "scrivo"
             remote = bare_copy_of_this_checkout(folder)
             subprocess.run(["git", "clone", "--quiet", str(remote), str(dest)], check=True, capture_output=True)
             for args in (("remote", "set-url", "origin", "git@github.com:zohartito/sotto.git"),
                          ("config", f"url.{remote.as_posix()}.insteadOf", "git@github.com:zohartito/scrivo.git")):
                 subprocess.run(["git", "-C", str(dest), *args], check=True, capture_output=True)
-            env = dict(os.environ, SOTTO_SOURCE=str(dest), SOTTO_GET_DRY_RUN="1")
-            env.pop("SOTTO_REPO", None)
+            env = dict(os.environ, SCRIVO_SOURCE=str(dest), SCRIVO_GET_DRY_RUN="1")
+            env.pop("SCRIVO_REPO", None)
             command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                        str(windows_get_script(folder)[0])]
             result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
@@ -332,13 +375,45 @@ class WindowsInstallerTests(unittest.TestCase):
                                     capture_output=True, text=True).stdout.strip()
             self.assertEqual(origin, "git@github.com:zohartito/scrivo.git")
 
-    def test_an_update_refuses_while_sotto_runs_from_the_copy(self):
-        # [F33] get.ps1 pulled and reinstalled under a running Sotto.
+    def test_new_installs_go_to_scrivo_and_a_copy_from_before_the_rename_stays_in_sotto(self):
+        # Its Start Menu and login entries run %USERPROFILE%\sotto by that path.
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            dest = folder / "sotto"
-            env = dict(os.environ, SOTTO_REPO=str(bare_copy_of_this_checkout(folder)), SOTTO_SOURCE=str(dest),
-                       SOTTO_GET_DRY_RUN="1")
+            remote = bare_copy_of_this_checkout(folder)
+            profile = folder / "profile"
+            profile.mkdir()
+            legacy = profile / "sotto"
+            subprocess.run(["git", "clone", "--quiet", str(remote), str(legacy)], check=True, capture_output=True)
+            for args in (("remote", "set-url", "origin", "https://github.com/zohartito/sotto.git"),
+                         ("config", f"url.{remote.as_posix()}.insteadOf", "https://github.com/zohartito/scrivo.git")):
+                subprocess.run(["git", "-C", str(legacy), *args], check=True, capture_output=True)
+            inherited = {name: value for name, value in os.environ.items()
+                         if not name.startswith(("SCRIVO_", "SOTTO_"))}
+            env = dict(inherited, USERPROFILE=str(profile), SCRIVO_GET_DRY_RUN="1")
+            command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                       str(windows_get_script(folder)[0])]
+            result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
+            self.assertIn(f"Updating Scrivo in {legacy}", result.stdout, result.stderr)
+            self.assertIn("would run", result.stdout, result.stderr)
+            self.assertFalse((profile / "scrivo").exists())
+            # The old variable names still choose the folder and the project.
+            elsewhere = folder / "elsewhere"
+            result = subprocess.run(command, env=dict(env, SOTTO_SOURCE=str(elsewhere), SOTTO_REPO=str(remote)),
+                                    capture_output=True, text=True, timeout=120)
+            self.assertIn(f"Downloading Scrivo into {elsewhere}", result.stdout, result.stderr)
+            # Without a copy from before the rename, a new install goes to %USERPROFILE%\scrivo.
+            shutil.rmtree(legacy, onerror=lambda function, path, _info: (os.chmod(path, 0o700), function(path)))
+            result = subprocess.run(command, env=dict(env, SCRIVO_REPO=str(remote)),
+                                    capture_output=True, text=True, timeout=120)
+            self.assertIn(f"Downloading Scrivo into {profile / 'scrivo'}", result.stdout, result.stderr)
+
+    def test_an_update_refuses_while_scrivo_runs_from_the_copy(self):
+        # [F33] get.ps1 pulled and reinstalled under a running Scrivo.
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            dest = folder / "scrivo"
+            env = dict(os.environ, SCRIVO_REPO=str(bare_copy_of_this_checkout(folder)), SCRIVO_SOURCE=str(dest),
+                       SCRIVO_GET_DRY_RUN="1")
             command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                        str(windows_get_script(folder)[0])]
             first = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
@@ -357,7 +432,7 @@ class WindowsInstallerTests(unittest.TestCase):
                     running = subprocess.Popen([program, "-n", "60", "127.0.0.1"],
                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     try:
-                        refused = subprocess.run(command, env=dict(env, SOTTO_SOURCE=source),
+                        refused = subprocess.run(command, env=dict(env, SCRIVO_SOURCE=source),
                                                  capture_output=True, text=True, timeout=120)
                     finally:
                         running.kill()
@@ -373,10 +448,10 @@ class WindowsInstallerTests(unittest.TestCase):
         # source on its old packages.
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            dest = folder / "sotto"
+            dest = folder / "scrivo"
             remote = bare_copy_of_this_checkout(folder)
             script, menu = windows_get_script(folder)
-            env = dict(os.environ, SOTTO_REPO=str(remote), SOTTO_SOURCE=str(dest), SOTTO_GET_DRY_RUN="1")
+            env = dict(os.environ, SCRIVO_REPO=str(remote), SCRIVO_SOURCE=str(dest), SCRIVO_GET_DRY_RUN="1")
             command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
             first = subprocess.run(command, env=env, capture_output=True, text=True, timeout=120)
             self.assertIn("would run", first.stdout, first.stderr)
@@ -417,11 +492,11 @@ class WindowsInstallerTests(unittest.TestCase):
         # installed, and nothing put the old source back when they failed.
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
-            dest = folder / "sotto"
+            dest = folder / "scrivo"
             remote = bare_copy_of_this_checkout(folder)
             script, _menu = windows_get_script(folder)
             # update-windows.ps1 logs to %LOCALAPPDATA%\sotto-alpha: a temporary one here.
-            env = dict(os.environ, SOTTO_REPO=str(remote), SOTTO_SOURCE=str(dest), SOTTO_GET_DRY_RUN="1",
+            env = dict(os.environ, SCRIVO_REPO=str(remote), SCRIVO_SOURCE=str(dest), SCRIVO_GET_DRY_RUN="1",
                        LOCALAPPDATA=str(folder / "localappdata"), PIP_NO_INDEX="1",
                        PIP_DISABLE_PIP_VERSION_CHECK="1")
             command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
@@ -438,7 +513,7 @@ class WindowsInstallerTests(unittest.TestCase):
             upstream = folder / "upstream"
             git(folder, "clone", "--quiet", str(remote), str(upstream))
             requirements = upstream / "requirements-alpha-windows.txt"
-            requirements.write_text(requirements.read_text(encoding="utf-8") + "sotto-test-missing-package==1.0\n",
+            requirements.write_text(requirements.read_text(encoding="utf-8") + "scrivo-test-missing-package==1.0\n",
                                     encoding="utf-8")
             git(upstream, "commit", "--quiet", "-am", "a package that cannot be installed")
             git(upstream, "push", "--quiet", "origin", "HEAD:main")
@@ -457,8 +532,8 @@ class WindowsInstallerTests(unittest.TestCase):
             foreign = folder / "notes"
             foreign.mkdir()
             script, _menu = windows_get_script(folder)
-            env = dict(os.environ, SOTTO_REPO=str(folder / "remote.git"), SOTTO_SOURCE=str(foreign),
-                       SOTTO_GET_DRY_RUN="1")
+            env = dict(os.environ, SCRIVO_REPO=str(folder / "remote.git"), SCRIVO_SOURCE=str(foreign),
+                       SCRIVO_GET_DRY_RUN="1")
             as_file = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
                                      env=env, capture_output=True, text=True, timeout=120)
             self.assertIn("is not a copy of Scrivo", as_file.stdout, as_file.stderr)

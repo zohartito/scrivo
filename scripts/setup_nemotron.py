@@ -15,7 +15,7 @@ import urllib.request
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sotto_paths import DATA_DIR
+from scrivo_paths import DATA_DIR
 
 
 def install() -> None:

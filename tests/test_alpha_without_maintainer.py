@@ -48,16 +48,16 @@ BLOCKER = textwrap.dedent(f"""
 """)
 
 ALPHA_MAC_MODULES = (
-    "sotto", "transcription", "app_controller", "pipeline", "delivery", "lifecycle", "gestures", "capture",
+    "scrivo", "transcription", "app_controller", "pipeline", "delivery", "lifecycle", "gestures", "capture",
     "history", "learning", "adaptive_learning", "ui", "settings_window", "updates", "dictionary", "settings",
     "progress", "voice_commands", "nemotron_backend", "streaming_audio", "vad", "speech_config", "login_item",
-    "offline_runtime", "sotto_log", "sotto_paths", "comparator_spool", "evaluation", "audio_codec",
+    "offline_runtime", "scrivo_log", "scrivo_paths", "comparator_spool", "evaluation", "audio_codec",
     "storage_lock", "runtime_source_manifest",
 )
 ALPHA_WINDOWS_MODULES = (
-    "sotto_win", "win_asr", "win_capture", "win_hotkey", "win_inject", "win_launch", "win_startup", "win_ui",
-    "sotto", "history", "learning", "adaptive_learning", "pipeline", "lifecycle", "gestures", "updates",
-    "dictionary", "settings", "progress", "voice_commands", "speech_config", "offline_runtime", "sotto_paths",
+    "scrivo_win", "win_asr", "win_capture", "win_hotkey", "win_inject", "win_launch", "win_startup", "win_ui",
+    "scrivo", "history", "learning", "adaptive_learning", "pipeline", "lifecycle", "gestures", "updates",
+    "dictionary", "settings", "progress", "voice_commands", "speech_config", "offline_runtime", "scrivo_paths",
     "storage_lock", "audio_codec", "comparator_spool", "evaluation",
 )
 
@@ -66,8 +66,8 @@ def run_alpha(code: str, *, block: bool = True, args: tuple = ()) -> subprocess.
     """Run ``code`` in a fresh interpreter (maintainer modules refused unless
     ``block`` is False) with its own temporary data folder, from the repo root."""
     with tempfile.TemporaryDirectory(dir=ROOT) as scratch:
-        env = dict(os.environ, SOTTO_DATA_DIR=str(Path(scratch) / "data"), SOTTO_HF_HOME=str(Path(scratch) / "hf"),
-                   SOTTO_OFFLINE="1", HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", SOTTO_SCRATCH=scratch)
+        env = dict(os.environ, SCRIVO_DATA_DIR=str(Path(scratch) / "data"), SCRIVO_HF_HOME=str(Path(scratch) / "hf"),
+                   SCRIVO_OFFLINE="1", HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", SCRIVO_SCRATCH=scratch)
         script = BLOCKER.replace("__BLOCK__", str(block)) + textwrap.dedent(code)
         return subprocess.run([sys.executable, "-c", script, *args],
                               cwd=ROOT, env=env, capture_output=True, text=True, timeout=CHILD_TIMEOUT_S)
@@ -103,27 +103,27 @@ HISTORY_FLOW = """
     import os
     from pathlib import Path
     import numpy as np
-    import dictionary, history, learning, sotto
+    import dictionary, history, learning, scrivo
     from adaptive_learning import AdaptiveLearning
 
-    base = Path(os.environ["SOTTO_SCRATCH"]) / "history"
+    base = Path(os.environ["SCRIVO_SCRATCH"]) / "history"
     store = history.HistoryStore(base)
-    coordinator = sotto.history_coordinator(store, learning.LearningStore(base))
+    coordinator = scrivo.history_coordinator(store, learning.LearningStore(base))
     guard = AdaptiveLearning(store.base_dir)
     rows = [store.append(f"hello there {i}", np.zeros(1600, np.float32), .1, "model") for i in range(3)]
     first, second = rows[0]["id"], rows[1]["id"]
-    assert sotto.nonadaptive_correct(guard, coordinator, first, "hello their",
+    assert scrivo.nonadaptive_correct(guard, coordinator, first, "hello their",
                                      expected_revision=rows[0]["revision"]) is not None
     assert store.get(first)["correction"]["text"] == "hello their"
     assert coordinator.enroll(first) is not None
-    assert sotto.nonadaptive_revoke_learning(guard, coordinator, first) == 1
-    assert sotto.nonadaptive_delete(guard, coordinator, second) is True
+    assert scrivo.nonadaptive_revoke_learning(guard, coordinator, first) == 1
+    assert scrivo.nonadaptive_delete(guard, coordinator, second) is True
     assert store.get(second) is None
-    sotto.nonadaptive_clear(guard, coordinator)
+    scrivo.nonadaptive_clear(guard, coordinator)
     assert store.entries(10) == []
-    path = Path(os.environ["SOTTO_SCRATCH"]) / "dictionary.txt"
-    assert dictionary.add(dictionary.suggest("I use soto daily", "I use Sotto daily", []), path) == 1
-    assert dictionary.apply("ask soto", dictionary.load(path))[0] == "ask Sotto"
+    path = Path(os.environ["SCRIVO_SCRATCH"]) / "dictionary.txt"
+    assert dictionary.add(dictionary.suggest("I use soto daily", "I use Scrivo daily", []), path) == 1
+    assert dictionary.apply("ask soto", dictionary.load(path))[0] == "ask Scrivo"
     print("history flow ok")
 """
 
@@ -141,18 +141,18 @@ class AlphaHistoryTests(unittest.TestCase):
             import os
             from pathlib import Path
             import numpy as np
-            import history, learning, sotto
+            import history, learning, scrivo
             from adaptive_learning import AdaptiveLearning
 
-            base = Path(os.environ["SOTTO_SCRATCH"]) / "history"
+            base = Path(os.environ["SCRIVO_SCRATCH"]) / "history"
             store = history.HistoryStore(base)
-            coordinator = sotto.history_coordinator(store, learning.LearningStore(base))
+            coordinator = scrivo.history_coordinator(store, learning.LearningStore(base))
             guard = AdaptiveLearning(store.base_dir)
             rows = [store.append(f"words {i}", np.zeros(1600, np.float32), .1, "model") for i in range(2)]
             (base / "adaptive-learning" / "silver" / "silver.sqlite3").write_bytes(b"")
             assert learning.silver_lane_exists(base)
-            for action in (lambda: sotto.nonadaptive_delete(guard, coordinator, rows[0]["id"]),
-                           lambda: sotto.nonadaptive_clear(guard, coordinator)):
+            for action in (lambda: scrivo.nonadaptive_delete(guard, coordinator, rows[0]["id"]),
+                           lambda: scrivo.nonadaptive_clear(guard, coordinator)):
                 try:
                     action()
                 except ModuleNotFoundError as exc:
@@ -174,18 +174,18 @@ class AlphaMacTests(unittest.TestCase):
             from pathlib import Path
             from unittest.mock import patch
             import numpy as np
-            import history, learning, offline_runtime, sotto, updates
+            import history, learning, offline_runtime, scrivo, updates
             from adaptive_learning import AdaptiveLearning
             import tests.test_app_controller as fixtures
 
-            base = Path(os.environ["SOTTO_SCRATCH"]) / "history"
+            base = Path(os.environ["SCRIVO_SCRATCH"]) / "history"
             world = fixtures.World()
             world.store = history.HistoryStore(base)
-            world.coordinator = sotto.history_coordinator(world.store, learning.LearningStore(base))
+            world.coordinator = scrivo.history_coordinator(world.store, learning.LearningStore(base))
             world.dependency_guard = AdaptiveLearning(world.store.base_dir)
             for name in ("nonadaptive_correct", "nonadaptive_delete", "nonadaptive_clear",
                          "nonadaptive_revoke_learning"):
-                setattr(world, name, getattr(sotto, name))
+                setattr(world, name, getattr(scrivo, name))
             rows = [world.store.append(f"hello there {i}", np.zeros(1600, np.float32), .1, "model")
                     for i in range(2)]
             controller = fixtures.build(world)
@@ -198,7 +198,7 @@ class AlphaMacTests(unittest.TestCase):
             result = updates.UpdateCheck("current", "")
             with patch.object(updates, "check", lambda root, *, offline, started_from: result), \\
                  patch.object(offline_runtime, "offline_requested", return_value=False), \\
-                 patch.dict(os.environ, {"SOTTO_LAUNCHER": "terminal"}), patch("AppKit.NSWorkspace"):
+                 patch.dict(os.environ, {"SCRIVO_LAUNCHER": "terminal"}), patch("AppKit.NSWorkspace"):
                 controller.check_updates()
             errors = [event for event in world.events if event[:2] == ("ui", "show_error")]
             assert not errors, errors
@@ -212,20 +212,20 @@ class AlphaMacTests(unittest.TestCase):
         done = run_alpha("""
             import subprocess
             from unittest.mock import patch
-            import sotto
+            import scrivo
 
             probe = subprocess.CompletedProcess([], 0, "48000 Hz", "mic: Fake Mic")
             with patch("ApplicationServices.AXIsProcessTrusted", return_value=True), \\
-                 patch.object(sotto, "microphone_permission", return_value=True), \\
+                 patch.object(scrivo, "microphone_permission", return_value=True), \\
                  patch("subprocess.run", return_value=probe):
-                sotto.doctor()
+                scrivo.doctor()
             print("doctor ok")
         """)
         assert_ok(self, done)
         self.assertIn("doctor ok", done.stdout)
 
     def test_one_dictation_through_run_then_quit(self):
-        """sotto.run() wired for real (History, learning, the dependency
+        """scrivo.run() wired for real (History, learning, the dependency
         guard, AppController, the worker, delivery, teardown) with the OS
         boundaries faked: test_nemotron_pipeline's harness, lane refused."""
         done = run_alpha("""
@@ -241,17 +241,17 @@ class AlphaMacTests(unittest.TestCase):
 
 CLI = """
     import contextlib, io, os, runpy
-    sys.argv = ["sotto.py", *sys.argv[1:]]
+    sys.argv = ["scrivo.py", *sys.argv[1:]]
     out = io.StringIO()
     try:
         with contextlib.redirect_stdout(out):
-            runpy.run_path("sotto.py", run_name="__main__")
+            runpy.run_path("scrivo.py", run_name="__main__")
     finally:
-        print(out.getvalue().replace(os.environ["SOTTO_DATA_DIR"], "<data>"))
+        print(out.getvalue().replace(os.environ["SCRIVO_DATA_DIR"], "<data>"))
 """
 
 
-@unittest.skipUnless(sys.platform == "darwin", "sotto.py's CLI — macOS-only")
+@unittest.skipUnless(sys.platform == "darwin", "scrivo.py's CLI — macOS-only")
 class AlphaCliTests(unittest.TestCase):
     def test_learning_status_list_and_dictionary_read_the_same_without_the_lane(self):
         for command in ("learning-status", "learning-list", "dictionary"):
@@ -271,10 +271,10 @@ class AlphaCliTests(unittest.TestCase):
                 self.assertNotIn("Traceback", done.stderr)
         done = run_alpha("""
             from unittest.mock import patch
-            import sotto
-            sys.argv = ["sotto.py", "run", "--adaptive"]
-            with patch.object(sotto, "run", side_effect=AssertionError("run() reached without the lane")):
-                sotto.main()
+            import scrivo
+            sys.argv = ["scrivo.py", "run", "--adaptive"]
+            with patch.object(scrivo, "run", side_effect=AssertionError("run() reached without the lane")):
+                scrivo.main()
         """)
         self.assertEqual(done.returncode, 2, done.stderr[-2000:])
         self.assertIn("maintainer lane", done.stderr)
@@ -283,11 +283,11 @@ class AlphaCliTests(unittest.TestCase):
     def test_with_the_lane_present_adaptive_run_still_reaches_run(self):
         done = run_alpha("""
             from unittest.mock import patch
-            import sotto
-            assert sotto.maintainer_lane_available()
-            sys.argv = ["sotto.py", "run", "--adaptive"]
-            with patch.object(sotto, "run") as run:
-                sotto.main()
+            import scrivo
+            assert scrivo.maintainer_lane_available()
+            sys.argv = ["scrivo.py", "run", "--adaptive"]
+            with patch.object(scrivo, "run") as run:
+                scrivo.main()
             assert run.call_args.kwargs["adaptive"] is True
             print("adaptive run reached")
         """, block=False)
@@ -317,8 +317,8 @@ class AlphaArchiveTests(unittest.TestCase):
             output = Path(scratch) / "alpha.tar.gz"
             first = build_alpha_source.build(output)
             with tarfile.open(output) as archive:
-                names = {member.name.removeprefix("sotto-alpha/") for member in archive.getmembers()}
-                sources = {name: archive.extractfile("sotto-alpha/" + name).read().decode("utf-8")
+                names = {member.name.removeprefix("scrivo-alpha/") for member in archive.getmembers()}
+                sources = {name: archive.extractfile("scrivo-alpha/" + name).read().decode("utf-8")
                            for name in names if name.endswith(".py")}
             self.assertEqual(build_alpha_source.build(output)["sha256"], first["sha256"])  # deterministic
         self.assertEqual(names, set(getattr(build_alpha_source, "ALPHA_FILES", build_alpha_source.PUBLIC_FILES)))

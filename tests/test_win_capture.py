@@ -357,6 +357,6 @@ class HostApiDocsTest(unittest.TestCase):
         opened = source.split("self._stream_factory(", 1)[1].split(")", 1)[0]
         self.assertNotIn("device", opened, "no device or host API is chosen: PortAudio's default")
         self.assertIn("MME", source.split('"""', 2)[1])
-        for name in ("win_capture.py", "sotto_win.py", "AGENTS.md", "docs/windows-alpha.md"):
+        for name in ("win_capture.py", "scrivo_win.py", "AGENTS.md", "docs/windows-alpha.md"):
             text = (ROOT / name).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"WASAPI (stream|capture)", name)

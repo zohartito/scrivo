@@ -1,6 +1,6 @@
-"""mlx-whisper internals Sotto relies on.
+"""mlx-whisper internals Scrivo relies on.
 
-LocalWhisper (sotto.py) reuses one encoder pass for language detection and
+LocalWhisper (scrivo.py) reuses one encoder pass for language detection and
 transcription, which needs three private pieces of mlx-whisper. The exact pin
 in constraints-alpha.txt keeps them; this test fails loudly if an upgrade
 removes one, instead of dictation breaking at runtime. It checks in a child
@@ -28,7 +28,7 @@ print("contract holds")
 
 @unittest.skipUnless(HAVE_MLX_WHISPER, "mlx-whisper is not installed (macOS alpha environment)")
 class MlxWhisperContractTests(unittest.TestCase):
-    def test_the_private_pieces_sotto_uses_still_exist(self):
+    def test_the_private_pieces_scrivo_uses_still_exist(self):
         result = subprocess.run([sys.executable, "-c", CHECK], capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stderr[-600:])
         self.assertIn("contract holds", result.stdout)

@@ -58,7 +58,7 @@ def strict_receipts(root: Path, manifests: list[dict]):
         # Freeze-time nonbaseline authority includes the transport digest, but
         # it remains outside the receipt's public semantic manifest.
         manifest["snapshot_digest"]=digest
-    with patch.dict(os.environ,{"SOTTO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
+    with patch.dict(os.environ,{"SCRIVO_HF_HOME":str(hf_home),"HF_HOME":str(hf_home)},clear=False), \
          patch.object(PreflightReceipts,"_current_runtime_identity",new=lambda _self,stable: dict(identities[str(stable)])):
         yield receipts,snapshots
 
@@ -667,8 +667,8 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
             history, learning = HistoryStore(directory), LearningStore(directory); coordinator = LearningCoordinator(history, learning)
             row = coordinator.append_live("old", prepare_canonical(np.zeros(800, np.float32)), .5, "m", language="en", adaptive=False)
             runtime = AdaptiveRuntime(directory, history=history, learning=learning, coordinator=coordinator)
-            import sotto
-            corrected = sotto.nonadaptive_correct(runtime.adaptive, coordinator, row["id"], "human", expected_revision=row["revision"])
+            import scrivo
+            corrected = scrivo.nonadaptive_correct(runtime.adaptive, coordinator, row["id"], "human", expected_revision=row["revision"])
             self.assertEqual(corrected["correction"]["text"], "human")
             self.assertNotIn("adaptive_review", history.get(row["id"]))
             self.assertIsNotNone(coordinator.enroll(row["id"]))
@@ -908,7 +908,7 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
                 self.assertIsNone(runtime._validated_persisted_manifest({**plain, "glossary_terms": ("injected",)}))
 
     def test_nonadaptive_correction_revokes_adaptive_tombstone_before_mutation(self):
-        import sotto
+        import scrivo
         with tempfile.TemporaryDirectory() as directory:
             guard = AdaptiveLearning(directory)
             guard.register_capture({"history_id": "old", "captured_ts": 1, "duration": 1, "audio_digest": "d", "adaptive": True, "language": "en"})
@@ -918,12 +918,12 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
                 def correct(self, ident, text):
                     with guard._locked(): observed.append(dict(guard._read()["captures"][ident]))
                     return True
-            sotto.nonadaptive_correct(guard, Coordinator(), "old", "replacement")
+            scrivo.nonadaptive_correct(guard, Coordinator(), "old", "replacement")
             self.assertTrue(observed[0]["revoked"])
             self.assertNotIn("reference", observed[0])
 
     def test_nonadaptive_delete_clear_and_learning_revoke_invalidate_persisted_adaptive_state(self):
-        import sotto
+        import scrivo
         from maintainer.speech_backends import evaluator_hash
         with tempfile.TemporaryDirectory() as directory:
             def seeded(ident: str):
@@ -942,14 +942,14 @@ class AdaptiveRuntimeCoreTests(unittest.TestCase):
                 def clear(self): self._check()
                 def revoke_history(self, ident): self._check(); return 1
             guard, generation = seeded("delete"); coordinator = Coordinator(guard, "delete")
-            sotto.nonadaptive_delete(guard, coordinator, "delete")
+            scrivo.nonadaptive_delete(guard, coordinator, "delete")
             self.assertEqual(coordinator.seen, [True]); self.assertEqual(guard.status()["generations"][generation]["status"], "invalidated")
             guard, generation = seeded("pruned"); coordinator = Coordinator(guard, "pruned")
             # There is deliberately no HistoryStore row for this capture.
-            sotto.nonadaptive_clear(guard, coordinator)
+            scrivo.nonadaptive_clear(guard, coordinator)
             self.assertEqual(coordinator.seen, [True]); self.assertEqual(guard.status()["generations"][generation]["status"], "invalidated")
             guard, generation = seeded("learning"); coordinator = Coordinator(guard, "learning")
-            sotto.nonadaptive_revoke_learning(guard, coordinator, "learning")
+            scrivo.nonadaptive_revoke_learning(guard, coordinator, "learning")
             self.assertEqual(coordinator.seen, [True]); self.assertEqual(guard.status()["generations"][generation]["status"], "invalidated")
 
     def test_vad_gated_adaptive_no_speech_registers_and_survives_restart(self):

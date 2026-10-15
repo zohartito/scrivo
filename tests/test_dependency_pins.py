@@ -6,7 +6,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 # Places that bootstrap pip before installing the pinned set.
-PIP_BOOTSTRAPS = ["scripts/install-mac.sh", "scripts/install-windows.ps1", "scripts/sotto-win.bat",
+PIP_BOOTSTRAPS = ["scripts/install-mac.sh", "scripts/install-windows.ps1", "scripts/scrivo-win.bat",
                   "README.md", "docs/windows-alpha.md", ".github/workflows/tests.yml"]
 WORKFLOW = ".github/workflows/tests.yml"
 

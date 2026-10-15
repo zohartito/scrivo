@@ -1,5 +1,5 @@
 """Delivering finished text to the frontmost app: the clipboard snapshot and
-restore around a synthetic ⌘V, the FIFO delivery queue, Sotto's own tagged
+restore around a synthetic ⌘V, the FIFO delivery queue, Scrivo's own tagged
 key events, and "scratch that".
 
 Everything runs against fakes: no key event is posted, the real pasteboard is
@@ -20,7 +20,7 @@ if sys.platform != "darwin":
 import Quartz as RealQuartz
 
 import delivery
-import sotto
+import scrivo
 from app_controller import AppController
 
 PLAIN_TEXT = "public.utf8-plain-text"
@@ -28,9 +28,9 @@ CMD = RealQuartz.kCGEventFlagMaskCommand
 
 
 def run_closures(names, namespace):
-    """Compile the named functions nested directly inside sotto.run() into
+    """Compile the named functions nested directly inside scrivo.run() into
     `namespace`, whose entries stand in for the closure variables they read."""
-    source = open(sotto.__file__, encoding="utf-8").read()
+    source = open(scrivo.__file__, encoding="utf-8").read()
     tree = ast.parse(source)
     run = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run")
     found = {node.name: node for node in run.body
@@ -38,7 +38,7 @@ def run_closures(names, namespace):
     missing = set(names) - set(found)
     assert not missing, f"not nested in run(): {sorted(missing)}"
     module = ast.Module(body=[found[name] for name in names], type_ignores=[])
-    exec(compile(module, sotto.__file__, "exec"), namespace)
+    exec(compile(module, scrivo.__file__, "exec"), namespace)
     return namespace
 
 
@@ -109,7 +109,7 @@ class FakePasteboard:
 
 
 class FakeQuartz:
-    """Records the key events Sotto posts instead of posting them; real
+    """Records the key events Scrivo posts instead of posting them; real
     Quartz constants, so ALL_MODIFIERS and TRIGGERS keep their values."""
 
     def __init__(self):
@@ -217,7 +217,7 @@ def patch_insertion(test, *, clipboard="ORIGINAL user clipboard", secure=False):
     patcher = patch("PyObjCTools.AppHelper.callAfter", lambda fn, *args: fn(*args))
     patcher.start()
     test.addCleanup(patcher.stop)
-    patcher = patch.object(sotto.time, "sleep", lambda _s: None)
+    patcher = patch.object(scrivo.time, "sleep", lambda _s: None)
     patcher.start()
     test.addCleanup(patcher.stop)
     return types.SimpleNamespace(timers=timers, pasteboard=pasteboard, quartz=quartz, logs=logs)
@@ -228,38 +228,38 @@ def patch_insertion(test, *, clipboard="ORIGINAL user clipboard", secure=False):
 class ClipboardCarryForwardTests(unittest.TestCase):
     def test_overlapping_pastes_keep_the_users_clipboard(self):
         world = patch_insertion(self)
-        sotto.inject("first dictation")                       # t = 0
+        scrivo.inject("first dictation")                       # t = 0
         world.timers.advance_to(0.3)
-        sotto.inject("second dictation")                      # inside the restore window
+        scrivo.inject("second dictation")                      # inside the restore window
         self.assertEqual(len(world.quartz.key_downs(9)), 2)   # both ⌘V went out
-        world.timers.advance_to(sotto.RESTORE_DELAY_S * 2 + 1.0)
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S * 2 + 1.0)
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_three_quick_pastes_carry_the_original_forward(self):
         world = patch_insertion(self)
         for index, text in enumerate(["one", "two", "three"]):
             world.timers.advance_to(index * 0.2)
-            sotto.inject(text)
+            scrivo.inject(text)
         self.assertEqual(world.pasteboard.text(), "three ")   # the app can still read the last one
-        world.timers.advance_to(sotto.RESTORE_DELAY_S * 2 + 1.0)
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S * 2 + 1.0)
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_a_user_copy_between_overlapping_pastes_wins(self):
         world = patch_insertion(self)
-        sotto.inject("first dictation")
+        scrivo.inject("first dictation")
         world.timers.advance_to(0.2)
         world.pasteboard.user_copies("USER COPY")             # ⌘C in the window
         world.timers.advance_to(0.3)
-        sotto.inject("second dictation")                      # must snapshot the user's copy
-        world.timers.advance_to(sotto.RESTORE_DELAY_S * 2 + 1.0)
+        scrivo.inject("second dictation")                      # must snapshot the user's copy
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S * 2 + 1.0)
         self.assertEqual(world.pasteboard.text(), "USER COPY")
 
     def test_restore_is_skipped_when_the_user_copied_after_the_paste(self):
         world = patch_insertion(self)
-        sotto.inject("dictation")
+        scrivo.inject("dictation")
         world.timers.advance_to(0.2)
         world.pasteboard.user_copies("USER COPY")
-        world.timers.advance_to(sotto.RESTORE_DELAY_S * 2 + 1.0)
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S * 2 + 1.0)
         self.assertEqual(world.pasteboard.text(), "USER COPY")
 
 
@@ -268,86 +268,86 @@ class ClipboardCarryForwardTests(unittest.TestCase):
 class RestoreWindowTests(unittest.TestCase):
     def test_restore_waits_for_a_slow_app_then_puts_the_original_back(self):
         world = patch_insertion(self)
-        sotto.inject("dictation")
+        scrivo.inject("dictation")
         world.timers.advance_to(1.5)  # the app is still busy handling ⌘V (the audit's repro)
         self.assertEqual(world.pasteboard.text(), "dictation ", "restored before the app could read it")
-        world.timers.advance_to(sotto.RESTORE_DELAY_S + 0.01)
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S + 0.01)
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_restore_delay_is_a_few_seconds_and_bounded(self):
-        self.assertGreaterEqual(sotto.RESTORE_DELAY_S, 2.0)
-        self.assertLessEqual(sotto.RESTORE_DELAY_S, 5.0)
+        self.assertGreaterEqual(scrivo.RESTORE_DELAY_S, 2.0)
+        self.assertLessEqual(scrivo.RESTORE_DELAY_S, 5.0)
 
     def test_n6_shutdown_puts_the_clipboard_back_after_the_app_could_read_it(self):
         # Quit or a restart right after a paste: the restore timer dies with
         # the process, so the teardown runs the restore itself.
         world = patch_insertion(self)
-        sotto.inject("dictation")
+        scrivo.inject("dictation")
         waited = []
-        sotto.flush_clipboard_restore(sleep=waited.append)
+        scrivo.flush_clipboard_restore(sleep=waited.append)
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
         self.assertEqual(len(waited), 1)
-        self.assertAlmostEqual(waited[0], sotto.RESTORE_DELAY_S, delta=0.5)  # due, not at once
-        world.timers.advance_to(sotto.RESTORE_DELAY_S + 1.0)  # the timer, if it still fires
+        self.assertAlmostEqual(waited[0], scrivo.RESTORE_DELAY_S, delta=0.5)  # due, not at once
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S + 1.0)  # the timer, if it still fires
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_n6_shutdown_restore_waits_at_most_its_cap(self):
         world = patch_insertion(self)
-        sotto.inject("dictation")
+        scrivo.inject("dictation")
         waited = []
-        sotto.flush_clipboard_restore(sotto.SIGTERM_RESTORE_WAIT_S, sleep=waited.append)
-        self.assertEqual(waited, [sotto.SIGTERM_RESTORE_WAIT_S])
+        scrivo.flush_clipboard_restore(scrivo.SIGTERM_RESTORE_WAIT_S, sleep=waited.append)
+        self.assertEqual(waited, [scrivo.SIGTERM_RESTORE_WAIT_S])
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_n6_a_user_copy_still_wins_at_shutdown(self):
         world = patch_insertion(self)
-        sotto.inject("dictation")
+        scrivo.inject("dictation")
         world.pasteboard.user_copies("USER COPY")
-        sotto.flush_clipboard_restore(sleep=lambda seconds: None)
+        scrivo.flush_clipboard_restore(sleep=lambda seconds: None)
         self.assertEqual(world.pasteboard.text(), "USER COPY")
 
     def test_n6_nothing_pending_is_a_no_op(self):
         world = patch_insertion(self)
-        sotto.flush_clipboard_restore(sleep=lambda seconds: self.fail("slept with nothing to restore"))
+        scrivo.flush_clipboard_restore(sleep=lambda seconds: self.fail("slept with nothing to restore"))
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_restore_still_checks_change_count_at_restore_time(self):
         world = patch_insertion(self)
-        sotto.inject("dictation")
-        world.timers.advance_to(sotto.RESTORE_DELAY_S - 0.05)
+        scrivo.inject("dictation")
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S - 0.05)
         world.pasteboard.user_copies("USER COPY")  # a ⌘C just before the restore fires
-        world.timers.advance_to(sotto.RESTORE_DELAY_S + 1.0)
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S + 1.0)
         self.assertEqual(world.pasteboard.text(), "USER COPY")
 
 
-# -- F10: Sotto's own key events are tagged ------------------------------------
+# -- F10: Scrivo's own key events are tagged ------------------------------------
 
 class OwnEventTagTests(unittest.TestCase):
     def test_paste_tags_both_cmd_v_events(self):
         world = patch_insertion(self)
-        sotto.inject("hello", spacing="none")
+        scrivo.inject("hello", spacing="none")
         self.assertEqual([(e["keycode"], e["flags"], e["user_data"]) for e in world.quartz.posted],
-                         [(9, CMD, sotto.SOTTO_EVENT_TAG), (9, CMD, sotto.SOTTO_EVENT_TAG)])
-        self.assertTrue(all(sotto.is_own_event(e) for e in world.quartz.posted))
+                         [(9, CMD, scrivo.SCRIVO_EVENT_TAG), (9, CMD, scrivo.SCRIVO_EVENT_TAG)])
+        self.assertTrue(all(scrivo.is_own_event(e) for e in world.quartz.posted))
 
     def test_typing_mode_tags_every_event(self):
         world = patch_insertion(self)
-        sotto.inject("typed across chunks, well over sixteen characters",
+        scrivo.inject("typed across chunks, well over sixteen characters",
                      insert_mode="type", spacing="none")
         self.assertGreater(len(world.quartz.posted), 2)
-        self.assertTrue(all(e["user_data"] == sotto.SOTTO_EVENT_TAG for e in world.quartz.posted))
+        self.assertTrue(all(e["user_data"] == scrivo.SCRIVO_EVENT_TAG for e in world.quartz.posted))
 
     def test_undo_shortcut_is_tagged(self):
         world = patch_insertion(self)
-        sotto.post_command_key(6)
+        scrivo.post_command_key(6)
         self.assertEqual([(e["keycode"], e["down"], e["flags"], e["user_data"]) for e in world.quartz.posted],
-                         [(6, True, CMD, sotto.SOTTO_EVENT_TAG), (6, False, CMD, sotto.SOTTO_EVENT_TAG)])
+                         [(6, True, CMD, scrivo.SCRIVO_EVENT_TAG), (6, False, CMD, scrivo.SCRIVO_EVENT_TAG)])
 
-    def test_a_users_key_event_is_not_sottos(self):
+    def test_a_users_key_event_is_not_scrivos(self):
         world = patch_insertion(self)
         event = world.quartz.CGEventCreateKeyboardEvent(None, 9, True)
         world.quartz.CGEventSetFlags(event, CMD)
-        self.assertFalse(sotto.is_own_event(event))
+        self.assertFalse(scrivo.is_own_event(event))
 
 
 # -- F10 / F7: the FIFO delivery queue -----------------------------------------
@@ -368,7 +368,7 @@ class DeliveryQueueHarness:
         self.on_insert = lambda text: None  # runs inside the insert: may raise or request shutdown
         self.delivered, self.undos, self.notes, self.logs = [], [], [], []
         self.copied: list[str] = []
-        self.queue = sotto.DeliveryQueue(
+        self.queue = scrivo.DeliveryQueue(
             insert=self._insert, undo_keys=lambda: self.undos.append(round(self.timers.now, 2)),
             keys_held=self.held, recording=lambda: self.held() and self.recording_while_held,
             frontmost_pid=lambda: self.pid, keydowns=lambda: self.keydowns,
@@ -436,13 +436,13 @@ class DeliveryQueueOrderTests(unittest.TestCase):
         world.queue.paste("result-1 ")
         world.timers.advance_to(5.0)
         world.queue.paste("result-2 ")
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S - 0.5)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S - 0.5)
         self.assertEqual(world.notes, [])                     # still inside the bound
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S + 1.0)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S + 1.0)
         self.assertEqual(world.delivered, [])
         self.assertEqual(len(world.notes), 1)
         self.assertIn("History", world.notes[0][0] + world.notes[0][1])
-        world.timers.advance_to(2 * sotto.DELIVERY_WAIT_MAX_S + 5.0)
+        world.timers.advance_to(2 * scrivo.DELIVERY_WAIT_MAX_S + 5.0)
         self.assertEqual(len(world.notes), 1)                 # nothing left to drop, no second note
         world.held_until = 0.0                                # key released: the queue works again
         world.queue.paste("result-3 ")
@@ -476,7 +476,7 @@ class PendingDeliveriesAccountingTests(unittest.TestCase):
     the update restart waits for UPDATE_DRAIN_DEADLINE_S."""
 
     def world(self, **kwargs):
-        self.deliveries = sotto.PendingDeliveries()
+        self.deliveries = scrivo.PendingDeliveries()
         self.finishes = []
 
         def on_done():
@@ -485,7 +485,7 @@ class PendingDeliveriesAccountingTests(unittest.TestCase):
 
         world = DeliveryQueueHarness(on_done=on_done, **kwargs)
         self.main_loop = []
-        _ui_call, self.deliver_call = sotto.main_thread_dispatch(
+        _ui_call, self.deliver_call = scrivo.main_thread_dispatch(
             has_ui=True, call_after=lambda method, *args: self.main_loop.append((method, args)),
             deliveries=self.deliveries)
         return world
@@ -517,9 +517,9 @@ class PendingDeliveriesAccountingTests(unittest.TestCase):
         world = self.world(held_until=10_000.0, recording_while_held=False)  # a stuck modifier
         self.schedule(world, ["one ", "two ", "undo"])
         self.run_main_loop()
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S - 0.5)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S - 0.5)
         self.assertEqual(self.deliveries.count(), 3)          # still waiting inside the bound
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S + 1.0)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S + 1.0)
         self.assertEqual(world.delivered, [])
         self.assertEqual(world.undos, [])
         self.assertEqual(len(world.notes), 1)
@@ -554,7 +554,7 @@ class PendingDeliveriesAccountingTests(unittest.TestCase):
         self.assertEqual(len(self.finishes), 1)
 
     def test_run_wires_the_queue_to_pending_deliveries(self):
-        tree = ast.parse(open(sotto.__file__, encoding="utf-8").read())
+        tree = ast.parse(open(scrivo.__file__, encoding="utf-8").read())
         run = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run")
         calls = [node for node in ast.walk(run) if isinstance(node, ast.Call)
                  and isinstance(node.func, ast.Name) and node.func.id == "DeliveryQueue"]
@@ -568,19 +568,19 @@ class PendingDeliveriesAccountingTests(unittest.TestCase):
 class InjectReportsInsertTests(unittest.TestCase):
     def test_secure_input_decline_reports_no_insert(self):
         world = patch_insertion(self, secure=True)
-        self.assertIs(sotto.inject("secret"), False)
-        self.assertIs(sotto.inject("secret", insert_mode="type"), False)
+        self.assertIs(scrivo.inject("secret"), False)
+        self.assertIs(scrivo.inject("secret", insert_mode="type"), False)
         self.assertEqual(world.quartz.posted, [])
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
 
     def test_paste_and_typing_report_an_insert(self):
         world = patch_insertion(self)
-        self.assertIs(sotto.inject("hello"), True)
-        self.assertIs(sotto.inject("hello", insert_mode="type"), True)
+        self.assertIs(scrivo.inject("hello"), True)
+        self.assertIs(scrivo.inject("hello", insert_mode="type"), True)
         self.assertGreater(len(world.quartz.posted), 2)
 
 
-# -- F7: "scratch that" undoes only Sotto's own insert ---------------------------
+# -- F7: "scratch that" undoes only Scrivo's own insert ---------------------------
 
 class ScratchThatTests(unittest.TestCase):
     def test_secure_input_decline_does_not_arm_undo(self):
@@ -615,7 +615,7 @@ class ScratchThatTests(unittest.TestCase):
         self.assertEqual(world.undos, [])
         self.assertTrue(any("typed" in line for line in world.logs), world.logs)
 
-    def test_undo_fires_once_for_sottos_own_insert_in_the_same_app(self):
+    def test_undo_fires_once_for_scrivos_own_insert_in_the_same_app(self):
         world = DeliveryQueueHarness()
         world.queue.paste("hello")
         world.timers.advance_to(2.0)
@@ -640,21 +640,21 @@ class ScratchThatTests(unittest.TestCase):
         self.assertEqual(world.undos, [])
 
 
-# -- the event tap: Sotto's own events are never chords or user typing ----------
+# -- the event tap: Scrivo's own events are never chords or user typing ----------
 
 class EventTapCallbackHarness:
     def __init__(self, test, quartz, trigger="right-option"):
         self.events = []
-        self.engine = sotto.GestureEngine(lambda: self.events.append("start"),
+        self.engine = scrivo.GestureEngine(lambda: self.events.append("start"),
                                           lambda: self.events.append("finish"),
                                           lambda: self.events.append("discard"))
         test.addCleanup(self.engine.force_reset)
         self.user_keydowns = {"count": 0}
         self.quartz = quartz
-        listener = sotto.HotkeyListener(
+        listener = scrivo.HotkeyListener(
             trigger, "ctrl-opt-d",                              # run()'s default hotkey
             quartz=quartz, engine=self.engine, capture=None,
-            shutdown=types.SimpleNamespace(requested=lambda: False), is_own_event=sotto.is_own_event,
+            shutdown=types.SimpleNamespace(requested=lambda: False), is_own_event=scrivo.is_own_event,
             user_keydowns=self.user_keydowns, log=lambda _m: None, status_ui=None, ui_call=None,
             clock=time.monotonic, sleep=None)
         self.binding = listener.binding
@@ -671,16 +671,16 @@ class EventTapCallbackHarness:
 
 
 class EventTapCallbackTests(unittest.TestCase):
-    def test_sottos_own_cmd_v_during_a_hold_is_not_a_chord(self):
+    def test_scrivos_own_cmd_v_during_a_hold_is_not_a_chord(self):
         world = patch_insertion(self)
         tap = EventTapCallbackHarness(self, world.quartz)
         tap.press_trigger()
         self.assertEqual(tap.events, ["start"])
-        sotto.inject("earlier result", spacing="none")        # a deferred paste going out
+        scrivo.inject("earlier result", spacing="none")        # a deferred paste going out
         own_cmd_v = world.quartz.key_downs(9)[0]              # exactly what a session tap receives
         tap.callback(None, RealQuartz.kCGEventKeyDown, own_cmd_v, None)
         self.assertEqual(tap.events, ["start"])
-        self.assertTrue(tap.engine.snapshot()[0], "live dictation discarded by Sotto's own ⌘V")
+        self.assertTrue(tap.engine.snapshot()[0], "live dictation discarded by Scrivo's own ⌘V")
 
     def test_a_real_key_during_a_hold_is_still_a_chord(self):
         world = patch_insertion(self)
@@ -689,17 +689,17 @@ class EventTapCallbackTests(unittest.TestCase):
         tap.key_down(9, flags=CMD)                             # the user's own ⌘V
         self.assertEqual(tap.events, ["start", "discard"])
 
-    def test_user_keydowns_are_counted_but_not_sottos_or_the_hotkey(self):
+    def test_user_keydowns_are_counted_but_not_scrivos_or_the_hotkey(self):
         world = patch_insertion(self)
         tap = EventTapCallbackHarness(self, world.quartz)
         tap.key_down(0)                                        # "a"
         tap.key_down(1)                                        # "s"
         self.assertEqual(tap.user_keydowns["count"], 2)
-        sotto.inject("hello", spacing="none")
+        scrivo.inject("hello", spacing="none")
         for event in world.quartz.key_downs(9):
             tap.callback(None, RealQuartz.kCGEventKeyDown, event, None)
-        self.assertEqual(tap.user_keydowns["count"], 2)        # Sotto's own ⌘V is not typing
-        hotkey_flags, hotkey_code = sotto.parse_hotkey("ctrl-opt-d")
+        self.assertEqual(tap.user_keydowns["count"], 2)        # Scrivo's own ⌘V is not typing
+        hotkey_flags, hotkey_code = scrivo.parse_hotkey("ctrl-opt-d")
         tap.key_down(hotkey_code, flags=hotkey_flags)          # starting a dictation is not typing
         self.assertEqual(tap.user_keydowns["count"], 2)
         tap.key_down(hotkey_code)                              # a plain "d" is
@@ -712,7 +712,7 @@ class UndeliveredPasteNoteTests(unittest.TestCase):
     def test_n16_a_long_hold_drop_of_text_history_did_not_save_does_not_claim_history(self):
         world = DeliveryQueueHarness(held_until=10_000.0, recording_while_held=False)
         world.queue.paste("result-1 ", in_history=False)     # F16a: the append failed
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S + 1.0)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S + 1.0)
         self.assertEqual(len(world.notes), 1, world.notes)
         title, message = world.notes[0]
         self.assertNotIn("kept in History", title + message)
@@ -726,7 +726,7 @@ class UndeliveredPasteNoteTests(unittest.TestCase):
         world.queue.paste("saved one ")
         world.queue.paste("first unsaved ", in_history=False)
         world.queue.paste("second unsaved ", in_history=False)
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S + 1.0)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S + 1.0)
         self.assertEqual(world.copied, ["first unsaved \n\nsecond unsaved "])
         self.assertEqual([title for title, _ in world.notes], ["Dictation copied to the clipboard"])
         self.assertEqual(world.delivered, [])
@@ -734,7 +734,7 @@ class UndeliveredPasteNoteTests(unittest.TestCase):
     def test_n16_a_long_hold_drop_of_saved_text_still_points_at_history(self):
         world = DeliveryQueueHarness(held_until=10_000.0, recording_while_held=False)
         world.queue.paste("result-1 ")
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S + 1.0)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S + 1.0)
         self.assertEqual(world.notes, [("Dictation kept in History",
                                         "A key was held for too long to paste it. "
                                         "Open History to copy the text.")])
@@ -772,24 +772,24 @@ class UndeliveredPasteNoteTests(unittest.TestCase):
 
 
 class OwnAlertInFrontTests(unittest.TestCase):
-    """N24: Sotto's alerts activate Sotto, and callAfter keeps running during
+    """N24: Scrivo's alerts activate Scrivo, and callAfter keeps running during
     their modal loop (repro/N24_repro.py), so a paste must wait instead of
     posting ⌘V into the alert."""
 
-    def test_n24_nothing_is_pasted_while_sottos_own_window_is_in_front(self):
+    def test_n24_nothing_is_pasted_while_scrivos_own_window_is_in_front(self):
         world = DeliveryQueueHarness()
         world.own_front = True
         world.queue._own_window_front = lambda: world.own_front
         world.queue.paste("result-1 ")
         world.queue.undo()
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S * 3)  # an alert left open for minutes
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S * 3)  # an alert left open for minutes
         self.assertEqual((world.delivered, world.undos, world.notes), ([], [], []))
         world.own_front = False                                # the user dismissed it / switched apps
-        world.timers.advance_to(sotto.DELIVERY_WAIT_MAX_S * 3 + 1.0)
+        world.timers.advance_to(scrivo.DELIVERY_WAIT_MAX_S * 3 + 1.0)
         self.assertEqual([text for text, _t, _held in world.delivered], ["result-1 "])
 
     def test_n24_the_queue_reads_the_real_probe_in_run(self):
-        tree = ast.parse(open(sotto.__file__, encoding="utf-8").read())
+        tree = ast.parse(open(scrivo.__file__, encoding="utf-8").read())
         run = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run")
         call = next(node for node in ast.walk(run) if isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Name) and node.func.id == "DeliveryQueue")
@@ -807,7 +807,7 @@ class OwnAlertInFrontTests(unittest.TestCase):
         app = types.SimpleNamespace(isActive=lambda: active, keyWindow=lambda: window)
         fake = types.SimpleNamespace(NSApp=app, NSText=FakeText)
         with patch.dict(sys.modules, {"AppKit": fake}):
-            return sotto.own_window_without_text_field()
+            return scrivo.own_window_without_text_field()
 
     def test_n24_probe(self):
         self.assertFalse(self.probe(active=False, text_focused=False))  # another app is in front
@@ -819,17 +819,17 @@ class RetryCopyCountedTests(unittest.TestCase):
     def copy_controller(self, deliveries, *, deliver_call=None, rows=None):
         """The AppController the menu's Copy and the worker's Retry copy go
         through, writing the clipboard with the real set_clipboard_text."""
-        self.shutdown = sotto.ShutdownBoundary()
+        self.shutdown = scrivo.ShutdownBoundary()
         parts = dict(shutdown=self.shutdown, store=types.SimpleNamespace(get=(rows or {}).get),
                      deliver_call=deliver_call, pending_deliveries=deliveries,
-                     set_clipboard=sotto.set_clipboard_text)
+                     set_clipboard=scrivo.set_clipboard_text)
         required = [name for name, parameter in inspect.signature(AppController).parameters.items()
                     if parameter.kind is parameter.KEYWORD_ONLY and parameter.default is parameter.empty]
         return AppController(**{name: parts.get(name) for name in required}, start_thread=lambda work: work())
 
     def test_n19_the_retry_copy_finishes_its_pending_delivery(self):
         world = patch_insertion(self)
-        deliveries = sotto.PendingDeliveries()
+        deliveries = scrivo.PendingDeliveries()
         copy_text = self.copy_controller(deliveries).copy_text
         deliveries.add()                                       # what deliver_call did
         copy_text("retried text")
@@ -846,7 +846,7 @@ class RetryCopyCountedTests(unittest.TestCase):
         world = patch_insertion(self)
         scheduled = []
         controller = self.copy_controller(
-            sotto.PendingDeliveries(), deliver_call=lambda method, *args: scheduled.append((method, args)),
+            scrivo.PendingDeliveries(), deliver_call=lambda method, *args: scheduled.append((method, args)),
             rows={"row1": {"text": "copied words"}})
         controller.copy("row1")
         self.assertEqual(scheduled, [(controller.copy_text, ("copied words",))])
@@ -856,11 +856,11 @@ class RetryCopyCountedTests(unittest.TestCase):
 class TransientPasteTests(unittest.TestCase):
     def test_n33_the_paste_is_marked_transient_for_clipboard_managers(self):
         world = patch_insertion(self)
-        sotto.inject("dictation")
+        scrivo.inject("dictation")
         types_at_paste = world.pasteboard.items[0].types()
         self.assertIn("org.nspasteboard.TransientType", types_at_paste)
         self.assertEqual(world.pasteboard.text(), "dictation ")
-        world.timers.advance_to(sotto.RESTORE_DELAY_S * 2 + 1.0)
+        world.timers.advance_to(scrivo.RESTORE_DELAY_S * 2 + 1.0)
         self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
         self.assertNotIn("org.nspasteboard.TransientType", world.pasteboard.items[0].types())
 
@@ -871,7 +871,7 @@ class SetClipboardTextTests(unittest.TestCase):
     def test_replaces_the_clipboard_with_plain_text_and_no_transient_marker(self):
         world = patch_insertion(self)
         before = world.pasteboard.changeCount()
-        sotto.set_clipboard_text("copied words")
+        scrivo.set_clipboard_text("copied words")
         self.assertEqual(world.pasteboard.text(), "copied words")
         self.assertEqual(world.pasteboard.changeCount(), before + 1)
         self.assertEqual(world.pasteboard.items[0].types(), [PLAIN_TEXT])
@@ -880,7 +880,7 @@ class SetClipboardTextTests(unittest.TestCase):
 
 class PendingDeliveriesCountTests(unittest.TestCase):
     def test_counts_adds_and_finishes_and_never_goes_below_zero(self):
-        deliveries = sotto.PendingDeliveries()
+        deliveries = scrivo.PendingDeliveries()
         self.assertEqual(deliveries.count(), 0)
         deliveries.add()
         deliveries.add()
@@ -898,7 +898,7 @@ class FrontmostPidTests(unittest.TestCase):
         workspace = types.SimpleNamespace(frontmostApplication=application)
         fake = types.SimpleNamespace(NSWorkspace=types.SimpleNamespace(sharedWorkspace=lambda: workspace))
         with patch.dict(sys.modules, {"AppKit": fake}):
-            return sotto.frontmost_pid()
+            return scrivo.frontmost_pid()
 
     def test_reports_the_frontmost_apps_pid_or_none(self):
         app = types.SimpleNamespace(processIdentifier=lambda: 4242)
@@ -915,9 +915,9 @@ class DeliveryPollTests(unittest.TestCase):
     def test_a_held_key_rechecks_every_delivery_poll_interval_on_the_main_thread(self):
         world = DeliveryQueueHarness(held_until=1.0)
         world.queue.paste("result-1 ")
-        self.assertEqual([fire_at for fire_at, _seq, _fn in world.timers.pending], [sotto.DELIVERY_POLL_S])
+        self.assertEqual([fire_at for fire_at, _seq, _fn in world.timers.pending], [scrivo.DELIVERY_POLL_S])
         self.assertEqual(world.logs, ["  paste deferred — a key is still held"])
-        world.timers.advance_to(sotto.DELIVERY_POLL_S)
+        world.timers.advance_to(scrivo.DELIVERY_POLL_S)
         self.assertEqual(len(world.timers.pending), 1)        # one poll armed at a time
         world.timers.advance_to(2.0)
         self.assertEqual([text for text, _t, _held in world.delivered], ["result-1 "])

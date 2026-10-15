@@ -2,7 +2,7 @@
 
 ## Adaptive English policy
 
-Adaptive mode is enabled only with `sotto.py --adaptive --language en`. It is
+Adaptive mode is enabled only with `scrivo.py --adaptive --language en`. It is
 not weight training: installed or enabled models do not self-train. The system
 collects only explicit human gold. Development needs **20 non-empty verified
 examples and 200 words**. It then freezes a new **33-item** promotion pool;
@@ -39,8 +39,8 @@ personal-corpus A/B comparison shows it is better on Scrivo data.
 profile, and `--language CODE` sets the language.
 
 ```bash
-venv/bin/python sotto.py --profile auto
-venv/bin/python sotto.py --model ORG/REPOSITORY --language CODE
+venv/bin/python scrivo.py --profile auto
+venv/bin/python scrivo.py --model ORG/REPOSITORY --language CODE
 ```
 
 The selected model is downloaded to local storage only when it is actually run.
@@ -57,7 +57,7 @@ and their combined prompt length are bounded so a glossary cannot become an
 unbounded instruction.
 
 ```text
-# sotto-glossary.txt
+# scrivo-glossary.txt
 Scrivo
 PyObjC
 MLX
@@ -162,15 +162,15 @@ There is no automatic training, no automatic export, and no automatic upload.
 Inspect the active learning count locally:
 
 ```bash
-venv/bin/python sotto.py learning-status
+venv/bin/python scrivo.py learning-status
 ```
 
 To manage local samples even after ordinary history pruning, list the
 active corpus and explicitly revoke an opaque sample ID:
 
 ```bash
-venv/bin/python sotto.py learning-list
-venv/bin/python sotto.py learning-remove --sample-id SAMPLE_ID
+venv/bin/python scrivo.py learning-list
+venv/bin/python scrivo.py learning-remove --sample-id SAMPLE_ID
 ```
 
 `learning-list` prints only opaque `sample_id` and `history_id` values; it
@@ -182,7 +182,7 @@ Export is intentional and requires a directory that does not already contain
 files:
 
 ```bash
-venv/bin/python sotto.py export-learning --output <empty-dir>
+venv/bin/python scrivo.py export-learning --output <empty-dir>
 ```
 
 Treat an export as a new sensitive copy that you control. It is the supported

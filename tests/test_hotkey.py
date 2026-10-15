@@ -185,7 +185,7 @@ class QuartzConstantTests(unittest.TestCase):
     def test_the_tables_equal_the_ones_built_from_quartz(self):
         import Quartz
         q = Quartz
-        # As sotto.py built them before the move (9efe54b).
+        # As scrivo.py built them before the move (9efe54b).
         self.assertEqual(hotkey.TRIGGERS, {
             "fn": (q.kCGEventFlagMaskSecondaryFn, 63, 0),
             "right-cmd": (q.kCGEventFlagMaskCommand, 54, 0x0010),
@@ -214,13 +214,13 @@ class QuartzConstantTests(unittest.TestCase):
 
 
 class ImportTests(unittest.TestCase):
-    def test_hotkey_imports_without_pyobjc_or_sotto(self):
+    def test_hotkey_imports_without_pyobjc_or_scrivo(self):
         tree = ast.parse((ROOT / "hotkey.py").read_text(encoding="utf-8"))
         imported = {alias.name.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.Import)
                     for alias in node.names}
         imported |= {node.module.split(".")[0] for node in ast.walk(tree)
                      if isinstance(node, ast.ImportFrom) and node.module}
-        self.assertFalse(imported & {"Quartz", "AppKit", "objc", "PyObjCTools", "sotto"}, imported)
+        self.assertFalse(imported & {"Quartz", "AppKit", "objc", "PyObjCTools", "scrivo"}, imported)
         blocked = "import sys; [sys.modules.__setitem__(m, None) for m in ('Quartz', 'AppKit', 'objc')]; import hotkey"
         result = subprocess.run([sys.executable, "-c", blocked], cwd=ROOT, capture_output=True, text=True,
                                 timeout=60)

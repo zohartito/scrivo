@@ -6,7 +6,7 @@ as a "thread" event) and checks everything it does: History and learning
 calls, deliveries, queued jobs, UI calls and log lines.
 
 The expected values were recorded from the actions as closures inside
-sotto.run(), before they moved into AppController; the class reproduces
+scrivo.run(), before they moved into AppController; the class reproduces
 them exactly.
 """
 from __future__ import annotations
@@ -31,8 +31,8 @@ import nemotron_backend
 import offline_runtime
 import settings
 import settings_window
-import sotto
-import sotto_paths
+import scrivo
+import scrivo_paths
 import updates
 from app_controller import AppController
 
@@ -46,17 +46,17 @@ class World:
     def __init__(self, *, rows=(), adaptive=None, closed=None, stopping=False):
         self.events: list = []
         self.rows = {row["id"]: dict(row) for row in rows}
-        self.shutdown = sotto.ShutdownBoundary()
-        self.gate = sotto.CaptureGate()
+        self.shutdown = scrivo.ShutdownBoundary()
+        self.gate = scrivo.CaptureGate()
         self.busy = False
-        self.lifecycle = sotto.Lifecycle(self.shutdown, self.gate, end_recording=lambda: None,
+        self.lifecycle = scrivo.Lifecycle(self.shutdown, self.gate, end_recording=lambda: None,
                                          busy=lambda: self.busy)
         if closed:
             self.assert_true(self.lifecycle.close(closed))
         if stopping:
             self.shutdown.request()
         self.jobs: queue.Queue = queue.Queue()
-        self.pending = sotto.PendingDeliveries()
+        self.pending = scrivo.PendingDeliveries()
         self.status_ui = Recorder(self.events)
         self.adaptive_runtime = adaptive
         self.coordinator = Coordinator(self.events)
@@ -294,8 +294,8 @@ def build(world: World) -> AppController:
         coordinator=world.coordinator, dependency_guard=world.dependency_guard,
         adaptive_runtime=world.adaptive_runtime, status_ui=world.status_ui, ui_call=world.ui_call,
         deliver_call=world.deliver_call, pending_deliveries=world.pending, set_clipboard=world.set_clipboard,
-        current_speech_config=world.current_speech_config, log=world.log, history_keep=sotto.HISTORY_KEEP,
-        overlay_learning_state=sotto.overlay_learning_state,
+        current_speech_config=world.current_speech_config, log=world.log, history_keep=scrivo.HISTORY_KEEP,
+        overlay_learning_state=scrivo.overlay_learning_state,
         active_learning_history_ids=world.active_learning_history_ids,
         nonadaptive_correct=world.nonadaptive_correct, nonadaptive_delete=world.nonadaptive_delete,
         nonadaptive_clear=world.nonadaptive_clear, nonadaptive_revoke_learning=world.nonadaptive_revoke_learning,
@@ -305,8 +305,8 @@ def build(world: World) -> AppController:
         rebind=world.rebind, restart=world.restart, language_lock=world.language_lock,
         language_state=world.language_state, save_language_mode=world.save_language_mode,
         parakeet_cached=world.parakeet_cached, persist_engine_and_restart=world.persist_engine_and_restart,
-        run_installer=world.run_installer, triggers=sotto.TRIGGERS, trigger_labels=sotto.TRIGGER_LABELS,
-        sotto_script=Path(sotto.__file__).resolve(), engine=world.engine, capture=world.capture,
+        run_installer=world.run_installer, triggers=scrivo.TRIGGERS, trigger_labels=scrivo.TRIGGER_LABELS,
+        scrivo_script=Path(scrivo.__file__).resolve(), engine=world.engine, capture=world.capture,
         on_finish=world.on_finish, started_from=world.started_from, start_thread=world.start_thread,
         wait_until_idle=world.wait_until_idle)
 
@@ -318,7 +318,7 @@ class RefreshHistoryTests(unittest.TestCase):
         world = World(rows=[ROW, {"id": "active-row", "text": "x", "ts": 2.0}])
         build(world).refresh_history()
         self.assertEqual(world.events, [
-            ("entries", sotto.HISTORY_KEEP),
+            ("entries", scrivo.HISTORY_KEEP),
             ("ui", "refresh_history", [dict(ROW), {"id": "active-row", "text": "x", "ts": 2.0,
                                                    "learning_state": "active"}]),
         ])
@@ -345,7 +345,7 @@ class RefreshHistoryTests(unittest.TestCase):
                                                   review_states=[{"history_id": "row1", "status": "pending"}])
                 build(world).refresh_history()
                 self.assertEqual(world.events, [
-                    ("entries", sotto.HISTORY_KEEP),
+                    ("entries", scrivo.HISTORY_KEEP),
                     ("ui", "set_adaptive_stage", label),
                     ("ui", "refresh_history", [dict(ROW, adaptive_eligible=True, review_state="pending")]),
                 ])
@@ -444,7 +444,7 @@ class DeleteAndClearTests(unittest.TestCase):
         build(world).delete("row1")
         self.assertEqual(world.events, [
             ("thread",), ("nonadaptive_delete", "row1"),
-            ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", [dict(ROW)]),
+            ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", [dict(ROW)]),
         ])
 
     def test_adaptive_delete_goes_through_the_runtime(self):
@@ -463,7 +463,7 @@ class DeleteAndClearTests(unittest.TestCase):
         world = World()
         build(world).clear()
         self.assertEqual(world.events, [("thread",), ("nonadaptive_clear",),
-                                        ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", [])])
+                                        ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", [])])
         world = World()
         world.adaptive_runtime = Adaptive(world.events)
         build(world).clear()
@@ -497,7 +497,7 @@ class CorrectTests(unittest.TestCase):
         suggest.assert_called_once_with("hello there", "hello their", ["existing"])
         self.assertEqual(world.events, [
             ("thread",), ("nonadaptive_correct", "row1", "hello their", {"expected_revision": 3}),
-            ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", [dict(ROW)]),
+            ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", [dict(ROW)]),
             ("ui", "show_info", "Correction saved",
              "The corrected transcript was saved. Add it to the learning set separately if wanted."),
         ])
@@ -540,7 +540,7 @@ class AddRulesTests(unittest.TestCase):
             build(world).add_rules([("there", "their")])
         self.assertEqual(add.call_args.args, ([dictionary.Rule("there", "their")], dictionary.DICTIONARY_PATH))
         self.assertEqual(world.events, [("log", "dictionary: added 1 rule(s)"),
-                                        ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", [])])
+                                        ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", [])])
 
     def test_an_error_is_shown(self):
         world = World()
@@ -554,7 +554,7 @@ class LearningTests(unittest.TestCase):
         world = World()
         build(world).enroll("row1")
         self.assertEqual(world.events, [
-            ("thread",), ("enroll", "row1"), ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", []),
+            ("thread",), ("enroll", "row1"), ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", []),
             ("ui", "show_info", "Added to learning set",
              "The corrected audio and transcript are now retained locally."),
         ])
@@ -570,7 +570,7 @@ class LearningTests(unittest.TestCase):
         world = World()
         build(world).revoke("row1")
         self.assertEqual(world.events, [
-            ("thread",), ("nonadaptive_revoke_learning", "row1"), ("entries", sotto.HISTORY_KEEP),
+            ("thread",), ("nonadaptive_revoke_learning", "row1"), ("entries", scrivo.HISTORY_KEEP),
             ("ui", "refresh_history", []),
             ("ui", "show_info", "Removed from learning set", "Removed 2 local learning sample(s)."),
         ])
@@ -600,7 +600,7 @@ class LearningTests(unittest.TestCase):
                 world.adaptive_runtime = Adaptive(world.events, status={"active_generation": None,
                                                                         "development": {"ready": True}})
                 getattr(build(world), name)(*args)
-                self.assertEqual(world.events, [("thread",), review, ("entries", sotto.HISTORY_KEEP),
+                self.assertEqual(world.events, [("thread",), review, ("entries", scrivo.HISTORY_KEEP),
                                                 ("ui", "set_adaptive_stage", "adaptive: collecting challenger"),
                                                 ("ui", "refresh_history", [])])
 
@@ -730,7 +730,7 @@ class SettingsStateTests(unittest.TestCase):
              patch.object(nemotron_backend, "is_installed", return_value=False), \
              patch.object(dictionary, "load", return_value=["rule"] * 3), \
              patch.dict(os.environ, environ or {}, clear=False):
-            for name in ("SOTTO_LAUNCHER", "SOTTO_APP_EXECUTABLE"):
+            for name in ("SCRIVO_LAUNCHER", "SCRIVO_APP_EXECUTABLE"):
                 if name not in (environ or {}):
                     os.environ.pop(name, None)
             return build(world).settings_state()
@@ -741,8 +741,8 @@ class SettingsStateTests(unittest.TestCase):
         world.settings_locked = frozenset({"trigger"})
         self.assertEqual(self.state(world), {
             "settings": PREFERENCES, "trigger": "right-option", "hotkey": "ctrl-opt-d", "locked": {"trigger"},
-            "trigger_labels": {name: sotto.TRIGGER_LABELS[name] for name in settings.TRIGGER_KEYS
-                               if name in sotto.TRIGGERS},
+            "trigger_labels": {name: scrivo.TRIGGER_LABELS[name] for name in settings.TRIGGER_KEYS
+                               if name in scrivo.TRIGGERS},
             "engine_labels": dict(ENGINE_CHOICES), "engine": "whisper", "engine_switching": True,
             "nemotron_installed": False, "nemotron_installing": False,
             "parakeet_installed": True, "parakeet_installing": False,
@@ -754,7 +754,7 @@ class SettingsStateTests(unittest.TestCase):
     def test_the_run_decides_what_is_available(self):
         world = World()
         world.adaptive = True
-        state = self.state(world, environ={"SOTTO_LAUNCHER": "app", "SOTTO_APP_EXECUTABLE": "/A/Sotto"})
+        state = self.state(world, environ={"SCRIVO_LAUNCHER": "app", "SCRIVO_APP_EXECUTABLE": "/A/Scrivo"})
         self.assertEqual((state["engine_switching"], state["fast_available"], state["login_available"]),
                          (False, False, True))
         world = World()
@@ -774,7 +774,7 @@ class ChangeSettingTests(unittest.TestCase):
              patch.object(login_item, "enable", lambda executable: world.events.append(("login", executable))), \
              patch.object(login_item, "disable", lambda: world.events.append(("login", None))), \
              patch.dict(os.environ, environ or {}, clear=False):
-            for name in ("SOTTO_LAUNCHER", "SOTTO_APP_EXECUTABLE"):
+            for name in ("SCRIVO_LAUNCHER", "SCRIVO_APP_EXECUTABLE"):
                 if name not in (environ or {}):
                     os.environ.pop(name, None)
             answer = build(world).change_setting(key, value)
@@ -799,7 +799,7 @@ class ChangeSettingTests(unittest.TestCase):
         world = World()
         self.assertIsNone(self.change(world, "languages", ("en", "fr"))[0])
         self.assertEqual(world.status_ui.automatic_languages, ["en", "fr"])
-        self.assertEqual(world.events, [("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", []),
+        self.assertEqual(world.events, [("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", []),
                                         ("log", "settings: languages changed")])
 
     def test_another_setting_is_only_saved(self):
@@ -816,10 +816,10 @@ class ChangeSettingTests(unittest.TestCase):
         world = World()
         self.assertEqual(self.change(world, "launch_at_login", True),
                          ("Install Scrivo as an app first (scripts/install-mac.sh).", []))
-        app = {"SOTTO_LAUNCHER": "app", "SOTTO_APP_EXECUTABLE": "/A/Sotto"}
+        app = {"SCRIVO_LAUNCHER": "app", "SCRIVO_APP_EXECUTABLE": "/A/Scrivo"}
         world = World()
         self.assertEqual(self.change(world, "launch_at_login", True, environ=app)[0], None)
-        self.assertEqual(world.events, [("login", "/A/Sotto"), ("log", "settings: launch_at_login changed")])
+        self.assertEqual(world.events, [("login", "/A/Scrivo"), ("log", "settings: launch_at_login changed")])
         world = World()
         self.assertEqual(self.change(world, "launch_at_login", False)[0], None)
         self.assertEqual(world.events[0], ("login", None))
@@ -840,7 +840,7 @@ class SettingsActionTests(unittest.TestCase):
             actions.settings_action("show_data_folder")
             actions.settings_action("unknown")
         self.assertEqual([call.args[0] for call in popen.call_args_list],
-                         [["/usr/bin/open", "-t", "/d.txt"], ["/usr/bin/open", str(sotto_paths.DATA_DIR)]])
+                         [["/usr/bin/open", "-t", "/d.txt"], ["/usr/bin/open", str(scrivo_paths.DATA_DIR)]])
 
     def test_install_buttons_start_one_install_each(self):
         world = World()
@@ -854,8 +854,8 @@ class SettingsActionTests(unittest.TestCase):
                          [(True, False), (False, True)])
 
 
-NEMOTRON_SCRIPT = str(Path(sotto.__file__).resolve().parent / "scripts" / "setup_nemotron.py")
-PARAKEET_SETUP = [sys.executable, str(Path(sotto.__file__).resolve()), "setup", "--profile", "parakeet"]
+NEMOTRON_SCRIPT = str(Path(scrivo.__file__).resolve().parent / "scripts" / "setup_nemotron.py")
+PARAKEET_SETUP = [sys.executable, str(Path(scrivo.__file__).resolve()), "setup", "--profile", "parakeet"]
 
 
 class InstallTests(unittest.TestCase):
@@ -884,14 +884,14 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(world.events, [
             ("thread",), ("log", "● installing Nemotron (about 700 MB) ..."),
             ("run_installer", [sys.executable, NEMOTRON_SCRIPT]),
-            ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", []), ("log", "✓ Nemotron installed"),
+            ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", []), ("log", "✓ Nemotron installed"),
             ("ui", "show_info", "Nemotron installed", "Choose Speech engine → Nemotron (English streaming) to use it."),
         ])
         world = World()
         self.install(world, "parakeet")
         self.assertEqual(world.events, [
             ("thread",), ("log", "● downloading Parakeet (about 2.5 GB) ..."), ("run_installer", PARAKEET_SETUP),
-            ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", []), ("log", "✓ Parakeet downloaded"),
+            ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", []), ("log", "✓ Parakeet downloaded"),
             ("ui", "show_info", "Parakeet downloaded", "Choose Speech engine → Parakeet to use it."),
         ])
 
@@ -904,7 +904,7 @@ class InstallTests(unittest.TestCase):
                 world.installer_result = (False, detail)
                 self.install(world, engine, window=FakeWindow.controller(world))
                 self.assertEqual(world.events[-5:], [
-                    ("entries", sotto.HISTORY_KEEP), ("ui", "refresh_history", []), ("ui", "refresh"),
+                    ("entries", scrivo.HISTORY_KEEP), ("ui", "refresh_history", []), ("ui", "refresh"),
                     ("log", f"{logged} ({'x' * 80})"), ("ui", "show_error", title, detail),
                 ])
 
@@ -1085,8 +1085,8 @@ class QuitTests(unittest.TestCase):
 
 # -- updates ---------------------------------------------------------------------------
 
-UPDATE_LOG = sotto_paths.DATA_DIR / "logs" / "update.log"
-SOURCE = Path(sotto.__file__).resolve().parent
+UPDATE_LOG = scrivo_paths.DATA_DIR / "logs" / "update.log"
+SOURCE = Path(scrivo.__file__).resolve().parent
 
 
 class ApplyUpdateTests(unittest.TestCase):
@@ -1098,7 +1098,7 @@ class ApplyUpdateTests(unittest.TestCase):
             world.events.append(("apply_mac",))
             return outcome
         with patch.object(updates, "apply_mac", apply_mac), \
-             patch.dict(os.environ, {"SOTTO_LAUNCHER": "app" if app else "terminal"}):
+             patch.dict(os.environ, {"SCRIVO_LAUNCHER": "app" if app else "terminal"}):
             build(world).apply_update()
         return calls
 
@@ -1121,7 +1121,7 @@ class ApplyUpdateTests(unittest.TestCase):
         self.assertEqual(world.events, [
             ("log", "● updating Scrivo"), ("thread",), ("apply_mac",),
             ("log", "✓ update installed — restarting once dictation is done"),
-            ("wait_until_idle", False, sotto.UPDATE_DRAIN_DEADLINE_S),
+            ("wait_until_idle", False, scrivo.UPDATE_DRAIN_DEADLINE_S),
             ("restart.request",), ("log", "● restarting Scrivo"),
         ])
         self.assertEqual(world.lifecycle.closed, "updating")
@@ -1130,7 +1130,7 @@ class ApplyUpdateTests(unittest.TestCase):
         world = World()
         world.drained = False
         self.apply(world, (True, "", True))
-        self.assertIn(("log", f"! dictation still running after {sotto.UPDATE_DRAIN_DEADLINE_S:.0f}s — "
+        self.assertIn(("log", f"! dictation still running after {scrivo.UPDATE_DRAIN_DEADLINE_S:.0f}s — "
                               "restarting into the update anyway"), world.events)
         self.assertEqual(world.events[-2:], [("restart.request",), ("log", "● restarting Scrivo")])
 
@@ -1174,7 +1174,7 @@ class ApplyUpdateTests(unittest.TestCase):
             started.append(True)
             actions.apply_update()  # a second Update Now while the first runs
             return False, "x", False
-        with patch.object(updates, "apply_mac", apply_mac), patch.dict(os.environ, {"SOTTO_LAUNCHER": "app"}):
+        with patch.object(updates, "apply_mac", apply_mac), patch.dict(os.environ, {"SCRIVO_LAUNCHER": "app"}):
             actions.apply_update()
             self.assertEqual(started, [True])
             actions.apply_update()  # the first one finished: allowed again
@@ -1192,7 +1192,7 @@ class CheckUpdatesTests(unittest.TestCase):
         with patch.object(updates, "check", check), \
              patch.object(offline_runtime, "offline_requested", return_value=offline), \
              patch.object(updates, "apply_mac", return_value=(False, "t", False)), \
-             patch.dict(os.environ, {"SOTTO_LAUNCHER": "app" if app else "terminal"}), \
+             patch.dict(os.environ, {"SCRIVO_LAUNCHER": "app" if app else "terminal"}), \
              patch("AppKit.NSWorkspace") as workspace:
             build(world).check_updates()
         self.assertEqual(checked, [(SOURCE, offline, world.started_from)])

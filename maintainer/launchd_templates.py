@@ -11,7 +11,7 @@ def render(template: bytes, *, home: Path, ffmpeg: str = '/opt/homebrew/bin/ffmp
         raise ValueError('home and FFmpeg paths must be absolute')
     def replace(value):
         if isinstance(value, str):
-            return value.replace('__SOTTO_HOME__', str(home)).replace('__SOTTO_FFMPEG__', ffmpeg)
+            return value.replace('__SCRIVO_HOME__', str(home)).replace('__SCRIVO_FFMPEG__', ffmpeg)
         if isinstance(value, list):
             return [replace(item) for item in value]
         if isinstance(value, dict):
@@ -26,8 +26,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     data = render(args.template.read_bytes(), home=Path.home(),
-                  ffmpeg=os.environ.get('SOTTO_FFMPEG', '/opt/homebrew/bin/ffmpeg'))
-    fd, temporary = tempfile.mkstemp(dir=args.output.parent, prefix='.sotto-plist-')
+                  ffmpeg=os.environ.get('SCRIVO_FFMPEG', '/opt/homebrew/bin/ffmpeg'))
+    fd, temporary = tempfile.mkstemp(dir=args.output.parent, prefix='.scrivo-plist-')
     try:
         with os.fdopen(fd, 'wb') as handle:
             handle.write(data)

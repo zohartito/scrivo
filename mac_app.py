@@ -3,11 +3,12 @@ earlier versions (macOS).
 
 Scrivo was called Sotto. Copies installed before the rename have a
 ``Sotto.app`` (bundle id ``org.sotto.alpha``) and maybe a login item with that
-label. Its compiled launcher starts this folder's sotto.py, which never moves,
-so the first start after an update can still come from the old app: then
-``hand_off`` opens Scrivo.app instead, and Scrivo.app's own start
-(``retire_legacy``) removes the old app and moves the login item over. Only an
-old app built by this installer for this very folder is ever touched.
+label. Its compiled launcher starts this folder's sotto.py (now a stand-in
+that runs scrivo.py), so the first start after an update can still come from
+the old app: then ``hand_off`` opens Scrivo.app instead, and Scrivo.app's own
+start (``retire_legacy``) removes the old app and moves the login item over.
+Only an old app built by this installer for this very folder (or, for a source
+archive, for the earlier archive's folder next to it) is ever touched.
 """
 from __future__ import annotations
 
@@ -23,6 +24,11 @@ BUNDLE_ID = "io.github.zohartito.scrivo"
 LEGACY_APP_NAME = "Sotto.app"
 LEGACY_EXECUTABLE = "Sotto"
 LEGACY_BUNDLE_ID = "org.sotto.alpha"
+# Launchers built before the module rename run sotto.py: the stand-in in this
+# folder, or the earlier source archive's own copy in the folder beside it.
+LEGACY_SCRIPT = "sotto.py"
+ARCHIVE_FOLDER = "scrivo-alpha"
+LEGACY_ARCHIVE_FOLDER = "sotto-alpha"
 OPEN_TIMEOUT_S = 30
 
 
@@ -53,10 +59,20 @@ def launcher_runs(app: Path, script: Path) -> bool:
     return b"\0" + os.fsencode(str(script)) + b"\0" in binary
 
 
+def legacy_scripts(script: Path) -> list[Path]:
+    """What an old launcher of this copy runs, given this folder's scrivo.py:
+    the sotto.py beside it, and for a source archive (folder scrivo-alpha) the
+    sotto.py of the earlier archive extracted next to it (folder sotto-alpha)."""
+    scripts = [script.with_name(LEGACY_SCRIPT)]
+    if script.parent.name == ARCHIVE_FOLDER:
+        scripts.append(script.parent.parent / LEGACY_ARCHIVE_FOLDER / LEGACY_SCRIPT)
+    return scripts
+
+
 def is_legacy_copy(app: Path, script: Path) -> bool:
-    """An old Sotto.app this installer built for this folder."""
+    """An old Sotto.app this installer built for this folder (legacy_scripts)."""
     return (app.name == LEGACY_APP_NAME and bundle_info(app).get("CFBundleIdentifier") == LEGACY_BUNDLE_ID
-            and launcher_runs(app, script))
+            and any(launcher_runs(app, old) for old in legacy_scripts(script)))
 
 
 def legacy_copies(script: Path, folders: list[Path] | None = None) -> list[Path]:
@@ -65,10 +81,12 @@ def legacy_copies(script: Path, folders: list[Path] | None = None) -> list[Path]
 
 
 def installed_app(script: Path, folders: list[Path] | None = None) -> Path | None:
-    """This folder's Scrivo.app, if the installer built one."""
+    """This folder's Scrivo.app, if the installer built one: its launcher runs
+    this scrivo.py, or (built before the module rename) this folder's sotto.py."""
     for folder in folders or candidate_folders():
         app = folder / APP_NAME
-        if bundle_info(app).get("CFBundleIdentifier") == BUNDLE_ID and launcher_runs(app, script):
+        if bundle_info(app).get("CFBundleIdentifier") == BUNDLE_ID and (
+                launcher_runs(app, script) or launcher_runs(app, script.with_name(LEGACY_SCRIPT))):
             return app
     return None
 
