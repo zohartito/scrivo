@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Scrivo — free, private dictation for your Mac</title>
-  <meta name="description" content="Hold a key, talk, and your words appear wherever you're typing. Scrivo is free, open-source dictation that runs entirely on your Mac, so your voice never leaves it.">
+  <title>Scrivo — free, private dictation for your Mac or PC</title>
+  <meta name="description" content="Hold a key, talk, and your words appear wherever you're typing. Scrivo is free, open-source dictation that runs entirely on your own computer (a Mac, or Windows in alpha), so your voice never leaves it.">
   <link rel="canonical" href="https://zohartito.github.io/scrivo/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Scrivo">
-  <meta property="og:title" content="Scrivo — free, private dictation for your Mac">
-  <meta property="og:description" content="Hold a key, talk, and your words appear wherever you're typing. Free, open source, and it runs on your Mac.">
+  <meta property="og:title" content="Scrivo — free, private dictation for your Mac or PC">
+  <meta property="og:description" content="Hold a key, talk, and your words appear wherever you're typing. Free, open source, and it runs on your own computer.">
   <meta property="og:url" content="https://zohartito.github.io/scrivo/">
   <meta property="og:image" content="https://zohartito.github.io/scrivo/images/og.png">
   <meta property="og:image:width" content="1200">
@@ -159,7 +159,7 @@
       <section class="hero" aria-labelledby="title">
         <h1 id="title">Scrivo</h1>
         <p class="lead">Hold a key, talk, and your words appear wherever you're typing.</p>
-        <p class="sub">Free and open source. It runs on your Mac, so your voice never leaves it.</p>
+        <p class="sub">Free and open source. It runs on your own computer (a Mac, or a Windows PC in alpha), so your voice never leaves it.</p>
         <div class="actions">
           <a class="btn primary" href="#install">Install in 3 steps</a>
           <a class="btn" href="https://github.com/zohartito/scrivo">View on GitHub</a>
@@ -204,8 +204,8 @@
             <p class="note">The first time it downloads the speech model (about 1.6 GB), so give it a few minutes. It is finished when Terminal says <strong>Done</strong>. If it asks for Apple's command line tools or Python 3.12, do what the message says and paste the line again.</p>
           </li>
           <li>
-            <h3>Open Scrivo and say yes to two questions</h3>
-            <p>Open <strong>Scrivo</strong> like any app (<kbd>⌘</kbd> <kbd>Space</kbd>, type <code>Scrivo</code>). It asks for:</p>
+            <h3>Say yes to two questions</h3>
+            <p>When Terminal says <strong>Done</strong>, Scrivo opens by itself. (Later, open it like any app: <kbd>⌘</kbd> <kbd>Space</kbd>, type <code>Scrivo</code>, press <kbd>Return</kbd>.) It asks for:</p>
             <ul>
               <li><strong>Accessibility</strong>, so it can hear your key and type for you: click <strong>Open System Settings</strong> and switch Scrivo on. (Newer macOS calls this list <em>Device Control and Data Access</em>.)</li>
               <li><strong>The microphone</strong>: click <strong>Allow</strong>. Scrivo only listens while you are dictating.</li>
@@ -228,7 +228,7 @@
           <code id="windows-line">irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex</code>
           <button type="button" data-copy="windows-line" aria-label="Copy the Windows install line">Copy</button>
         </div>
-        <p class="intro" style="margin-top: 14px;">It needs Git and 64-bit Python 3.13 and says how to install either. Details are in the <a href="https://github.com/zohartito/scrivo#windows">README</a>.</p>
+        <p class="intro" style="margin-top: 14px;">It needs Git and 64-bit Python 3.13 and says how to install either. Details are in the <a href="https://github.com/zohartito/scrivo/blob/main/docs/windows-alpha.md">Windows guide</a>.</p>
       </section>
 
       <section aria-labelledby="faq">
@@ -248,11 +248,11 @@
           </details>
           <details>
             <summary>It's an alpha. What does that mean?</summary>
-            <p>It installs from source with one script, and it was tested on a small number of Macs. Please report what you find on GitHub.</p>
+            <p>It installs from source with one script. So far it was tested by a person on one Mac and one Windows PC, and the one-line installers on clean machines. Please report what you find on GitHub.</p>
           </details>
           <details>
             <summary>Wasn't this called Sotto?</summary>
-            <p>Yes. Sotto is now Scrivo (Italian for "I write"): same app, new name. Old links keep working, and existing installs move over with Check for Updates.</p>
+            <p>Yes. Sotto is now Scrivo (Italian for "I write"): same app, new name. Old links keep working, and an existing install moves over when you paste the install line again.</p>
           </details>
         </div>
       </section>
