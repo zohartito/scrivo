@@ -124,12 +124,14 @@ extracted source archive):
 
 ```bash
 scripts/install-mac.sh
-open -a Scrivo
+open /Applications/Scrivo.app
 ```
 
 The script checks your Mac (Apple Silicon, macOS 14+, Python 3.12, Apple's
 command line tools), installs the pinned dependencies into `venv-alpha`,
-downloads the speech model once, and builds `Scrivo.app` in `/Applications` (or `~/Applications` when you cannot write there). The app
+downloads the speech model once, and builds `Scrivo.app` in `/Applications` (or `~/Applications` when you cannot write there;
+its last lines name the one to open). Open it by its path the first time: for a while after the build, macOS
+does not know the new app by name yet, so `open -a Scrivo` may find nothing. The app
 is built on your Mac, so macOS does not block it, and it asks for the
 Microphone and Accessibility as **Scrivo**. Scrivo lives in the menu bar; choose
 **Start Scrivo when I log in** under **Settings…**. Its log (counts and timings,
