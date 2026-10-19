@@ -83,7 +83,8 @@ main() {
         if command -v brew >/dev/null 2>&1; then
             fail "Scrivo needs Python 3.12: brew install python@3.12  (then run this line again)"
         fi
-        fail "Scrivo needs Python 3.12: install it from https://www.python.org/downloads/ (then run this line again)"
+        # 3.12.10 is the last 3.12 release with a macOS installer (later ones are source-only).
+        fail "Scrivo needs Python 3.12: install it from https://www.python.org/downloads/release/python-31210/ (then run this line again)"
     fi
 
     if [ -z "$dest" ]; then
