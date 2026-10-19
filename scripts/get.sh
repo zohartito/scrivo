@@ -133,7 +133,12 @@ main() {
     fi
     # shellcheck disable=SC2086  # $update is one word or nothing
     bash "$dest/scripts/install-mac.sh" $update --python "$python" < /dev/null
-    open -a Scrivo || true
+    # By its path, where install_app.py built it (/Applications when writable,
+    # else ~/Applications): LaunchServices does not know a bundle this new
+    # yet, so "open -a Scrivo" found nothing on a fresh Mac.
+    local app=/Applications/Scrivo.app
+    [ -w /Applications ] || app="$HOME/Applications/Scrivo.app"
+    open "$app" || true
 }
 
 main "$@"

@@ -1,4 +1,5 @@
 """One-line installers: download (or update) a git copy, then hand off to the platform installer."""
+import importlib.util
 import os
 import re
 from pathlib import Path
@@ -223,6 +224,23 @@ class MacInstallerTests(unittest.TestCase):
             result = self.run_piped(dict(env, SCRIVO_REPO=str(remote)))
             self.assertIn(f"Updating Scrivo in {home / 'scrivo'}", result.stdout, result.stderr)
 
+    def stand_ins(self, folder: Path, dest: Path, env: dict) -> dict:
+        """A real install-mac.sh run with a stand-in venv, and an `open` that
+        only writes its arguments to opened.txt (never starts a real Scrivo)."""
+        fake = dest / "venv-alpha" / "bin" / "python"
+        fake.parent.mkdir(parents=True)
+        fake.write_text(FAKE_VENV_PYTHON)
+        fake.chmod(0o755)
+        bin_dir = folder / "bin"
+        bin_dir.mkdir()
+        opener = bin_dir / "open"
+        opener.write_text(f'#!/bin/bash\necho "$@" >> "{folder / "opened.txt"}"\n')
+        opener.chmod(0o755)
+        env = dict(env, SCRIVO_PYTHON=str(fake), SCRIVO_DATA_DIR=str(folder / "data"),
+                   PATH=f"{bin_dir}:{os.environ['PATH']}")
+        env.pop("SCRIVO_GET_DRY_RUN")
+        return env
+
     @unittest.skipUnless(HAVE_CLANG, "install-mac.sh needs Apple's command line tools")
     def test_an_update_whose_packages_fail_leaves_the_source_where_it_was(self):
         # [N5] A re-run fast-forwarded the source first, then installed packages
@@ -230,23 +248,30 @@ class MacInstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             env, dest, before = self.installed_copy(folder)
-            fake = dest / "venv-alpha" / "bin" / "python"
-            fake.parent.mkdir(parents=True)
-            fake.write_text(FAKE_VENV_PYTHON)
-            fake.chmod(0o755)
-            bin_dir = folder / "bin"
-            bin_dir.mkdir()
-            opener = bin_dir / "open"  # never start a real Scrivo
-            opener.write_text(f'#!/bin/bash\necho "$@" >> "{folder / "opened.txt"}"\n')
-            opener.chmod(0o755)
-            env = dict(env, SCRIVO_PYTHON=str(fake), PIP_FAILS="1", SCRIVO_DATA_DIR=str(folder / "data"),
-                       PATH=f"{bin_dir}:{os.environ['PATH']}")
-            env.pop("SCRIVO_GET_DRY_RUN")
-            failed = self.run_piped(env)
+            failed = self.run_piped(dict(self.stand_ins(folder, dest, env), PIP_FAILS="1"))
             self.assertNotEqual(failed.returncode, 0)
             self.assertIn("source was not switched", failed.stderr)
             self.assertEqual(self.git(dest, "rev-parse", "HEAD"), before)
             self.assertFalse((folder / "opened.txt").exists())
+
+    @unittest.skipUnless(HAVE_CLANG, "install-mac.sh needs Apple's command line tools")
+    def test_a_finished_install_opens_the_app_by_its_path(self):
+        # get.sh ended with open -a Scrivo, which found nothing on fresh macOS
+        # runners: LaunchServices does not know a bundle this new yet
+        # (install-smoke.yml, 2026-10-19). It opens the app where
+        # install_app.py built it: /Applications when writable, else ~/Applications.
+        spec = importlib.util.spec_from_file_location("install_app", ROOT / "scripts" / "install_app.py")
+        install_app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(install_app)
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            env, dest, _ = self.installed_copy(folder)
+            home = folder / "home"
+            home.mkdir()
+            result = self.run_piped(dict(self.stand_ins(folder, dest, env), HOME=str(home)))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            app = install_app.default_applications(home) / install_app.APP_NAME
+            self.assertEqual((folder / "opened.txt").read_text(), f"{app}\n")
 
     def test_an_update_refuses_while_scrivo_runs_from_the_copy(self):
         # [N26] get.sh pulled and reinstalled under a running Scrivo.
