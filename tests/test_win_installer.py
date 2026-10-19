@@ -593,6 +593,9 @@ class UpdateScriptTest(unittest.TestCase):
                                 env=dict(os.environ, PIP_NO_INDEX="1", PIP_DISABLE_PIP_VERSION_CHECK="1"))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((self.menu / "Sotto.lnk").exists(), result.stdout + result.stderr)
+        # The earlier entries named these folders as typed (8.3 short names under
+        # GitHub's TEMP, C:\Users\RUNNER~1\...); the installer writes the long ones.
+        archive, earlier = (Path(_long_and_short(path)[0]) for path in (archive, earlier))
         arguments = subprocess.run([_powershell(), "-NoProfile", "-Command",
                                     f"(New-Object -ComObject WScript.Shell).CreateShortcut("
                                     f"'{self.menu / 'Scrivo.lnk'}').Arguments"],
