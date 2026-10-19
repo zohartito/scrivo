@@ -16,7 +16,7 @@ SCRIVO_DATA_DIR="$PWD/.alpha-state" SCRIVO_HF_HOME="$PWD/.alpha-cache" \
   SCRIVO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   venv-alpha/bin/python tests/gesture_check.py
 venv-alpha/bin/python -m compileall -q *.py scripts tests
-python3 benchmark.py tests/fixtures/benchmark_gate/manifest.jsonl --dry-run
+venv-alpha/bin/python benchmark.py tests/fixtures/benchmark_gate/manifest.jsonl --dry-run
 bash -n scripts/install-mac.sh scripts/rollout.sh
 plutil -lint launchd/*.plist
 venv-alpha/bin/python scripts/build_alpha_source.py /absolute/output/scrivo-alpha-source.tar.gz
@@ -31,7 +31,7 @@ otherwise. The sealed LaunchAgent integration needs Python 3.14 and is skipped
 on 3.12. Windows-only tests are skipped on macOS (and vice versa) with reasons.
 Windows steps are in [windows-alpha.md](windows-alpha.md).
 
-## Results (2026-10-01)
+## Results (2026-10-01 unless a row gives another date)
 
 macOS 27.2, M4 Max, CPython 3.12.14 unless noted.
 
@@ -53,12 +53,13 @@ macOS 27.2, M4 Max, CPython 3.12.14 unless noted.
 | Out-of-set language guard | In-set languages unchanged (two-language set); es/fr/de/ja written as spoken, not translated | Detection probabilities: in-set speech ≥ 0.989, other ≤ 0.112 |
 | Nemotron install | Pinned hashes enforced; tampered model, extra library and symlink refused | Checksum gate, synthetic decode only |
 | Windows (i9-11900K, RTX 4070 Ti SUPER) | 527 tests OK, 78 skipped from a fresh clone in the CPU environment (2026-10-09); 333 OK from a fresh archive in CPU and CUDA environments (2026-10-01); tray start/Quit exit 0 | See windows-alpha.md; no desktop session was used |
+| One-line install on fresh GitHub runners (2026-10-19, macOS 15 arm64 and Windows Server 2025) | `get.sh` and `get.ps1` from `main` finish in about 70 s each on the runners' fast network, model download included; the pinned Whisper model and Silero VAD are in place and checksum-verified; the Windows tray app starts and listens | What a new user's one-line install does on a clean machine; runners have no microphone, so no dictation |
 
 ## Not yet established
 
 - Real microphone → application dictation for this exact build on more than the
-  maintainer's Mac, and on Windows at all (a person pressing the key, speaking
-  and checking the text in Notes, TextEdit, Notepad, Word, browsers).
+  maintainer's Mac and one Windows 11 desktop (a person pressing the key,
+  speaking and checking the text in Notes, TextEdit, Notepad, Word, browsers).
 - Accuracy on real voices, accents, noisy rooms or whispering; every number
   above uses synthetic speech from system voices.
 - macOS 14–26, Apple Silicon Macs other than one M4 Max, Windows machines

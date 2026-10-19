@@ -1,7 +1,8 @@
 # Scrivo
 
 **Hold a key, talk, and your words appear wherever you're typing.**
-Free and open source. It runs on your Mac, so your voice never leaves it.
+Free and open source. It runs on your own computer (a Mac, or a Windows PC in
+alpha), so your voice never leaves it.
 
 <p align="center">
   <img src="docs/images/demo.gif" width="720" alt="A Mac with an empty TextEdit page. A small dark pill at the top of the screen fills with words as they are spoken: Everything I say shows up right where my cursor is. Then the sentence appears on the page.">
@@ -32,12 +33,15 @@ message instead, do what the message says and paste the line again:
 
 - *First install Apple's command line tools*: paste `xcode-select --install`,
   press Return, and click **Install** in the window that opens.
-- *Scrivo needs Python 3.12*: download the macOS installer for Python 3.12 from
-  [python.org](https://www.python.org/downloads/macos/) and open it.
+- *Scrivo needs Python 3.12*: if you use Homebrew, paste `brew install python@3.12`.
+  Otherwise download the macOS installer for
+  [Python 3.12.10](https://www.python.org/downloads/release/python-31210/) and
+  open it (later 3.12 releases have no installer).
 
-### 2. Open Scrivo and say yes to two questions
+### 2. Say yes to two questions
 
-Open **Scrivo** like any app (⌘ Space, type `Scrivo`, Return). It asks for two things:
+When Terminal says **Done**, Scrivo opens by itself. (Later, open it like any
+app: ⌘ Space, type `Scrivo`, Return.) It asks for two things:
 
 - **Accessibility**, so it can hear your key and type for you. Click
   **Open System Settings** and switch **Scrivo** on. (Newer macOS calls this
@@ -139,34 +143,28 @@ never your words) is `logs/scrivo.log` in the data folder.
 
 - Update: **Check for Updates…** in Scrivo's menu lists what is new and updates
   a git clone on request, then restarts. It contacts GitHub only when you click
-  it. From a terminal: `scripts/install-mac.sh --update`. Your settings stay.
-  When Scrivo was started from a terminal (not as Scrivo.app), Check for Updates
-  only lists what is new and shows that command for this folder: quit Scrivo,
-  then run it.
-- Remove: `scripts/install-mac.sh --uninstall` (removes the app and its login
-  item; your data folder stays until you delete it).
+  it. From a terminal: `~/scrivo/scripts/install-mac.sh --update` (or paste the
+  install line again). Your settings stay. When Scrivo was started from a
+  terminal (not as Scrivo.app), Check for Updates only lists what is new and
+  shows that command for this folder: quit Scrivo, then run it.
+- Remove: `~/scrivo/scripts/install-mac.sh --uninstall` (removes the app and its
+  login item; your data folder stays until you delete it).
 
 ### Scrivo was called Sotto
 
 If you installed it as Sotto, nothing moves: the folder stays `~/sotto`, and your
 History, dictionary, settings and models stay in the same data folder (the data
-folders keep the old name, `sotto-alpha`). Choose
-**Check for Updates…** → **Update Now** in Sotto's menu (or paste the install
-line again). The update builds `Scrivo.app`; Sotto restarts once, opens Scrivo
-and quits, and Scrivo then removes the old `Sotto.app` and moves **Start when I
-log in** over. Scrivo is a new app to macOS, so it asks for the Microphone and
+folders keep the old name, `sotto-alpha`). A Sotto copy cannot update itself to
+Scrivo (Update Now stops with an error, or the app does not come back): quit
+Sotto if it is still running, then paste the install line again (on Windows,
+the `irm` line). If that run stops with "can't open file … sotto.py", paste it
+once more. It updates the same folder, keeps your data and builds `Scrivo.app`;
+Scrivo then removes the old `Sotto.app` and moves **Start Scrivo when I log in**
+over. Scrivo is a new app to macOS, so it asks for the Microphone and
 Accessibility again: allow **Scrivo** (the old **Sotto** entries in System
 Settings can be removed with −). Copies cloned from `github.com/zohartito/sotto`
 keep updating (GitHub forwards the old address); the install line also points
 them at the new one.
-
-Later, `sotto.py` became `scrivo.py`. A copy from before mid-October 2026 can
-no longer update itself (Update Now stops with an error, or Scrivo does not
-come back): quit it if it is still running, then paste the install line again
-(on Windows, the `irm` line). If that run also stops with "can't open file
-… sotto.py", paste it once more. It finishes the update in the same folder and
-keeps your data. macOS treats the rebuilt `Scrivo.app` as new and asks for the
-Microphone and Accessibility once more.
 The `SOTTO_*` variables below still work under their old names (`SCRIVO_*` wins
 when both are set), and the log moved from `logs/sotto.log` to `logs/scrivo.log`.
 A source archive now extracts to `scrivo-alpha/`: run its installer and it takes
@@ -188,18 +186,16 @@ venv-alpha/bin/python -m pip install pip==26.2.1
 venv-alpha/bin/python -m pip install -r requirements-alpha.txt
 venv-alpha/bin/python -m pip check
 
-# Keep alpha preferences, recordings and models separate from any installed Scrivo.
+# The same data folder Scrivo.app uses (History, settings and models).
 export SCRIVO_DATA_DIR="$HOME/Library/Application Support/sotto-alpha"
 export SCRIVO_HF_HOME="$SCRIVO_DATA_DIR/huggingface"
 
 venv-alpha/bin/python scrivo.py setup   # downloads the pinned models once
 venv-alpha/bin/python scrivo.py doctor
-venv-alpha/bin/python scrivo.py run --idle-release 0
+venv-alpha/bin/python scrivo.py run
 ```
 
-Nothing in these commands installs a LaunchAgent or enables adaptive
-routing/background learning. Re-export the two
-variables in each new terminal before launching. To use a different folder,
+Re-export the two variables in each new terminal before launching. To use a different folder,
 set absolute paths for both variables consistently.
 
 `doctor` requests microphone permission if undecided, checks Accessibility and
@@ -221,7 +217,7 @@ forbid network access entirely (for example, to confirm offline use):
 
 ```bash
 SCRIVO_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-  venv-alpha/bin/python scrivo.py run --idle-release 0
+  venv-alpha/bin/python scrivo.py run
 ```
 
 Click a plain text field in Notes or TextEdit, hold **right Option** (or the key
@@ -245,9 +241,9 @@ fields are never typed or pasted into.
 | Lone short tap | Ignored |
 | Control–Option–D | Alternate hotkey: hold/release or tap to start/stop |
 | Menu → Start / Finish dictation | Hands-free controls without the key |
-| Menu → Settings… (⌘,) | Key, languages, engine, how text is inserted, dictionary, data folder |
+| Menu → Settings… (⌘,) | Key, languages, engine, speed (Accurate or Fast), how text is inserted, dictionary, data folder |
 | Menu → Language | Automatic (among your languages) or one language; saved locally |
-| Menu → Speech engine | Optional Nemotron or Whisper; restart while idle |
+| Menu → Speech engine | Whisper, Parakeet or Nemotron; switching restarts Scrivo while idle |
 | Menu → Dictionary | Your personal spellings (see below) |
 | Menu → Restart Scrivo | Restart this foreground process, retaining args/settings |
 | Menu → Quit, or Ctrl-C in terminal | Stop this foreground run and release microphone |
@@ -260,10 +256,11 @@ key: if another tool (or another Scrivo) already uses right Option or
 Control–Option–D, pick a different key in Settings. `--trigger` and `--hotkey`
 override Settings for a single run (`--hotkey ''` disables the alternate hotkey).
 `--no-overlay` hides both overlay and menu bar; use Ctrl-C to stop that run.
-With `--idle-release 0`, the mic starts for capture and stops on release; the
-speech model stays in memory. Hands-free intentionally keeps the mic active
-until stopped. **Restart** discards an unfinished capture; finish dictation
-before restarting or switching engines.
+The mic starts for each capture and stops on release; the speech model stays
+in memory. Hands-free intentionally keeps the mic active until stopped.
+**Restart** and **Quit** first finish a dictation in progress (it is
+transcribed and pasted; they wait up to 10 seconds). The engine can only be
+switched while no dictation is in progress.
 
 Recent items in the menu offer Copy, Retry, Save audio to Desktop, Delete,
 Correct Transcript and Clear history. Copy lets you recover text when an app
@@ -367,7 +364,9 @@ With the commands above, all Scrivo-managed alpha state lives under
 | --- | --- |
 | `history.jsonl`, `audio/`, `audio-raw/` | Transcripts/metadata, and the processed and raw-capture WAV audio of each item; ordinary history capped at 200 |
 | `language-mode`, `engine-mode`, `settings.json` | Saved language, engine and Settings choices |
-| `dictionary.txt` | Your personal spelling rules |
+| `capture-spool/` | Each finished recording's raw audio, only until its History item is saved (recovered into History after a crash) |
+| `dictionary.txt`, `glossary.txt` | Your personal spelling rules, and terms to help Whisper hear them |
+| `stats.json`, `logs/` | Word counts for **Your progress**, and Scrivo's log (counts and timings, never your words) |
 | `models/silero_vad.onnx` | Voice-detection model (Silero v6.2, MIT) used to drop silence phrases |
 | `learning/`, `adaptive-learning/` | Consented corrections and experimental state/receipts |
 | `huggingface/` | Whisper model cache (the exported `SCRIVO_HF_HOME`) |
@@ -386,12 +385,12 @@ error. The same applies to the checkout when you run the test suite.
 **Delete** removes a history item and revokes linked learning material.
 **Clear history** clears retained history and revokes the active local corpus.
 Models and preferences stay. See [storage and revocation details](docs/speech-learning.md).
-For a complete alpha uninstall, Quit/Ctrl-C first, then move **only your alpha
-folder** and this clone (including `venv-alpha`) to Trash in Finder. This
-removes alpha recordings/transcripts, learning data, settings and model caches.
-Never remove an existing installed Scrivo's folder/LaunchAgent as part of this
-alpha uninstall. To remove only alpha models, quit and move its `huggingface`
-and optional `nemotron` folders to Trash; they need downloading again later.
+To remove everything: quit Scrivo, run `~/scrivo/scripts/install-mac.sh
+--uninstall` (it removes the app and its login item), then move `~/scrivo` (or
+your own clone) and `~/Library/Application Support/sotto-alpha` to the Trash.
+That removes your recordings, transcripts, learning data, settings and models.
+To remove only the models, quit and move the `huggingface` and optional
+`nemotron` folders to the Trash; they download again when needed.
 
 Saved audio on Desktop, deliberately exported corpora, clipboard-manager
 history, text pasted into other apps, pip's package cache, backups and filesystem
@@ -431,8 +430,8 @@ Deletion cannot guarantee erasure from backups or SSD snapshots.
   Silero voice-detection model, which keeps those out of the text field (they
   stay in History). It never blocks real dictation, including whispers.
 - **Restart / engine switch fails:** use the reported error, Quit and rerun.
-  A source run does not need a LaunchAgent. Explicit `--profile`/`--model`
-  locks engine selection; omit them for menu switching.
+  Explicit `--profile`/`--model` locks engine selection; omit them for menu
+  switching.
 
 When reporting an issue, include OS/chip/Python version, command, permission
 results and a short reproduction. Redact usernames/paths. Do not attach private

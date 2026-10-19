@@ -210,10 +210,10 @@ APP=/Applications/Scrivo.app
 
 cat <<EOF
 
-Done. Open Scrivo like any app (Spotlight, Launchpad, or: open $(printf %q "$APP")).
+Done. Open Scrivo like any app (Spotlight, the Applications folder, or: open $(printf %q "$APP")).
 The first time, allow "Scrivo" to use the Microphone and turn it on under
 System Settings → Privacy & Security → Accessibility (newer macOS calls it
 Device Control and Data Access). Then hold right Option, speak, and release.
 Choose another key, languages and "Start Scrivo when I log in" under Settings…
-in Scrivo's menu. Update later with: scripts/install-mac.sh --update
+in Scrivo's menu. Update later with: $(printf %q "$ROOT/scripts/install-mac.sh") --update
 EOF
