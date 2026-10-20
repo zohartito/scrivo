@@ -36,7 +36,7 @@ def enable_stack_dump_signal() -> None:
         import signal
         if hasattr(signal, "SIGUSR1"):
             faulthandler.register(signal.SIGUSR1, all_threads=True)
-    except (ImportError, OSError, RuntimeError, ValueError):
+    except Exception:  # diagnostics only: never ends startup
         pass
 
 

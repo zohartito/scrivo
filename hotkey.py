@@ -170,6 +170,8 @@ class HotkeyListener:
         self.poller_beat = None        # when resync_poller last began or finished a round
         self.stall_warned_at = 0.0
         self.watchdog_failed_at = 0.0
+        self.round_failed_at = 0.0
+        self.resync_lock = threading.Lock()  # one release recovery at a time (poller or revive)
 
     def trigger_physically_down(self) -> bool:
         return trigger_down_in(
@@ -198,18 +200,20 @@ class HotkeyListener:
         return bool(flags & ALL_MODIFIERS) or trigger_down_in(
             flags, self.binding["mask"], self.binding["device_bit"])
 
-    def revive_tap(self, reason: str) -> None:
+    def revive_tap(self, reason: str, *, off_thread: bool = False) -> None:
         """Re-arm the listener and resync the trigger edge it may have missed.
 
         macOS disables a session tap on callback timeout (with a notification)
         but also silently — Accessibility churn, display/session changes — and
         a deaf tap looks exactly like a working one from the outside (2026-09-15:
-        3 hours of dead hotkey, process healthy, tap enabled=False)."""
-        self.quartz.CGEventTapEnable(self.tap, True)
+        3 hours of dead hotkey, process healthy, tap enabled=False).
+        ``off_thread``: the watchdog asks for the release resync on a helper
+        thread, so that nothing it waits on can keep it from the next revive."""
+        self.quartz.CGEventTapEnable(self.tap, True)  # first: nothing below may delay it
         current = self.trigger_physically_down()
         if self.trigger_down and not current:
             self.trigger_down = False
-            self.engine.released()  # the release edge happened while deaf
+            self.release_missed_edge(off_thread)
         else:
             self.trigger_down = current
         if self.quartz.CGEventTapIsEnabled(self.tap):
@@ -222,6 +226,20 @@ class HotkeyListener:
             self.log("✗ event tap stays disabled — re-grant Accessibility to Scrivo")
             if self.status_ui is not None:
                 self.ui_call(self.status_ui.set_tap_health, False)
+
+    def release_missed_edge(self, off_thread: bool) -> None:
+        """The release edge happened while the tap was deaf: tell the engine.
+
+        Finishing a capture can wait on the capture lock, hence the helper
+        thread for the watchdog. The key is looked at again under the lock, so
+        a press that came in meanwhile keeps its own gesture."""
+        if off_thread:
+            threading.Thread(target=self.release_missed_edge, args=(False,), daemon=True,
+                             name="scrivo-release-resync").start()
+            return
+        with self.resync_lock:
+            if not self.trigger_physically_down():
+                self.engine.released()
 
     def callback(self, _proxy, event_type, event, _refcon):
         if self.shutdown.requested():
@@ -309,9 +327,11 @@ class HotkeyListener:
         """One round of the watchdog: revive a disabled tap, and say so when
         the capture poller is stuck. Never raises: this is the only way a
         deaf hotkey comes back."""
+        if self.shutdown.requested():
+            return  # teardown disables the tap on purpose
         try:
             if not self.quartz.CGEventTapIsEnabled(self.tap):
-                self.revive_tap("silent disable")
+                self.revive_tap("silent disable", off_thread=True)
         except Exception as exc:
             if self.clock() - self.watchdog_failed_at > WARN_EVERY_S:
                 self.watchdog_failed_at = self.clock()
@@ -345,15 +365,20 @@ class HotkeyListener:
                 if recording and not hands_free and not self.trigger_physically_down():
                     misses += 1
                     if misses >= 2:
-                        self.log("! lost release recovered — finishing recording")
-                        self.trigger_down = False
-                        self.engine.released()
                         misses = 0
+                        with self.resync_lock:  # still true now, and nobody else released it?
+                            recording, hands_free = self.engine.snapshot()
+                            if recording and not hands_free and not self.trigger_physically_down():
+                                self.log("! lost release recovered — finishing recording")
+                                self.trigger_down = False
+                                self.engine.released()
                 else:
                     misses = 0
             except Exception as exc:  # one bad round must not end release recovery for good
                 misses = 0
-                self.log(f"! resync poller round failed: {type(exc).__name__}: {str(exc)[:100]}")
+                if self.clock() - self.round_failed_at > WARN_EVERY_S:
+                    self.round_failed_at = self.clock()
+                    self.log(f"! resync poller round failed: {type(exc).__name__}: {str(exc)[:100]}")
 
     def start(self) -> None:
         """Create the listen-only session tap on the current run loop, enable
