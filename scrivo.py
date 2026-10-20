@@ -45,7 +45,7 @@ from pipeline import (LOOP_MAX_UNIT_WORDS, LOOP_MIN_PREFIX_CHARS, LOOP_MIN_REPEA
 from speech_config import transcription_kwargs as _transcription_kwargs
 # The log and its rotation live in scrivo_log.py (it imports nothing from scrivo);
 # these names stay importable from scrivo for existing callers.
-from scrivo_log import keep_app_log_small, log, route_app_logs  # noqa: F401
+from scrivo_log import enable_stack_dump_signal, keep_app_log_small, log, route_app_logs  # noqa: F401
 # Delivery to the frontmost app lives in delivery.py (it imports nothing from
 # scrivo); these names stay importable from scrivo for existing callers.
 from delivery import (DELIVERY_POLL_S, DELIVERY_WAIT_MAX_S, NOT_IN_HISTORY_EITHER,  # noqa: F401
@@ -1003,6 +1003,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         speech_config=None, glossary_terms: tuple[str, ...] = (), adaptive: bool = False,
         engine_switching: bool = True, settings_locked: frozenset | set = frozenset()) -> None:
     """Run capture using a resolved config, without importing MLX before setup."""
+    enable_stack_dump_signal()  # kill -USR1 <pid>: every thread's stack into the log
     import updates
     from speech_config import language_mode, resolve_speech_config, save_language_mode, with_language
     # The commit this process runs, read once at launch (local git only):

@@ -24,6 +24,22 @@ def log(msg: str) -> None:
         pass
 
 
+def enable_stack_dump_signal() -> None:
+    """``kill -USR1 <pid>`` writes every thread's Python stack to the log.
+
+    A frozen Scrivo says nothing otherwise (2026-10-19: hotkey dead, process
+    idle, nothing logged, no debugger allowed). faulthandler's handler runs in
+    C, so it works with every Python thread blocked. Frames only (file, line,
+    function): never text or values. Never raises."""
+    try:
+        import faulthandler
+        import signal
+        if hasattr(signal, "SIGUSR1"):
+            faulthandler.register(signal.SIGUSR1, all_threads=True)
+    except Exception:  # diagnostics only: never ends startup
+        pass
+
+
 _app_log: dict = {"path": None, "max_bytes": 0}  # set once logs are routed to a file
 _app_log_lock = threading.Lock()  # every thread logs; one of them rotates at a time
 

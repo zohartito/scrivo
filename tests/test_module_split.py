@@ -16,7 +16,7 @@ import scrivo
 ROOT = Path(__file__).resolve().parents[1]
 
 MOVED = {
-    "scrivo_log": ("keep_app_log_small", "log", "route_app_logs"),
+    "scrivo_log": ("enable_stack_dump_signal", "keep_app_log_small", "log", "route_app_logs"),
     "delivery": (
         "DELIVERY_POLL_S", "DELIVERY_WAIT_MAX_S", "NOT_IN_HISTORY_EITHER", "RESTORE_DELAY_S",
         "SCRIVO_EVENT_TAG", "TRANSIENT_PASTEBOARD_TYPE", "DeliveryQueue", "PendingDeliveries",
