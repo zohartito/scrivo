@@ -150,6 +150,7 @@ class PollerGate:
 
     def __init__(self):
         self.target = None
+        self.watchdog = None                # tap_watchdog's target: the test calls watchdog_pass() itself
         self.thread = None
         self.sleeps = []
         self._parked = threading.Semaphore(0)
@@ -257,6 +258,9 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
             name = getattr(self._target, "__name__", "")
             if name == "resync_poller":
                 gate.target = self._target  # the test runs it, one poll at a time
+                return
+            if name == "tap_watchdog":
+                gate.watchdog = self._target  # one pass at a time, from the test's own thread
                 return
             started.append(name)
             super().start()
@@ -374,6 +378,8 @@ class TapSetupTests(unittest.TestCase):
         self.assertEqual(seen["sources"], [(("source", TAP, 0), Quartz.kCFRunLoopCommonModes)])
         self.assertEqual(seen["enables"], [True])
         self.assertIsNotNone(app.gate.target, "run() starts the resync poller")
+        self.assertEqual(getattr(app.gate.watchdog, "__name__", None), "tap_watchdog",
+                         "run() starts the tap watchdog on a thread of its own")
         listening = app.logged("listening on")
         self.assertEqual(len(listening), 1)
         self.assertIn("listening on right-option · hold to talk, double-tap for hands-free"
@@ -392,6 +398,7 @@ class TapSetupTests(unittest.TestCase):
                           "(System Settings → Privacy & Security → Accessibility, called "
                           "Device Control and Data Access on newer macOS)"])
         self.assertIsNone(self.app.gate.target, "no poller without a tap")
+        self.assertIsNone(self.app.gate.watchdog, "no watchdog without a tap")
 
     def test_an_unparsable_hotkey_is_logged_and_disabled(self):
         def drive(app):
@@ -679,13 +686,16 @@ class PollerTests(unittest.TestCase):
 
         run_app(self, drive)
 
-    def test_a_silently_disabled_tap_is_revived_directly_on_the_poller_thread(self):
+    def test_a_silently_disabled_tap_is_revived_by_the_watchdog_never_via_callafter(self):
         def drive(app):
             app.tap_os.enabled = False               # no notification, no callback
-            app.gate.tick()
+            app.gate.tick()                          # the capture poller no longer does it
+            self.assertEqual([enable for enable, _ in app.tap_os.enables], [True])
+            app.gate.watchdog.__self__.watchdog_pass()
             enable, thread = app.tap_os.enables[-1]
             self.assertTrue(enable)
-            self.assertIs(thread, app.gate.thread, "revive_tap must run on the poller, never via callAfter")
+            self.assertIs(thread, threading.current_thread(), "revive_tap runs where the watchdog pass runs")
+            self.assertIsNot(thread, app.gate.thread, "...not on the capture poller")
             self.assertNotIn("revive_tap", app.called_after)
 
         app = run_app(self, drive)

@@ -3,8 +3,9 @@
 TRIGGERS/TRIGGER_LABELS name the bare-modifier trigger keys; parse_hotkey
 reads the alternate hotkey ("ctrl-opt-d"). HotkeyListener owns the session
 event tap: its callback turns trigger edges, chords and hotkey presses into
-GestureEngine calls, and its resync poller revives a tap macOS disabled
-silently and synthesizes a release the tap missed.
+GestureEngine calls. A watchdog thread of its own revives a tap macOS disabled
+silently; the resync poller (which also drives the capture service) synthesizes
+a release the tap missed and reports itself when it stalls.
 
 Moved out of scrivo.py (restructure step 6): the tables and helpers verbatim,
 the tap closures of run() as HotkeyListener methods. scrivo re-exports the
@@ -15,10 +16,16 @@ nothing from scrivo.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 
 from gestures import HOLD_THRESHOLD_S
+
+# The capture poller's tick can wait on CoreAudio for seconds (an engine
+# rebuild); this long without finishing a round is a stall worth a log line.
+POLLER_STALL_WARN_S = 30.0
+WARN_EVERY_S = 60.0
 
 # CGEventFlags masks (CGEventTypes.h), as literals so this module imports
 # without PyObjC (Windows, Linux). tests/test_hotkey.py pins each one to
@@ -160,6 +167,9 @@ class HotkeyListener:
         self.binding["mask"], self.binding["keycode"], self.binding["device_bit"] = TRIGGERS[trigger]
         self.trigger_down = False
         self.tap_warned_at = 0.0
+        self.poller_beat = None        # when resync_poller last began or finished a round
+        self.stall_warned_at = 0.0
+        self.watchdog_failed_at = 0.0
 
     def trigger_physically_down(self) -> bool:
         return trigger_down_in(
@@ -279,39 +289,78 @@ class HotkeyListener:
                 self.engine.chorded()  # another modifier joined the hold
         return event
 
+    def tap_watchdog(self) -> None:
+        """Keep the tap alive, on a thread that does nothing else.
+
+        Revival used to run on the resync poller, after ``capture.tick()``. A
+        tick can block on CoreAudio and the capture locks, and macOS tends to
+        disable the tap at the very moments audio routes change, so a stuck
+        tick left a deaf hotkey that nothing revived and nothing logged
+        (2026-09-15, 09-16, 10-19: tap enabled=False, process healthy, zero
+        revive lines). CGEventTapEnable is safe from a background thread;
+        NEVER bounce this through callAfter (the 09-15 watchdog never fired)."""
+        while not self.shutdown.requested():
+            self.sleep(1.0)
+            if self.shutdown.requested():
+                break
+            self.watchdog_pass()
+
+    def watchdog_pass(self) -> None:
+        """One round of the watchdog: revive a disabled tap, and say so when
+        the capture poller is stuck. Never raises: this is the only way a
+        deaf hotkey comes back."""
+        try:
+            if not self.quartz.CGEventTapIsEnabled(self.tap):
+                self.revive_tap("silent disable")
+        except Exception as exc:
+            if self.clock() - self.watchdog_failed_at > WARN_EVERY_S:
+                self.watchdog_failed_at = self.clock()
+                self.log(f"! hotkey watchdog failed: {type(exc).__name__}: {str(exc)[:100]}")
+        beat = self.poller_beat
+        if beat is None:
+            return
+        stalled = self.clock() - beat
+        if stalled > POLLER_STALL_WARN_S and self.clock() - self.stall_warned_at > WARN_EVERY_S:
+            self.stall_warned_at = self.clock()
+            self.log(f"! capture poller stalled for {stalled:.0f}s — the hotkey still recovers on its own; "
+                     f"kill -USR1 {os.getpid()} writes every thread's stack to this log")
+
     def resync_poller(self) -> None:
         """Escape hatch: if a release edge is ever lost (tap deafness, phantom
         edges, sleep), a push-to-talk recording whose key is physically up for
         two consecutive polls gets its release synthesized. Hands-free is
-        exempt — its key is legitimately up while recording."""
+        exempt — its key is legitimately up while recording. Also drives the
+        capture service's once-a-second upkeep; ``poller_beat`` lets the
+        watchdog report a round that never finishes."""
         misses = 0
         while not self.shutdown.requested():
             self.sleep(1.0)
             if self.shutdown.requested():
                 break
-            self.capture.tick()
-            if not self.quartz.CGEventTapIsEnabled(self.tap):
-                # Directly on this thread — NEVER via callAfter. Bouncing to
-                # the main loop was why the 2026-09-15 watchdog never fired
-                # (2026-09-16: tap dead again, zero revive log lines) and
-                # CGEventTapEnable is safe from a background thread.
-                self.revive_tap("silent disable")
-            recording, hands_free = self.engine.snapshot()
-            if recording and not hands_free and not self.trigger_physically_down():
-                misses += 1
-                if misses >= 2:
-                    self.log("! lost release recovered — finishing recording")
-                    self.trigger_down = False
-                    self.engine.released()
+            try:
+                self.poller_beat = self.clock()
+                self.capture.tick()
+                self.poller_beat = self.clock()
+                recording, hands_free = self.engine.snapshot()
+                if recording and not hands_free and not self.trigger_physically_down():
+                    misses += 1
+                    if misses >= 2:
+                        self.log("! lost release recovered — finishing recording")
+                        self.trigger_down = False
+                        self.engine.released()
+                        misses = 0
+                else:
                     misses = 0
-            else:
+            except Exception as exc:  # one bad round must not end release recovery for good
                 misses = 0
+                self.log(f"! resync poller round failed: {type(exc).__name__}: {str(exc)[:100]}")
 
     def start(self) -> None:
         """Create the listen-only session tap on the current run loop, enable
         it and start the resync poller; exit 1 when macOS refuses the tap.
 
-        Side effects: an event tap, a run-loop source, a daemon thread; logs."""
+        Side effects: an event tap, a run-loop source, two daemon threads
+        (the resync poller and the tap watchdog); logs."""
         self.tap = self.quartz.CGEventTapCreate(
             self.quartz.kCGSessionEventTap, self.quartz.kCGHeadInsertEventTap,
             self.quartz.kCGEventTapOptionListenOnly,
@@ -328,4 +377,6 @@ class HotkeyListener:
         self.quartz.CFRunLoopAddSource(self.quartz.CFRunLoopGetCurrent(), source,
                                        self.quartz.kCFRunLoopCommonModes)
         self.quartz.CGEventTapEnable(self.tap, True)
+        self.poller_beat = self.clock()
         threading.Thread(target=self.resync_poller, daemon=True).start()
+        threading.Thread(target=self.tap_watchdog, daemon=True, name="scrivo-tap-watchdog").start()
