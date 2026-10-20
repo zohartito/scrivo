@@ -63,6 +63,7 @@ from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAU
                        dictation_in_flight, end_capture_now, launchd_owns_this_process, launched_as_sealed_job,
                        UPDATE_DRAIN_DEADLINE_S, main_thread_dispatch, relaunch_app_after_exit,
                        shutdown_signal_handlers, wait_until_idle)
+from lifecycle import EXIT_GUARD_S, exit_if_shutdown_stuck  # noqa: F401
 # The trigger-key gesture engine lives in gestures.py (it imports nothing from
 # scrivo); these names stay importable from scrivo for existing callers.
 from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, GestureEngine  # noqa: F401
@@ -1524,8 +1525,15 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             except Exception:
                 pass
 
+    run_finished = threading.Event()  # set when run() returns: the exit guard stands down
+
     def shutdown_watcher() -> None:
         shutdown.event.wait()
+        reason = (signal.Signals(shutdown.stop_signal).name if shutdown.stop_signal
+                  else "restart" if restart.foreground_pending else "quit")
+        log(f"● shutting down ({reason})")
+        threading.Thread(target=exit_if_shutdown_stuck, daemon=True, name="scrivo-exit-guard",
+                         args=(run_finished, lambda: restart.foreground_pending)).start()
         try:
             AppHelper.callAfter(stop_runtime_on_main)
         except Exception:
@@ -1571,6 +1579,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         transcription_thread.join(APP_DRAIN_TIMEOUT)
         if nemotron is not None and not transcription_thread.is_alive():
             nemotron.close()
+        run_finished.set()
 
 
 def doctor() -> None:

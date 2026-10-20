@@ -56,6 +56,10 @@ RESTART_FAILED_EXIT = 75         # EX_TEMPFAIL
 # (the hands-free watchdog) plus time to transcribe and paste it, then anyway.
 UPDATE_DRAIN_DEADLINE_S = HANDS_FREE_MAX_S + 120.0
 RESTART_RELEASE_WAIT_S = 2.0     # bounded wait for the async mic teardown before exec
+# The slowest teardown after shutdown is requested is the worker drain
+# (RESTART_DRAIN_DEADLINE_S) plus the mic wait and clipboard restore, about
+# 30 s. A process still alive this long after is stuck: see exit_if_shutdown_stuck.
+EXIT_GUARD_S = 45.0
 
 
 class ShutdownBoundary:
@@ -144,6 +148,25 @@ class ShutdownBoundary:
                 close()
             else:
                 capture.release_soon()
+
+
+def exit_if_shutdown_stuck(finished: threading.Event, restart_pending, *, log=log, exit_process=os._exit,
+                           limit: float = EXIT_GUARD_S) -> None:
+    """Thread target, started when shutdown is requested: end a teardown that hangs.
+
+    2026-10-19: Scrivo lingered for over 15 hours after a shutdown began. The
+    teardown had disabled the event tap and the timers that deliver signals had
+    stopped, so there was no hotkey, no log line and SIGTERM was ignored, yet
+    the process looked healthy. ``finished`` is set when run() returns; if it
+    is not set within ``limit`` the process exits (non-zero for a restart, so
+    KeepAlive starts Scrivo again, like a failed exec). Never reached in a
+    normal exit: the process is gone first."""
+    if finished.wait(limit):
+        return
+    pending = bool(restart_pending())
+    log(f"! shutdown did not finish within {limit:.0f}s — exiting"
+        + (" so Scrivo starts again" if pending else ""))
+    exit_process(RESTART_FAILED_EXIT if pending else 0)
 
 
 @contextmanager

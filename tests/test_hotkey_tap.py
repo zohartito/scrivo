@@ -389,6 +389,10 @@ class TapSetupTests(unittest.TestCase):
         app = run_app(self, lambda app: None)
         self.assertEqual([enable for enable, _ in app.tap_os.enables], [True, False])
 
+    def test_a_shutdown_names_its_reason_and_starts_the_exit_guard(self):
+        app = run_app(self, lambda app: None)
+        self.assertEqual(app.logged("● shutting down"), ["● shutting down (quit)"])
+
     def test_without_a_tap_run_exits_with_the_accessibility_hint(self):
         with self.assertRaises(SystemExit) as raised:
             run_app(self, lambda app: self.fail("the main loop ran"), create_ok=False)

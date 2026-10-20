@@ -30,7 +30,8 @@ MOVED = {
         "CaptureGate", "Lifecycle", "RestartController", "ShutdownBoundary", "app_mode",
         "commit_if_running", "dictation_in_flight", "end_capture_now", "launchd_owns_this_process",
         "launched_as_sealed_job", "main_thread_dispatch", "relaunch_app_after_exit",
-        "shutdown_signal_handlers", "wait_until_idle", "UPDATE_DRAIN_DEADLINE_S"),
+        "shutdown_signal_handlers", "wait_until_idle", "UPDATE_DRAIN_DEADLINE_S",
+        "EXIT_GUARD_S", "exit_if_shutdown_stuck"),
     "gestures": ("DOUBLE_TAP_WINDOW_S", "HANDS_FREE_MAX_S", "HOLD_THRESHOLD_S", "GestureEngine"),
     "capture": (
         "HEADPHONE_OUTPUT_TERMINALS", "HEADSET_INPUT_TERMINALS", "HEADSET_NAME_HINTS", "IDLE_STOP_S",

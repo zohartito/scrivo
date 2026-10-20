@@ -5,9 +5,11 @@ platforms (no AppKit, no microphone, no signal is delivered).
 """
 import queue
 import signal
+import threading
 import types
 import unittest
 
+import lifecycle
 import scrivo
 
 
@@ -166,6 +168,48 @@ class DrainHelperTests(unittest.TestCase):
         self.assertEqual((handed, engine_finishes), (["copy"], []))
         self.assertEqual(scrivo.end_capture_now(engine, capture, lambda: handed.append("orphan")), "orphan")
         self.assertEqual(handed, ["copy", "orphan"])
+
+
+class ExitGuardTests(unittest.TestCase):
+    """2026-10-19: a shutdown that began and never finished left Scrivo alive for
+    15+ hours: tap disabled, signal timers stopped, SIGTERM ignored, nothing
+    logged. The guard ends such a process."""
+
+    def guard(self, *, finished=False, restart=False, limit=45.0):
+        event = types.SimpleNamespace(wait=lambda seconds: (waited.append(seconds), finished)[1])
+        waited, logs, exits = [], [], []
+        lifecycle.exit_if_shutdown_stuck(event, lambda: restart, log=logs.append,
+                                         exit_process=exits.append, limit=limit)
+        return waited, logs, exits
+
+    def test_a_run_that_returns_in_time_is_left_alone(self):
+        waited, logs, exits = self.guard(finished=True)
+        self.assertEqual((waited, logs, exits), ([45.0], [], []))
+
+    def test_a_stuck_quit_logs_and_exits_zero(self):
+        waited, logs, exits = self.guard()
+        self.assertEqual(exits, [0])
+        self.assertEqual(logs, ["! shutdown did not finish within 45s — exiting"])
+
+    def test_a_stuck_restart_exits_nonzero_so_keepalive_starts_scrivo_again(self):
+        _waited, logs, exits = self.guard(restart=True)
+        self.assertEqual(exits, [lifecycle.RESTART_FAILED_EXIT])
+        self.assertIn("so Scrivo starts again", logs[0])
+
+    def test_it_stands_down_the_moment_run_finishes(self):
+        finished, exits = threading.Event(), []
+        thread = threading.Thread(target=lifecycle.exit_if_shutdown_stuck, args=(finished, lambda: False),
+                                  kwargs={"exit_process": exits.append, "limit": 30.0}, daemon=True)
+        thread.start()
+        finished.set()
+        thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(exits, [])
+
+    def test_the_limit_leaves_room_for_the_slowest_legitimate_teardown(self):
+        slowest = (lifecycle.RESTART_DRAIN_DEADLINE_S + lifecycle.APP_DRAIN_TIMEOUT
+                   + lifecycle.RESTART_RELEASE_WAIT_S + lifecycle.SIGTERM_RESTORE_WAIT_S)
+        self.assertGreater(lifecycle.EXIT_GUARD_S, slowest + 10)
 
 
 if __name__ == "__main__":
