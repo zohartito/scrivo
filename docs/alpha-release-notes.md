@@ -1,8 +1,26 @@
-# Scrivo 0.1.0-alpha
+# Scrivo 0.1.1-alpha
 
 Local, offline push-to-talk dictation for macOS and Windows: hold a key, speak,
 release, and the text lands at the cursor. Speech is transcribed on your
 computer; there is no account, cloud service or telemetry.
+
+## New in 0.1.1-alpha
+
+- **Sotto is now Scrivo.** Same app, new name. A Sotto install moves over when
+  you paste the install line again; your settings, History and models stay.
+- **Crash-safe dictation.** Each recording is saved at key-up, and one that
+  Scrivo could not transcribe (a crash, a force quit) comes back in History for
+  Retry. A failed transcription keeps its recording too.
+- **Quit, Restart and updates finish what you said first**, on the Mac and on
+  Windows.
+- **Text delivery.** Your clipboard is put back after each paste, results paste
+  in the order you spoke them, and "scratch that" only undoes Scrivo's own text.
+- **Safer install and update.** A failed update rolls back, and on a fresh Mac
+  the one-line installer opens Scrivo when it finishes.
+- **Windows** now matches the Mac on keeping failed captures and finishing
+  dictations on Restart, Quit and Update.
+
+Per-version notes: [GitHub Releases](https://github.com/zohartito/scrivo/releases).
 
 ## What is in it
 

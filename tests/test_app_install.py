@@ -461,6 +461,11 @@ class UpdateOrderTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("numpy==2.0", self.log.read_text())
         self.assertEqual(self.git(self.user, "rev-parse", "HEAD"), self.new)
+        # The app it built, by its path: a bundle this new is not in
+        # LaunchServices yet, so open -a Scrivo can find nothing at first.
+        app = install_app.default_applications() / install_app.APP_NAME
+        self.assertIn(f"or: open {app})", result.stdout)
+        self.assertNotIn("open -a", result.stdout)
 
 
 def fake_bundle(folder: Path, app_name: str, bundle_id: str, executable: str, script: Path) -> Path:

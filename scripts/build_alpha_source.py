@@ -158,7 +158,7 @@ PUBLIC_FILES = sorted(set(RUNTIME_SOURCE_FILES) | set(PUBLIC_TEST_FILES) | set(W
     'maintainer/teachers/requirements-qwen.txt', 'maintainer/teachers/requirements-granite.txt',
     '.gitignore', '.github/workflows/secret-scan.yml',
     '.github/workflows/benchmark-gate.yml', '.github/workflows/claude-pr-review.yml',
-    '.github/workflows/tests.yml',
+    '.github/workflows/tests.yml', '.github/workflows/install-smoke.yml',
     '.github/workflows-disabled/README.md', '.github/workflows-disabled/ci.yml.disabled',
 })
 

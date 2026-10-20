@@ -46,7 +46,7 @@ from speech_config import full_decode_summary, one_pass_decode_summary
 from speech_config import transcription_kwargs as _transcription_kwargs
 # The log and its rotation live in scrivo_log.py (it imports nothing from scrivo);
 # these names stay importable from scrivo for existing callers.
-from scrivo_log import keep_app_log_small, log, route_app_logs  # noqa: F401
+from scrivo_log import enable_stack_dump_signal, keep_app_log_small, log, route_app_logs  # noqa: F401
 # Delivery to the frontmost app lives in delivery.py (it imports nothing from
 # scrivo); these names stay importable from scrivo for existing callers.
 from delivery import (DELIVERY_POLL_S, DELIVERY_WAIT_MAX_S, NOT_IN_HISTORY_EITHER,  # noqa: F401
@@ -64,6 +64,7 @@ from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAU
                        dictation_in_flight, end_capture_now, launchd_owns_this_process, launched_as_sealed_job,
                        UPDATE_DRAIN_DEADLINE_S, main_thread_dispatch, relaunch_app_after_exit,
                        shutdown_signal_handlers, wait_until_idle)
+from lifecycle import EXIT_GUARD_S, exit_if_shutdown_stuck  # noqa: F401
 # The trigger-key gesture engine lives in gestures.py (it imports nothing from
 # scrivo); these names stay importable from scrivo for existing callers.
 from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, GestureEngine  # noqa: F401
@@ -1022,6 +1023,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         speech_config=None, glossary_terms: tuple[str, ...] = (), adaptive: bool = False,
         engine_switching: bool = True, settings_locked: frozenset | set = frozenset()) -> None:
     """Run capture using a resolved config, without importing MLX before setup."""
+    enable_stack_dump_signal()  # kill -USR1 <pid>: every thread's stack into the log
     import updates
     from speech_config import language_mode, resolve_speech_config, save_language_mode, with_language
     # The commit this process runs, read once at launch (local git only):
@@ -1542,8 +1544,15 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             except Exception:
                 pass
 
+    run_finished = threading.Event()  # set when run() returns: the exit guard stands down
+
     def shutdown_watcher() -> None:
         shutdown.event.wait()
+        threading.Thread(target=exit_if_shutdown_stuck, daemon=True, name="scrivo-exit-guard",
+                         args=(run_finished, lambda: restart.foreground_pending)).start()  # armed before any log
+        reason = (signal.Signals(shutdown.stop_signal).name if shutdown.stop_signal
+                  else "restart" if restart.foreground_pending else "quit")
+        log(f"● shutting down ({reason})")
         try:
             AppHelper.callAfter(stop_runtime_on_main)
         except Exception:
@@ -1555,16 +1564,20 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     threading.Thread(target=shutdown_watcher, daemon=True).start()
     threading.Thread(target=lifecycle.watch_signals, daemon=True, name="scrivo-signals").start()
 
-    if status_ui is not None:
-        # menu actions + system lifecycle hooks
-        status_ui.set_history_callbacks(controller.menu_callbacks())
-        status_ui.on_wake = lambda: (not shutdown.requested() and
-                                     (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
-        controller.refresh_history()
+    try:
+        if status_ui is not None:
+            # menu actions + system lifecycle hooks
+            status_ui.set_history_callbacks(controller.menu_callbacks())
+            status_ui.on_wake = lambda: (not shutdown.requested() and
+                                         (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
+            controller.refresh_history()
 
-    log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
-        + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
-        + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
+        log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
+            + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
+            + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
+    except BaseException:
+        run_finished.set()  # run() is raising: no guard may outlive it
+        raise
     try:
         with shutdown_signal_handlers(shutdown):
             # Cocoa/CFRunLoop can otherwise sit in native code indefinitely;
@@ -1584,11 +1597,14 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown.request()
         log("\nshutting down")
     finally:
-        shutdown.stop_capture(capture)
-        shutdown.discard_queued(jobs)
-        transcription_thread.join(APP_DRAIN_TIMEOUT)
-        if nemotron is not None and not transcription_thread.is_alive():
-            nemotron.close()
+        try:
+            shutdown.stop_capture(capture)
+            shutdown.discard_queued(jobs)
+            transcription_thread.join(APP_DRAIN_TIMEOUT)
+            if nemotron is not None and not transcription_thread.is_alive():
+                nemotron.close()
+        finally:
+            run_finished.set()  # also when the cleanup above raises
 
 
 def doctor() -> None:

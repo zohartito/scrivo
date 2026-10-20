@@ -41,8 +41,16 @@ beyond the synthetic-speech benchmark below.
 
 ## Install (recommended)
 
-In **PowerShell**, from a clone of the repository or the extracted source
-archive (see below):
+In **PowerShell**, paste one line. It downloads Scrivo into
+`%USERPROFILE%\scrivo`, runs the installer described below and starts Scrivo:
+
+```powershell
+irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex
+```
+
+It needs Git and 64-bit Python 3.13 and says how to install either if one is
+missing. From a clone of the repository or the extracted source archive (see
+below), run the installer itself:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -WhatIf   # show the plan only
@@ -367,6 +375,7 @@ Everything Scrivo writes lives in the data folder
 | Location in that folder | Contents |
 | --- | --- |
 | `history.jsonl`, `audio\`, `audio-raw\` | Transcripts/metadata and WAV audio (capped at 200) |
+| `capture-spool\` | Each finished recording's raw audio, only until its History item is saved (recovered into History after a crash) |
 | `dictionary.txt`, `settings.json`, `language-mode` | Your rules and preferences |
 | `learning\`, `adaptive-learning\` | Local learning and revocation bookkeeping (no worker runs on Windows) |
 | `scrivo.log` (+ `scrivo.log.1`) | Timings, devices, character counts — no transcript text |

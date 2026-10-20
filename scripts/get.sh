@@ -83,7 +83,8 @@ main() {
         if command -v brew >/dev/null 2>&1; then
             fail "Scrivo needs Python 3.12: brew install python@3.12  (then run this line again)"
         fi
-        fail "Scrivo needs Python 3.12: install it from https://www.python.org/downloads/ (then run this line again)"
+        # 3.12.10 is the last 3.12 release with a macOS installer (later ones are source-only).
+        fail "Scrivo needs Python 3.12: install it from https://www.python.org/downloads/release/python-31210/ (then run this line again)"
     fi
 
     if [ -z "$dest" ]; then
@@ -133,7 +134,12 @@ main() {
     fi
     # shellcheck disable=SC2086  # $update is one word or nothing
     bash "$dest/scripts/install-mac.sh" $update --python "$python" < /dev/null
-    open -a Scrivo || true
+    # By its path, where install_app.py built it (/Applications when writable,
+    # else ~/Applications): LaunchServices does not know a bundle this new
+    # yet, so "open -a Scrivo" found nothing on a fresh Mac.
+    local app=/Applications/Scrivo.app
+    [ -w /Applications ] || app="$HOME/Applications/Scrivo.app"
+    open "$app" || true
 }
 
 main "$@"

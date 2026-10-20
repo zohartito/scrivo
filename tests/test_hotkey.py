@@ -5,8 +5,11 @@ flag masks, and this fake's constants, to Quartz's own values.
 tests/test_hotkey_tap.py drives the same decisions through the real run().
 """
 import ast
+import signal
 import subprocess
 import sys
+import threading
+import time
 import types
 import unittest
 from pathlib import Path
@@ -149,6 +152,12 @@ class World:
         """Run the poller for exactly ``times`` polls, then it sees shutdown."""
         self.polls_left, self.stopping = times, False
         self.listener.resync_poller()
+        self.stopping = False
+
+    def watch(self, times):
+        """The same for the tap watchdog thread's loop."""
+        self.polls_left, self.stopping = times, False
+        self.listener.tap_watchdog()
         self.stopping = False
 
     def send(self, event_type, keycode=0, flags=0, *, autorepeat=0, own=False):
@@ -402,14 +411,27 @@ class PollerTests(unittest.TestCase):
         world.poll(3)
         self.assertEqual(world.engine.calls, [])
 
-    def test_a_silently_disabled_tap_is_revived_on_the_poller_itself(self):
+    def test_a_failed_round_is_logged_and_the_loop_keeps_polling(self):
         world = World()
-        world.quartz.enabled = False
-        with mock.patch("threading.Thread") as thread:
-            world.poll(1)
-        thread.assert_not_called()
-        self.assertEqual(world.quartz.enables, [True])
-        self.assertEqual(world.logs, ["! event tap re-enabled after silent disable"])
+        rounds = iter([RuntimeError("boom"), None])
+
+        def snapshot():
+            failure = next(rounds)
+            if failure:
+                raise failure
+            return False, False
+
+        world.engine.snapshot = snapshot
+        world.poll(2)
+        self.assertEqual(world.capture.ticks, 2)     # the second round ran after the first failed
+        self.assertEqual(world.logs, ["! resync poller round failed: RuntimeError: boom"])
+
+    def test_every_round_stamps_the_beat_the_watchdog_reads(self):
+        world = World()
+        self.assertIsNone(world.listener.poller_beat)
+        world.now = 1234.0
+        world.poll(1)
+        self.assertEqual(world.listener.poller_beat, 1234.0)
 
     def test_shutdown_stops_it_before_the_next_poll(self):
         world = World()
@@ -418,6 +440,211 @@ class PollerTests(unittest.TestCase):
         self.assertEqual((world.sleeps, world.capture.ticks), ([], 0))
         world.poll(0)
         self.assertEqual((world.sleeps, world.capture.ticks), ([1.0], 0))
+
+
+class WatchdogTests(unittest.TestCase):
+    """The tap comes back on a thread of its own (2026-10-19: tap disabled, hotkey
+    dead for good, process idle and healthy, zero revive log lines: the revive
+    lived on the poller behind capture.tick(), which can block on CoreAudio)."""
+
+    def test_a_silently_disabled_tap_is_revived_by_the_watchdog_itself(self):
+        world = World()
+        world.quartz.enabled = False
+        with mock.patch("threading.Thread") as thread:
+            world.watch(1)
+        thread.assert_not_called()                   # on its own thread: never via callAfter
+        self.assertEqual(world.quartz.enables, [True])
+        self.assertEqual(world.logs, ["! event tap re-enabled after silent disable"])
+        self.assertEqual(world.capture.ticks, 0)     # it never touches the capture service
+
+    def test_a_healthy_tap_is_left_alone(self):
+        world = World()
+        world.watch(3)
+        self.assertEqual((world.quartz.enables, world.logs, set(world.sleeps)), ([], [], {1.0}))
+
+    def test_the_poller_no_longer_revives_the_tap(self):
+        world = World()
+        world.quartz.enabled = False
+        world.poll(2)
+        self.assertEqual(world.quartz.enables, [])
+
+    def test_the_tap_comes_back_while_a_capture_tick_never_returns(self):
+        world = World()
+        entered, release = threading.Event(), threading.Event()
+        world.capture.tick = lambda: (entered.set(), release.wait(20))
+        world.listener.sleep = lambda seconds: time.sleep(0.01)
+        threads_before = threading.active_count()
+        world.listener.start()                       # the real poller and watchdog threads
+        try:
+            self.assertTrue(entered.wait(5), "the poller never reached the blocking tick")
+            world.quartz.enabled = False             # macOS silently disables the tap
+            self.wait_for(lambda: "! event tap re-enabled after silent disable" in world.logs)
+            self.assertEqual(world.quartz.enables, [True, True], "start() enables it, then the watchdog does")
+        finally:
+            world.stopping = True
+            release.set()
+            self.wait_for(lambda: threading.active_count() <= threads_before)  # both threads end
+
+    @staticmethod
+    def wait_for(condition, seconds=5.0):
+        deadline = time.monotonic() + seconds
+        while not condition() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert condition(), "timed out waiting"
+
+    def test_a_blocked_release_resync_cannot_stall_the_watchdog(self):
+        # finishing a capture can wait on the capture lock; the revive must not
+        world = World()
+        world.press()                                # trigger_down, then the key goes up while deaf
+        world.quartz.flags_state = 0
+        world.quartz.enabled = False
+        stuck, release = threading.Event(), threading.Event()
+        world.engine.released = lambda: (stuck.set(), release.wait(20))
+        try:
+            finished = threading.Event()
+            threading.Thread(target=lambda: (world.watch(1), finished.set()), daemon=True).start()
+            self.assertTrue(finished.wait(5), "the watchdog was held up by the blocked release resync")
+            self.assertEqual(world.quartz.enables, [True])
+            self.assertEqual(world.logs, ["! event tap re-enabled after silent disable"])
+            self.assertTrue(stuck.wait(5), "the release edge was never delivered")
+            world.quartz.enabled = False             # and the next disable is still repaired
+            world.watch(1)
+            self.assertEqual(world.quartz.enables, [True, True])
+        finally:
+            release.set()
+
+    def test_a_press_that_arrived_during_the_resync_keeps_its_gesture(self):
+        world = World()
+        world.press()
+        world.quartz.flags_state = OPT | RIGHT_OPTION_BIT   # pressed again by the time the helper runs
+        world.listener.release_missed_edge(False)
+        self.assertEqual(world.engine.calls, ["pressed"])
+        world.quartz.flags_state = 0
+        world.listener.release_missed_edge(False)
+        self.assertEqual(world.engine.calls, ["pressed", "released"])
+
+    def test_the_poller_rechecks_under_the_lock_before_releasing(self):
+        world = World()
+        world.press()
+        world.engine.recording = True
+        calls = []
+        real_snapshot = world.engine.snapshot
+
+        def snapshot():
+            calls.append(1)
+            if len(calls) == 3:                      # between the second miss and the release:
+                world.engine.recording = False       # the revive already finished the old recording
+            return real_snapshot()
+
+        world.engine.snapshot = snapshot
+        world.poll(2)
+        self.assertEqual(world.engine.calls, ["pressed"])
+        self.assertEqual(world.logs, [])
+
+    def test_a_repeating_round_failure_is_logged_once_a_minute(self):
+        world = World()
+
+        def broken():
+            raise RuntimeError("boom")
+
+        world.engine.snapshot = broken
+        world.poll(3)
+        self.assertEqual(world.logs, ["! resync poller round failed: RuntimeError: boom"])
+        world.now += 61
+        world.poll(1)
+        self.assertEqual(len(world.logs), 2)
+
+    def test_a_pass_after_shutdown_leaves_a_deliberately_disabled_tap_alone(self):
+        world = World()
+        world.quartz.enabled = False
+        world.stopping = True
+        world.listener.watchdog_pass()
+        self.assertEqual(world.quartz.enables, [])
+
+    def test_a_failing_revive_is_logged_once_a_minute_and_the_watchdog_lives(self):
+        world = World()
+        world.quartz.enabled = False
+
+        def refuse(tap, enable):
+            raise RuntimeError("boom")
+
+        world.quartz.CGEventTapEnable = refuse
+        world.watch(2)
+        self.assertEqual(world.logs, ["! hotkey watchdog failed: RuntimeError: boom"])
+        world.now += 61
+        world.watch(1)
+        self.assertEqual(world.logs, ["! hotkey watchdog failed: RuntimeError: boom"] * 2)
+
+    def test_a_stalled_poller_is_reported_once_a_minute_with_the_pid(self):
+        world = World()
+        world.listener.poller_beat = world.now - 31
+        world.watch(1)
+        self.assertEqual(len(world.logs), 1)
+        self.assertRegex(world.logs[0], r"^! capture poller stalled for 31s .*kill -USR1 \d+ writes every thread")
+        world.watch(2)                               # the same minute: silent
+        self.assertEqual(len(world.logs), 1)
+        world.now += 61
+        world.listener.poller_beat = world.now - 90
+        world.watch(1)
+        self.assertEqual(len(world.logs), 2)
+        self.assertIn("stalled for 90s", world.logs[1])
+
+    def test_a_poller_that_is_merely_between_rounds_or_not_started_is_not_stalled(self):
+        world = World()
+        world.watch(1)                               # never started: no beat
+        world.listener.poller_beat = world.now - 29
+        world.watch(1)
+        self.assertEqual(world.logs, [])
+
+    def test_shutdown_stops_it_before_the_next_check(self):
+        world = World()
+        world.quartz.enabled = False
+        world.stopping = True
+        world.listener.tap_watchdog()
+        self.assertEqual((world.sleeps, world.quartz.enables), ([], []))
+        world.watch(0)
+        self.assertEqual((world.sleeps, world.quartz.enables), ([1.0], []))
+
+
+@unittest.skipUnless(hasattr(signal, "SIGUSR1"), "POSIX signals")
+class StackDumpTests(unittest.TestCase):
+    def test_sigusr1_writes_every_threads_stack_to_stderr(self):
+        code = (
+            "import os, signal, sys, threading, time\n"
+            f"sys.path.insert(0, {str(ROOT)!r})\n"
+            "import scrivo_log\n"
+            "scrivo_log.enable_stack_dump_signal()\n"
+            "def stuck_in_capture_tick():\n"
+            "    threading.Event().wait()\n"
+            "threading.Thread(target=stuck_in_capture_tick, daemon=True).start()\n"
+            "time.sleep(0.3)\n"
+            "os.kill(os.getpid(), signal.SIGUSR1)\n"
+            "time.sleep(0.5)\n"
+        )
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stuck_in_capture_tick", result.stderr)
+        self.assertIn("(most recent call first)", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_a_stderr_without_a_file_descriptor_never_stops_startup(self):
+        import scrivo_log
+
+        class NoDescriptor:
+            def write(self, text):
+                return len(text)
+
+            def flush(self):
+                pass
+
+        for bad_stderr in (NoDescriptor(), None):
+            with self.subTest(stderr=bad_stderr), mock.patch.object(sys, "stderr", bad_stderr):
+                scrivo_log.enable_stack_dump_signal()   # must not raise
+
+    def test_registering_twice_is_harmless(self):
+        import scrivo_log
+        scrivo_log.enable_stack_dump_signal()
+        scrivo_log.enable_stack_dump_signal()
 
 
 class StartTests(unittest.TestCase):
@@ -434,8 +661,11 @@ class StartTests(unittest.TestCase):
         self.assertIs(world.listener.tap, TAP)
         self.assertEqual(world.quartz.sources, [("current-loop", ("source", TAP, 0), q.kCFRunLoopCommonModes)])
         self.assertEqual(world.quartz.enables, [True])
-        thread.assert_called_once_with(target=world.listener.resync_poller, daemon=True)
-        thread.return_value.start.assert_called_once_with()
+        self.assertEqual(thread.call_args_list, [
+            mock.call(target=world.listener.resync_poller, daemon=True),
+            mock.call(target=world.listener.tap_watchdog, daemon=True, name="scrivo-tap-watchdog")])
+        self.assertEqual(thread.return_value.start.call_count, 2)
+        self.assertEqual(world.listener.poller_beat, world.now)  # so a poller that never runs is noticed
 
     def test_a_refused_tap_exits_with_the_accessibility_hint(self):
         world = World(create_ok=False)

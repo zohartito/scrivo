@@ -1,0 +1,288 @@
+name: Install smoke test
+
+# Runs the README's one-line installers, exactly as a user pastes them, on
+# fresh hosted runners: get.sh and get.ps1 from main, which clone main and
+# install it into the runner's home folder. Nothing is checked out, so the
+# job tests what a user downloads today, not this branch's scripts.
+# Each job then checks what the install left: the app (Scrivo.app, or the
+# Start Menu shortcut and venv), the pinned speech model and Silero VAD in
+# the alpha data folder, and what the launched app logged.
+#
+# GitHub dispatches a workflow only once its file is on the default branch;
+# until then, and whenever this file changes, the pull request that changes
+# it runs it.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/install-smoke.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: One-line install (macOS)
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: What this runner has
+        run: |
+          sw_vers
+          uname -m
+          xcrun --find clang
+          git --version
+          for name in python3 python3.12 python3.13; do
+            printf '%-11s ' "$name"; command -v "$name" || echo '(not on PATH)'
+          done
+          python3 --version
+          brew --version | sed -n 1p
+          brew list --versions python@3.12 python@3.13 || true
+          ls "$RUNNER_TOOL_CACHE/Python" 2>/dev/null || true
+          df -h "$HOME" | tail -1
+
+      # get.sh needs a native Python 3.12 and names this command when it is
+      # missing (the same Homebrew Python tests.yml uses).
+      - name: Python 3.12 from Homebrew
+        run: |
+          brew list python@3.12 >/dev/null 2>&1 || brew install python@3.12
+          command -v python3.12
+          python3.12 -c 'import platform, sys; print(sys.version, platform.machine())'
+
+      - name: curl -fsSL .../scripts/get.sh | bash
+        run: curl -fsSL https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.sh | bash
+
+      - name: What the install left
+        run: |
+          data="$HOME/Library/Application Support/sotto-alpha"
+          src="$HOME/scrivo"
+          status=0
+          missing() { echo "::error::$1"; status=1; }
+
+          app=""
+          for candidate in /Applications/Scrivo.app "$HOME/Applications/Scrivo.app"; do
+            if [ -d "$candidate" ]; then app="$candidate"; break; fi
+          done
+          if [ -n "$app" ]; then
+            echo "✓ Scrivo.app: $app"
+            echo "  bundle id: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+            echo "  version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+            codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Signature|Format)' | sed 's/^/  /' || true
+          else
+            missing "Scrivo.app is in neither /Applications nor ~/Applications"
+          fi
+
+          if [ -x "$src/venv-alpha/bin/python" ]; then
+            echo "✓ venv: $src/venv-alpha ($("$src/venv-alpha/bin/python" --version))"
+            echo "  source: $(git -C "$src" log -1 --format='%h %s')"
+          else
+            missing "no venv at $src/venv-alpha"
+          fi
+
+          # The pins come from the installed copy: speech_config for Whisper, vad for Silero.
+          pins="$(cd "$src" && SCRIVO_DATA_DIR="$data" venv-alpha/bin/python -c '
+          import speech_config, vad
+          repo = speech_config.MODEL_PROFILES["auto"].repo
+          print(repo, speech_config.MODEL_REVISIONS[repo], vad.MODEL_SHA256)')" || missing "could not read the pins"
+          read -r repo revision vad_sha <<< "$pins"
+          snapshot="$data/huggingface/hub/models--${repo//\//--}/snapshots/$revision"
+          if [ -f "$snapshot/config.json" ] && { [ -f "$snapshot/weights.safetensors" ] || [ -f "$snapshot/weights.npz" ]; }; then
+            echo "✓ Whisper model: $repo@${revision:0:12} in $snapshot"
+            ls -lL "$snapshot" | sed 's/^/  /'
+          else
+            missing "pinned Whisper snapshot missing or incomplete: $snapshot"
+            find "$data/huggingface" -maxdepth 5 2>/dev/null | sed -n 1,40p || true
+          fi
+          vad_file="$data/models/silero_vad.onnx"
+          if [ -f "$vad_file" ] && [ "$(shasum -a 256 "$vad_file" | cut -d' ' -f1)" = "$vad_sha" ]; then
+            echo "✓ Silero VAD: $vad_file (sha256 matches the pin)"
+          else
+            missing "Silero VAD missing or not the pinned bytes: $vad_file"
+          fi
+
+          echo "Sizes:"
+          du -sh "$data" "$data/huggingface" "$src/venv-alpha" ${app:+"$app"} 2>/dev/null | sed 's/^/  /' || true
+          echo "Data folder:"
+          find "$data" -maxdepth 2 | sed "s|^$data|  sotto-alpha|" || true
+          exit "$status"
+
+      # get.sh ends with open -a Scrivo. When that starts nothing, this shows
+      # whether Spotlight and LaunchServices know the new app, tries the same
+      # command a minute later, then opens the app by path, so the log still
+      # shows how far a first launch gets. A hosted runner has no microphone
+      # and has granted no Accessibility.
+      - name: The launched app
+        if: always()
+        run: |
+          data="$HOME/Library/Application Support/sotto-alpha"
+          lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+          running() { ps -axww -o pid=,etime=,command= | grep -E '[s]crivo\.py|[S]crivo\.app/'; }
+          wait_for_log() { for _ in $(seq 30); do [ -s "$data/logs/scrivo.log" ] && return 0; sleep 2; done; return 1; }
+          if wait_for_log || running > /dev/null; then
+            echo "get.sh's open -a Scrivo started Scrivo"
+          else
+            echo "::warning::get.sh's last step, open -a Scrivo, did not start Scrivo"
+            echo "Spotlight: $(mdutil -s / 2>&1 | tail -n 1)"
+            echo "LaunchServices records naming io.github.zohartito.scrivo: $("$lsregister" -dump 2>/dev/null | grep -c io.github.zohartito.scrivo || true)"
+            if open -a Scrivo; then
+              echo "open -a Scrivo, a minute later: started"
+            else
+              echo "open -a Scrivo, a minute later: still not found; opening the app by path"
+              open /Applications/Scrivo.app || open "$HOME/Applications/Scrivo.app" || true
+            fi
+            wait_for_log || true
+          fi
+          sleep 20
+          echo "Processes:"
+          ps -axww -o pid=,etime=,command= | grep -E '[s]crivo\.py|[S]crivo\.app' || echo "  (no Scrivo process)"
+          echo "Log ($data/logs, counts and timings only):"
+          ls -l "$data/logs" 2>/dev/null || echo "  (no logs folder)"
+          tail -n 60 "$data/logs/scrivo.log" 2>/dev/null || true
+
+  windows:
+    name: One-line install (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: What this runner has
+        run: |
+          [Environment]::OSVersion.VersionString
+          $env:PROCESSOR_ARCHITECTURE
+          "Windows PowerShell $(powershell -NoProfile -Command '$PSVersionTable.PSVersion.ToString()')"
+          git --version
+          foreach ($name in 'py', 'python', 'nvidia-smi') {
+            $command = Get-Command $name -ErrorAction SilentlyContinue
+            "{0,-11} {1}" -f $name, $(if ($command) { $command.Source } else { '(not on PATH)' })
+          }
+          if (Get-Command py -ErrorAction SilentlyContinue) { py -0p }
+          if (Get-Command python -ErrorAction SilentlyContinue) { python --version }
+          Get-ChildItem "$env:RUNNER_TOOL_CACHE\Python" -Name
+          "Start Menu programs: $([Environment]::GetFolderPath('Programs'))"
+          Get-PSDrive C | Format-Table Used, Free -AutoSize
+          exit 0
+
+      # install-windows.ps1 looks for py -3.13, then python on PATH. A user
+      # installs 3.13 from python.org; here the newest 3.13 the image ships
+      # in its tool cache goes first on PATH (the one tests.yml uses).
+      - name: Python 3.13 from the runner image
+        run: |
+          $python = Get-ChildItem -Path "$env:RUNNER_TOOL_CACHE\Python\3.13.*\x64\python.exe" |
+            Sort-Object { [version]$_.Directory.Parent.Name } | Select-Object -Last 1
+          if (-not $python) { throw 'The runner image has no Python 3.13 in its tool cache.' }
+          "$($python.DirectoryName)\Scripts" >> $env:GITHUB_PATH
+          $python.DirectoryName >> $env:GITHUB_PATH
+          & $python.FullName -c "import struct, sys, tkinter; print(sys.version, struct.calcsize('P') * 8, 'bit, tkinter ok')"
+
+      # Windows PowerShell 5.1, the shell a stock Windows opens. get.ps1 sets
+      # LASTEXITCODE to 1 when it stops, which fails the step.
+      - name: irm .../scripts/get.ps1 | iex
+        shell: powershell
+        run: irm https://raw.githubusercontent.com/zohartito/scrivo/main/scripts/get.ps1 | iex
+
+      - name: What the install left
+        run: |
+          $data = Join-Path $env:LOCALAPPDATA 'sotto-alpha'
+          $src = Join-Path $env:USERPROFILE 'scrivo'
+          $venvPython = Join-Path $src 'venv-alpha\Scripts\python.exe'
+          $script:status = 0
+          function Missing([string]$Text) { Write-Host "::error::$Text"; $script:status = 1 }
+
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Scrivo.lnk'
+          if (Test-Path -LiteralPath $shortcut -PathType Leaf) {
+            $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+            "OK Scrivo.lnk: $shortcut"
+            "  target: $($link.TargetPath)"
+            "  arguments: $($link.Arguments)"
+            "  working folder: $($link.WorkingDirectory)"
+            if (-not (Test-Path -LiteralPath $link.TargetPath -PathType Leaf)) { Missing "the shortcut's target does not exist: $($link.TargetPath)" }
+          } else {
+            Missing "no Start Menu shortcut at $shortcut"
+          }
+
+          if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+            "OK venv: $(Split-Path (Split-Path $venvPython)) ($(& $venvPython --version))"
+            "  source: $(git -C $src log -1 --format='%h %s')"
+            $manifest = Join-Path $src 'venv-alpha\scrivo-install.json'
+            if (Test-Path -LiteralPath $manifest) { "  install record:"; Get-Content -LiteralPath $manifest | ForEach-Object { "    $_" } }
+            else { Missing "no install record at $manifest" }
+          } else {
+            Missing "no venv at $venvPython"
+          }
+
+          # The pins come from the installed copy: win_asr for the model, vad for Silero.
+          $env:SCRIVO_DATA_DIR = $data
+          $pins = & $venvPython -c "import sys; sys.path.insert(0, sys.argv[1]); import win_asr, vad; repo = win_asr.PROFILES['auto']; print(repo); print(win_asr.REVISIONS[repo]); print(','.join(win_asr.required_files(repo))); print(vad.MODEL_SHA256)" $src
+          if ($LASTEXITCODE -ne 0 -or @($pins).Count -ne 4) { Missing 'could not read the pins' }
+          else {
+            $repo, $revision, $files, $vadSha = $pins
+            $snapshot = Join-Path $data "huggingface\hub\models--$($repo -replace '/', '--')\snapshots\$revision"
+            $absent = @($files -split ',' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $snapshot $_) -PathType Leaf) })
+            if ($absent.Count -eq 0) {
+              "OK speech model: $repo@$($revision.Substring(0, 12)) in $snapshot"
+              Get-ChildItem -LiteralPath $snapshot | ForEach-Object { "  {0,14:N0}  {1}" -f (Get-Item -LiteralPath $_.FullName).Length, $_.Name }
+            } else {
+              Missing "pinned speech model incomplete in ${snapshot}: missing $($absent -join ', ')"
+            }
+            $vadFile = Join-Path $data 'models\silero_vad.onnx'
+            if ((Test-Path -LiteralPath $vadFile) -and (Get-FileHash -LiteralPath $vadFile -Algorithm SHA256).Hash -eq $vadSha) {
+              "OK Silero VAD: $vadFile (sha256 matches the pin)"
+            } else {
+              Missing "Silero VAD missing or not the pinned bytes: $vadFile"
+            }
+          }
+
+          "Sizes:"
+          foreach ($folder in $data, (Join-Path $data 'huggingface'), (Join-Path $src 'venv-alpha')) {
+            $bytes = (Get-ChildItem -LiteralPath $folder -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
+            "  {0,8:N1} MB  {1}" -f ($bytes / 1MB), $folder
+          }
+          "Data folder:"
+          Get-ChildItem -LiteralPath $data -Depth 1 -Force -ErrorAction SilentlyContinue | ForEach-Object { "  $($_.FullName.Substring($data.Length))" }
+          exit $script:status
+
+      # A hosted runner has no microphone: doctor's microphone check is
+      # expected to fail and only that one is let through.
+      - name: scrivo_win.py doctor
+        run: |
+          $data = Join-Path $env:LOCALAPPDATA 'sotto-alpha'
+          $src = Join-Path $env:USERPROFILE 'scrivo'
+          $env:SCRIVO_DATA_DIR = $data
+          $env:SCRIVO_HF_HOME = Join-Path $data 'huggingface'
+          # Readable check marks in this log (a console gets them either way).
+          $env:PYTHONIOENCODING = 'utf-8'
+          try { [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch { }
+          $out = @(& (Join-Path $src 'venv-alpha\Scripts\python.exe') (Join-Path $src 'scrivo_win.py') doctor 2>&1 | ForEach-Object { "$_" })
+          $code = $LASTEXITCODE
+          $out | ForEach-Object { Write-Host $_ }
+          "doctor exit code: $code"
+          $cross = [string][char]0x2717
+          $unexpected = @($out | Where-Object { $_.Contains($cross) -and $_ -notmatch 'microphone' })
+          if ($unexpected.Count -gt 0) { Write-Host "::error::doctor: $($unexpected -join ' | ')"; exit 1 }
+          if ($code -ne 0) { Write-Host "::warning::doctor exited $code; only its microphone check failed (no microphone on a hosted runner)" }
+          exit 0
+
+      # get.ps1 ends by starting the Start Menu shortcut (the tray app).
+      - name: The launched app
+        if: always()
+        run: |
+          $data = Join-Path $env:LOCALAPPDATA 'sotto-alpha'
+          $log = Join-Path $data 'scrivo.log'
+          foreach ($i in 1..30) { if ((Test-Path -LiteralPath $log) -and (Get-Item -LiteralPath $log).Length -gt 0) { break }; Start-Sleep -Seconds 2 }
+          Start-Sleep -Seconds 20
+          "Processes:"
+          $running = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*win_launch.py*' -or $_.CommandLine -like '*scrivo_win.py*' })
+          if ($running.Count -eq 0) { "  (no Scrivo process)" }
+          $running | ForEach-Object { "  $($_.ProcessId) (parent $($_.ParentProcessId)) $($_.ExecutablePath)"; "    $($_.CommandLine)" }
+          "Log ($log, counts and timings only):"
+          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 60 -Encoding UTF8 } else { "  (no log)" }

@@ -203,13 +203,17 @@ echo "== Speech model (first time: about 1.6 GB into $SCRIVO_HF_HOME)"
 
 echo "== Scrivo.app"
 "$VENV/bin/python" "$ROOT/scripts/install_app.py" --data-dir "$DATA_DIR"
+# Where install_app.py built it. Named by its path: LaunchServices does not
+# know a bundle this new yet, so "open -a Scrivo" can find nothing at first.
+APP=/Applications/Scrivo.app
+[ -w /Applications ] || APP="$HOME/Applications/Scrivo.app"
 
 cat <<EOF
 
-Done. Open Scrivo like any app (Spotlight, Launchpad, or: open -a Scrivo).
+Done. Open Scrivo like any app (Spotlight, the Applications folder, or: open $(printf %q "$APP")).
 The first time, allow "Scrivo" to use the Microphone and turn it on under
 System Settings → Privacy & Security → Accessibility (newer macOS calls it
 Device Control and Data Access). Then hold right Option, speak, and release.
 Choose another key, languages and "Start Scrivo when I log in" under Settings…
-in Scrivo's menu. Update later with: scripts/install-mac.sh --update
+in Scrivo's menu. Update later with: $(printf %q "$ROOT/scripts/install-mac.sh") --update
 EOF

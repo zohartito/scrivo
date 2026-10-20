@@ -1,6 +1,6 @@
 # Advanced development (outside the source alpha)
 
-The public source alpha uses baseline Whisper or manually selected Nemotron.
+The public source alpha uses baseline Whisper, or manually selected Parakeet or Nemotron.
 Do not enable `--adaptive`, run learning preflight, provision teachers, or
 install a background learning worker for alpha testing. These notes describe
 experimental development workflows; they are not onboarding steps.
@@ -167,7 +167,7 @@ All models, snapshots, receipts, audio, and evaluation remain on this Mac;
 offline launch fails clearly if the preflighted local snapshot is absent. The
 initial candidate is `mlx-community/whisper-large-v3-turbo`; the first
 challenger is local `mlx-community/parakeet-tdt-0.6b-v2`. At zero gold Scrivo is
-simply collecting—there is no auto-fine-tuning. See [adaptive research](docs/english-adaptive-research.md).
+simply collecting—there is no auto-fine-tuning. See [adaptive research](english-adaptive-research.md).
 
 The production LaunchAgent keeps the Whisper model resident but not the
 microphone. With `--idle-release 0`, key-down starts `AVAudioEngine` and
@@ -223,7 +223,7 @@ conditioning is disabled, so applying it to longer recordings would give
 misleading coverage.
 
 For the full consent, storage, export, evaluation, and training guidance, see
-[Speech-quality learning](docs/speech-learning.md).
+[Speech-quality learning](speech-learning.md).
 
 ## Offline backup and restore
 
