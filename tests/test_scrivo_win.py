@@ -2210,7 +2210,7 @@ class SharedPolicyRunTest(unittest.TestCase):
                          ["Hello World again", "", self.PREFIX, "[no speech detected]",
                           "\nSecond Hello World"])
         base = {"resampled_normalized": True, "vad_trimmed": False, "silence_collapsed": False,
-                "detected_language": "en"}
+                "detected_language": "en", "decode": {"path": "faster-whisper"}}
         rule = [{"heard": "hello world", "write": "Hello World", "count": 1}]
         self.assertEqual([row["preprocessing"] for row in rows], [
             dict(base, dictionary={"rules": rule, "asr_text": "hello world, um, again"},

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import json
+import math
 import os
 from pathlib import Path
 from typing import Iterable
@@ -357,3 +358,64 @@ def transcription_kwargs(speech_config, glossary_terms: tuple[str, ...], duratio
         },
     }
     return kwargs, metadata
+
+
+# Decode telemetry: which Whisper decode step produced a transcript, so a
+# repetition loop can be traced to a greedy (T=0) decode or to a temperature
+# fallback. mlx-whisper 0.4.3's full pipeline decodes each 30 s window at
+# temperatures (0.0, 0.2, 0.4, 0.6, 0.8, 1.0), moving on while the compression
+# ratio is above 2.4 or the average log-probability below -1.0, unless the
+# no-speech probability is above 0.6; LocalWhisper.one_pass is one greedy
+# decode. Recorded only: no decode option, threshold or text depends on it.
+DECODE_TEMPERATURES_KEPT = 32
+
+
+def _decode_number(value) -> float | None:
+    """``value`` as a rounded finite float (JSON-safe), else None. Never
+    raises: a malformed decode result must never cost a dictation."""
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    return round(number, 3) if math.isfinite(number) else None
+
+
+def full_decode_summary(result) -> dict:
+    """The decode block for mlx_whisper.transcribe's ``result``. Each segment
+    carries the temperature, compression ratio and log-probabilities of the
+    window decode that produced it (DecodingResult's are NaN until set)."""
+    try:
+        segments = result.get("segments") if isinstance(result, dict) else None
+        segments = ([segment for segment in segments if isinstance(segment, dict)]
+                    if isinstance(segments, list) else [])
+
+        def values(key: str) -> list[float]:
+            return [number for number in (_decode_number(segment.get(key)) for segment in segments)
+                    if number is not None]
+
+        temperatures = values("temperature")
+        # Index-aligned with temperatures: the same segments' compression
+        # ratios, None where a segment's ratio is not a finite number.
+        compression_ratios = [_decode_number(segment.get("compression_ratio")) for segment in segments
+                              if _decode_number(segment.get("temperature")) is not None]
+        return {"path": "full", "segments": len(segments),
+                "temperatures": temperatures[:DECODE_TEMPERATURES_KEPT],
+                "compression_ratios": compression_ratios[:DECODE_TEMPERATURES_KEPT],
+                "max_temperature": max(temperatures, default=None),
+                "max_compression_ratio": max(values("compression_ratio"), default=None),
+                "min_avg_logprob": min(values("avg_logprob"), default=None),
+                "max_no_speech_prob": max(values("no_speech_prob"), default=None),
+                "fallback_used": any(temperature > 0 for temperature in temperatures)}
+    except Exception:  # telemetry must never cost a dictation
+        return {"path": "full", "unreadable": True}
+
+
+def one_pass_decode_summary(result) -> dict:
+    """The decode block for LocalWhisper.one_pass's single greedy
+    DecodingResult; one_pass adds its ``outcome``."""
+    try:
+        fields = {key: _decode_number(getattr(result, key, None))
+                  for key in ("compression_ratio", "avg_logprob", "no_speech_prob")}
+    except Exception:  # telemetry must never cost a dictation
+        fields = {"unreadable": True}
+    return {"path": "one_pass", "temperature": 0.0, **fields}
