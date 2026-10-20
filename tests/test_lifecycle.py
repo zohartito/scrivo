@@ -206,6 +206,16 @@ class ExitGuardTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertEqual(exits, [])
 
+    def test_a_blocked_log_write_cannot_keep_it_from_exiting(self):
+        release, exits = threading.Event(), []
+        try:
+            lifecycle.exit_if_shutdown_stuck(types.SimpleNamespace(wait=lambda seconds: False), lambda: False,
+                                             log=lambda line: release.wait(30), exit_process=exits.append,
+                                             limit=1.0)
+            self.assertEqual(exits, [0])
+        finally:
+            release.set()
+
     def test_the_limit_leaves_room_for_the_slowest_legitimate_teardown(self):
         slowest = (lifecycle.RESTART_DRAIN_DEADLINE_S + lifecycle.APP_DRAIN_TIMEOUT
                    + lifecycle.RESTART_RELEASE_WAIT_S + lifecycle.SIGTERM_RESTORE_WAIT_S)

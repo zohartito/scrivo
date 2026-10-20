@@ -1529,11 +1529,11 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
 
     def shutdown_watcher() -> None:
         shutdown.event.wait()
+        threading.Thread(target=exit_if_shutdown_stuck, daemon=True, name="scrivo-exit-guard",
+                         args=(run_finished, lambda: restart.foreground_pending)).start()  # armed before any log
         reason = (signal.Signals(shutdown.stop_signal).name if shutdown.stop_signal
                   else "restart" if restart.foreground_pending else "quit")
         log(f"● shutting down ({reason})")
-        threading.Thread(target=exit_if_shutdown_stuck, daemon=True, name="scrivo-exit-guard",
-                         args=(run_finished, lambda: restart.foreground_pending)).start()
         try:
             AppHelper.callAfter(stop_runtime_on_main)
         except Exception:
@@ -1545,16 +1545,20 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     threading.Thread(target=shutdown_watcher, daemon=True).start()
     threading.Thread(target=lifecycle.watch_signals, daemon=True, name="scrivo-signals").start()
 
-    if status_ui is not None:
-        # menu actions + system lifecycle hooks
-        status_ui.set_history_callbacks(controller.menu_callbacks())
-        status_ui.on_wake = lambda: (not shutdown.requested() and
-                                     (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
-        controller.refresh_history()
+    try:
+        if status_ui is not None:
+            # menu actions + system lifecycle hooks
+            status_ui.set_history_callbacks(controller.menu_callbacks())
+            status_ui.on_wake = lambda: (not shutdown.requested() and
+                                         (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
+            controller.refresh_history()
 
-    log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
-        + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
-        + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
+        log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
+            + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
+            + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
+    except BaseException:
+        run_finished.set()  # run() is raising: no guard may outlive it
+        raise
     try:
         with shutdown_signal_handlers(shutdown):
             # Cocoa/CFRunLoop can otherwise sit in native code indefinitely;
@@ -1574,12 +1578,14 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown.request()
         log("\nshutting down")
     finally:
-        shutdown.stop_capture(capture)
-        shutdown.discard_queued(jobs)
-        transcription_thread.join(APP_DRAIN_TIMEOUT)
-        if nemotron is not None and not transcription_thread.is_alive():
-            nemotron.close()
-        run_finished.set()
+        try:
+            shutdown.stop_capture(capture)
+            shutdown.discard_queued(jobs)
+            transcription_thread.join(APP_DRAIN_TIMEOUT)
+            if nemotron is not None and not transcription_thread.is_alive():
+                nemotron.close()
+        finally:
+            run_finished.set()  # also when the cleanup above raises
 
 
 def doctor() -> None:
