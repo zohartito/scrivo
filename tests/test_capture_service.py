@@ -12,6 +12,7 @@ name_of is released.
 import ast
 import contextlib
 import ctypes
+import os
 import queue
 import sys
 import threading
@@ -425,7 +426,7 @@ class FailedMicStartTest(unittest.TestCase):
         self.fast_time = types.SimpleNamespace(monotonic=lambda: time.monotonic() * 20,
                                                sleep=real_sleep, time=time.time)
 
-    def wire(self, *, with_handler):
+    def wire(self, *, with_handler, ui_call=None, failure_message=None):
         capture = scrivo.CaptureService()
         capture._engine_obj = FakeEngine(start_ok=False)   # device busy or gone
         ui, jobs = StatusUI(), queue.Queue()
@@ -443,10 +444,13 @@ class FailedMicStartTest(unittest.TestCase):
             "use_nemotron": False, "capture": capture, "jobs": jobs,
             "model_rewarm_due": lambda *a, **k: False,
             "model_activity": {"last_finished": 0.0, "rewarming": False},
-            "adaptive": False, "status_ui": ui, "ui_call": lambda method, *a: method(*a),
+            "adaptive": False, "status_ui": ui,
+            "ui_call": ui_call or (lambda method, *a: method(*a)),
             "log": self.logs.append, "time": self.fast_time, "threading": threading,
             "uuid": uuid, "current_speech_config": lambda: None, "np": np,
             "spool": types.SimpleNamespace(submit=lambda *a: None),  # N9b; tests/test_capture_spool.py
+            "mic_alert": threading.Lock(),
+            "mic_start_failure_message": lambda: failure_message or capture_module.MIC_START_FAILED_TEXT,
         }
         names = ["on_start", "on_finish", "finish_capture", "on_discard"]
         if with_handler:
@@ -498,6 +502,125 @@ class FailedMicStartTest(unittest.TestCase):
         self.assertNotIn("● recording (mic live)", self.logs)
         self.assertEqual(jobs.qsize(), 0)                   # nothing pretends to record
         self.assertLessEqual(sum("captured" in line for line in self.logs), 1)
+
+    def press_and_release(self, gesture):
+        gesture.pressed()
+        self.join_all()
+        gesture.released()
+        self.join_all()
+
+    def test_a_press_while_the_alert_is_open_does_not_stack_a_second_one(self):
+        """2026-10-25: two presses during a mic outage stacked two identical
+        alerts, because callAfter runs inside the open alert's modal loop."""
+        posted = []
+
+        def run_posted():
+            while posted:
+                method, args = posted.pop(0)
+                method(*args)
+
+        with fake_avfoundation(lambda: None), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
+            capture, gesture, ui, jobs = self.wire(
+                with_handler=True, ui_call=lambda method, *a: posted.append((method, a)))
+            self.press_and_release(gesture)    # its alert is posted but still open
+            self.press_and_release(gesture)
+            run_posted()                       # the user dismisses it
+            self.assertEqual(ui.names().count("show_error"), 1, ui.calls)
+            self.assertIn("○ microphone alert already open — not shown again", self.logs)
+            self.press_and_release(gesture)    # a later failure is reported again
+            run_posted()
+        self.assertEqual(ui.names().count("show_error"), 2, ui.calls)
+
+    def test_the_alert_says_what_the_failure_check_found(self):
+        with fake_avfoundation(lambda: None), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
+            capture, gesture, ui, jobs = self.wire(with_handler=True,
+                                                   failure_message="Python (mac_run.py) holds it")
+            self.press_and_release(gesture)
+        errors = [call for call in ui.calls if call[0] == "show_error"]
+        self.assertEqual(errors, [("show_error", "Could not start the microphone",
+                                   "Python (mac_run.py) holds it")])
+
+    def test_an_alert_that_could_not_be_posted_does_not_silence_later_ones(self):
+        refused = []
+
+        def ui_call(method, *args):
+            if method.__name__ == "show_mic_alert" and not refused:
+                refused.append(method)
+                raise RuntimeError("callAfter failed")
+            method(*args)
+
+        with fake_avfoundation(lambda: None), \
+             mock.patch.object(capture_module, "_pin_input_to_builtin", lambda node: 77):
+            capture, gesture, ui, jobs = self.wire(with_handler=True, ui_call=ui_call)
+            self.press_and_release(gesture)    # its alert never reaches the main thread
+            self.press_and_release(gesture)
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(ui.names().count("show_error"), 1, ui.calls)
+        self.assertIn("! mic failure handler failed: callAfter failed", self.logs)
+
+
+# -- 2026-10-25: no lockable memory left for audio -----------------------------
+
+class MicStartFailureMessageTest(unittest.TestCase):
+    """A local model run held 48.8 GB of Metal memory (wired) on a 64 GB Mac.
+    Wired memory passed vm.global_user_wire_limit, coreaudiod's mlock of the
+    mic's I/O buffer failed with EAGAIN, and kAUStartIO failed for every app.
+    The alert blamed permissions; it should name what holds the memory."""
+
+    def message(self, *, can_lock, holder=(50135, 48_800_000_000)):
+        with mock.patch.object(capture_module, "_can_lock_audio_buffer", lambda: can_lock), \
+             mock.patch.object(capture_module, "_largest_wired_process", lambda: holder), \
+             mock.patch.object(capture_module, "_process_label",
+                               lambda pid: f"Python (mac_run.py, pid {pid})"):
+            return capture_module.mic_start_failure_message()
+
+    def test_no_lockable_memory_names_the_process_holding_it(self):
+        text = self.message(can_lock=False)
+        self.assertIn("Python (mac_run.py, pid 50135) is holding 48.8 GB", text)
+        self.assertIn("no app can use the microphone", text)
+        self.assertNotIn("Privacy & Security", text)
+
+    def test_lockable_memory_keeps_the_device_and_permission_advice(self):
+        text = self.message(can_lock=True)
+        self.assertEqual(text, capture_module.MIC_START_FAILED_TEXT)
+        self.assertIn("Privacy & Security", text)
+
+    def test_a_small_holder_is_not_blamed(self):
+        text = self.message(can_lock=False, holder=(4242, 300_000_000))
+        self.assertIn("no app can use the microphone", text)
+        self.assertNotIn("4242", text)
+
+    def test_no_inspectable_holder_still_explains_the_shortage(self):
+        text = self.message(can_lock=False, holder=None)
+        self.assertIn("no app can use the microphone", text)
+
+    def test_a_failed_check_falls_back_to_the_device_advice(self):
+        def unavailable():
+            raise OSError(1, "mlock unavailable")
+
+        logs = []
+        with mock.patch.object(capture_module, "_can_lock_audio_buffer", unavailable), \
+             mock.patch.object(capture_module, "log", logs.append):
+            self.assertEqual(capture_module.mic_start_failure_message(),
+                             capture_module.MIC_START_FAILED_TEXT)
+        self.assertEqual(logs, ["! memory check failed: [Errno 1] mlock unavailable"])
+
+    @unittest.skipUnless(sys.platform == "darwin", "calls macOS mlock")
+    def test_a_finite_lock_limit_of_our_own_proves_nothing(self):
+        """mlock's EAGAIN also means this process hit its own RLIMIT_MEMLOCK,
+        which says nothing about coreaudiod."""
+        import resource
+        with mock.patch.object(resource, "getrlimit", lambda which: (1024, 1024)):
+            self.assertTrue(capture_module._can_lock_audio_buffer())
+
+    @unittest.skipUnless(sys.platform == "darwin", "calls macOS mlock and libproc")
+    def test_the_real_calls_run_on_this_mac(self):
+        self.assertIsInstance(capture_module._can_lock_audio_buffer(), bool)
+        holder = capture_module._largest_wired_process()
+        self.assertTrue(holder is None or (holder[0] > 0 and holder[1] >= 0), holder)
+        self.assertIn(f"pid {os.getpid()})", capture_module._process_label(os.getpid()))
 
 
 # -- F41: doctor probes the input the capture path records from ---------------

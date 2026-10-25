@@ -187,6 +187,107 @@ def _pin_input_to_builtin(node) -> int | None:
     return device
 
 
+MIC_START_FAILED_TEXT = (
+    "Scrivo could not open the input device. Check that another app is not holding it and "
+    "that Scrivo may use the microphone (System Settings → Privacy & Security → Microphone), "
+    "then press the key again.")
+# macOS refuses every mlock() once the system's wired memory reaches
+# vm.global_user_wire_limit (RAM minus vm.global_no_user_wire_amount, ~82%),
+# and coreaudiod mlocks each client's I/O buffer when a mic starts.
+# 2026-10-25: a local model benchmark held 48.8 GB of Metal memory (Metal
+# memory is wired) on a 64 GB Mac; coreaudiod logged "mlock failed ... errno
+# 35" and kAUStartIO returned 'what' for every app, a fresh process included,
+# until that run ended. Nothing in Scrivo can start the mic then, so the
+# alert names what holds the memory instead of blaming permissions.
+LOCK_PROBE_BYTES = 16 * 1024            # one page; coreaudiod locked 1.2 MB per mic
+WIRED_HOLDER_MIN_BYTES = 1_000_000_000  # smaller holders are not the cause
+
+
+def _can_lock_audio_buffer() -> bool:
+    """Whether a process may still mlock a page — the call coreaudiod makes
+    when a mic starts, under the same system-wide limit. Only EAGAIN counts
+    as no, and only when this process has no lock limit of its own (the
+    macOS default): EAGAIN also means a finite RLIMIT_MEMLOCK was hit."""
+    import ctypes
+    import errno
+    import resource
+    if resource.getrlimit(resource.RLIMIT_MEMLOCK)[0] != resource.RLIM_INFINITY:
+        return True   # cannot tell the system limit from our own
+    libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+    libc.mlock.argtypes = libc.munlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    buf = ctypes.create_string_buffer(LOCK_PROBE_BYTES)
+    if libc.mlock(buf, len(buf)) != 0:
+        return ctypes.get_errno() != errno.EAGAIN
+    libc.munlock(buf, len(buf))
+    return True
+
+
+def _largest_wired_process() -> tuple[int, int] | None:
+    """(pid, wired bytes) of the process wiring the most memory, among the
+    processes this user may inspect (macOS hides system and other users')."""
+    import ctypes
+
+    class RusageInfoV0(ctypes.Structure):
+        _fields_ = [("uuid", ctypes.c_uint8 * 16)] + [
+            (name, ctypes.c_uint64) for name in (
+                "user_time", "system_time", "pkg_idle_wkups", "interrupt_wkups",
+                "pageins", "wired_size", "resident_size", "phys_footprint",
+                "proc_start_abstime", "proc_exit_abstime")]
+
+    libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+    libproc.proc_pid_rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+    pids = (ctypes.c_int * (libproc.proc_listallpids(None, 0) + 64))()
+    count = libproc.proc_listallpids(pids, ctypes.sizeof(pids))
+    largest = None
+    for pid in pids[:max(count, 0)]:
+        usage = RusageInfoV0()
+        if libproc.proc_pid_rusage(pid, 0, ctypes.byref(usage)) != 0:  # RUSAGE_INFO_V0
+            continue
+        if largest is None or usage.wired_size > largest[1]:
+            largest = (pid, usage.wired_size)
+    return largest
+
+
+def _process_label(pid: int) -> str:
+    """'Python (mac_run.py, pid 50135)': the program name plus the script it
+    runs, so the user can tell which of several Python processes to quit."""
+    import ctypes
+    import subprocess
+    from pathlib import Path
+    buf = ctypes.create_string_buffer(256)
+    ctypes.CDLL("/usr/lib/libproc.dylib").proc_name(pid, buf, len(buf))
+    name = buf.value.decode("utf-8", "replace") or "a process"
+    try:
+        args = subprocess.run(["/bin/ps", "-o", "args=", "-p", str(pid)],
+                              capture_output=True, text=True, timeout=2).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        args = []
+    script = next((Path(arg).name for arg in args[1:] if arg.endswith(".py")), None)
+    return f"{name} ({script}, pid {pid})" if script else f"{name} (pid {pid})"
+
+
+def mic_start_failure_message() -> str:
+    """What the mic-failure alert says. When macOS refuses to lock even a
+    page no app can start a mic, so it names the biggest holder
+    of locked memory; any other failure keeps the device and permission
+    advice. Never raises."""
+    try:
+        if _can_lock_audio_buffer():
+            return MIC_START_FAILED_TEXT
+        holder = _largest_wired_process()
+        shortage = ("Your Mac has no memory left that it can lock for audio, "
+                    "so no app can use the microphone right now.")
+        if holder is None or holder[1] < WIRED_HOLDER_MIN_BYTES:
+            return (f"{shortage} Quit a large local AI model or another app that "
+                    "uses a lot of memory, then press the key again.")
+        pid, held = holder
+        return (f"{shortage} {_process_label(pid)} is holding {held / 1e9:.1f} GB of it. "
+                "Quit it or let it finish, then press the key again.")
+    except Exception as exc:
+        log(f"! memory check failed: {str(exc)[:120]}")
+        return MIC_START_FAILED_TEXT
+
+
 PREROLL_S = 0.35     # available only while a deliberately retained engine runs
 RING_S = 5.0         # rolling pre-roll ring capacity
 IDLE_STOP_S = 0.0    # production privacy boundary: stop the mic on key-up.
