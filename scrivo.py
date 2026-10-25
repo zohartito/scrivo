@@ -72,7 +72,7 @@ from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, Ge
 # nothing from scrivo); these names stay importable from scrivo for existing callers.
 from capture import (HEADPHONE_OUTPUT_TERMINALS, HEADSET_INPUT_TERMINALS, HEADSET_NAME_HINTS,  # noqa: F401
                      IDLE_STOP_S, PREROLL_S, RING_S, SAMPLE_RATE, SILENCE_RESTART_AFTER_S, CaptureService,
-                     doctor_input_probe, join_capture_blocks)
+                     doctor_input_probe, join_capture_blocks, mic_start_failure_message)
 # The trigger/hotkey tables and the event-tap listener live in hotkey.py (it
 # imports nothing from scrivo; run() hands it Quartz as an adapter); these
 # names stay importable from scrivo for existing callers.
@@ -1344,16 +1344,32 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         End the gesture so the key-up finds nothing to finish, and say so
         once — a dead mic used to show "recording" and then lose the dictation
         without a word. Finishing (not discarding) keeps whatever a
-        mid-capture rebuild had already recorded."""
+        mid-capture rebuild had already recorded. One alert at a time: a
+        failed press while it is still open is only logged (2026-10-25: two
+        presses stacked two alerts, as callAfter runs inside its modal loop)."""
         if engine.force_finish():
             log("✗ could not start the microphone — dictation cancelled")
-        if status_ui:
-            ui_call(status_ui.show_error, "Could not start the microphone",
-                    "Scrivo could not open the input device. Check that another app "
-                    "is not holding it and that Scrivo may use the microphone "
-                    "(System Settings → Privacy & Security → Microphone), then "
-                    "press the key again.")
+        message = mic_start_failure_message()
+        if not status_ui:
+            log(f"! {message}")
+            return
+        if not mic_alert.acquire(blocking=False):
+            log("○ microphone alert already open — not shown again")
+            return
 
+        def show_mic_alert() -> None:
+            try:
+                status_ui.show_error("Could not start the microphone", message)
+            finally:
+                mic_alert.release()
+
+        try:
+            ui_call(show_mic_alert)
+        except Exception:
+            mic_alert.release()   # never posted: a held lock would silence every later alert
+            raise
+
+    mic_alert = threading.Lock()   # held while the mic-failure alert is open
     engine = GestureEngine(on_start, on_finish, on_discard, on_hands_free=on_hands_free)
     capture.on_start_failed = on_mic_failed
     lifecycle = Lifecycle(
