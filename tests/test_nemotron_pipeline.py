@@ -118,6 +118,7 @@ class PipelineTests(unittest.TestCase):
                 "scrivo.GestureEngine": RecordingEngine,
                 "scrivo.inject": inject,
                 "nemotron_backend.NemotronRuntime": lambda: runtime,
+                "history.STORE_DIR": Path(directory),  # the data folder run() claims before History opens
                 "history.HistoryStore": make_store,
                 "learning.LearningStore": make_learning,
                 "ui.init_app": lambda: status,

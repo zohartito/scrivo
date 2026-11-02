@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import queue
+import re
 import shutil
 import signal
 import stat
@@ -31,6 +32,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
@@ -767,6 +769,158 @@ def append_untranscribed_capture(coordinator, *, raw, native_rate, captured_ts, 
         adaptive=False, **attempt_metadata)
 
 
+# One Scrivo per data folder. The holder of a data folder's spool claim
+# records its pid in .owner (history.CaptureSpool.record_owner). 2026-11-01:
+# swap ran out and macOS suspended that copy (its process-control policy says
+# suspend under resource starvation); it kept the folder, the hotkey and its
+# menu bar slot, all dead, ran no SIGTERM handler, and opening Scrivo.app again
+# started a second copy beside it. A holder is killed only when it made no
+# context switch or system call for OWNER_CONFIRM_S (a running Scrivo makes
+# hundreds a second, even while a native call holds its GIL or App Nap slows
+# it) and either the kernel says it is suspended or stopped, or its record says
+# it is listening: then its watchdog threads move every second. One starting
+# may wait in native code (a model load) with nothing moving, and one stopping
+# on a lock; the exit guard ends a stuck shutdown.
+OWNER_CONFIRM_S = 10.0
+OWNER_POLL_S = 0.5
+OWNER_PUBLISH_WAIT_S = 10.0  # for a new holder's record, written just after it takes the lock
+OWNER_KILL_WAIT_S = 5.0
+OWNER_SETTLE_S = 60.0  # then a launch that keeps losing the folder to other launches gives up
+_SCRIVO_ENTRY = re.compile(r"(?:^|[\s/])(?:scrivo|sotto|sealed_release_bootstrap)\.py(?:\s|$)")
+ALREADY_RUNNING_MESSAGE = (
+    "It is already listening for your dictation key, so this second copy is closing.\n\n"
+    "Can't see its ◦ in the menu bar? When the menu bar is full, macOS hides some icons; "
+    "newer versions keep them behind «.\n\n"
+    "Not responding? Quit “Python” in Activity Monitor, then open Scrivo again.")
+
+
+class ProcessState(NamedTuple):
+    started: float  # epoch seconds
+    activity: int  # context switches + system calls so far: still while suspended or stopped
+    suspended: bool  # stopped (SSTOP), or suspended for resource starvation (PROC_FLAG_PA_SUSP)
+
+
+def process_args(pid: int) -> str:
+    """``ps``'s command line for ``pid``; '' when there is none."""
+    try:
+        return subprocess.run(["/bin/ps", "-o", "args=", "-p", str(pid)],
+                              capture_output=True, text=True, timeout=2).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def process_state(pid: int) -> ProcessState | None:
+    """What the kernel says about ``pid`` (libproc, <sys/proc_info.h>:
+    proc_bsdinfo and proc_taskinfo); None when it is gone or not ours to read."""
+    import ctypes
+    import struct
+    libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+    libproc.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
+    bsd, task = ctypes.create_string_buffer(136), ctypes.create_string_buffer(96)
+    # PROC_PIDTBSDINFO (3) and PROC_PIDTASKINFO (4)
+    if libproc.proc_pidinfo(pid, 3, 0, bsd, 136) != 136 or libproc.proc_pidinfo(pid, 4, 0, task, 96) != 96:
+        return None
+    flags, status = struct.unpack_from("=II", bsd.raw, 0)  # pbi_flags, pbi_status
+    start_s, start_us = struct.unpack_from("=QQ", bsd.raw, 120)  # pbi_start_tvsec, pbi_start_tvusec
+    mach, unix, switches = struct.unpack_from("=iii", task.raw, 72)  # pti_syscalls_mach, _unix, pti_csw
+    return ProcessState(start_s + start_us / 1e6, mach + unix + switches,
+                        status == 4 or bool(flags & 0x1000))  # SSTOP, PROC_FLAG_PA_SUSP
+
+
+def spool_holder(spool, *, state_of=process_state, args_of=process_args, monotonic=time.monotonic,
+                 sleep=time.sleep) -> tuple[int, ProcessState, bool] | None:
+    """The Scrivo process whose record is on ``spool``'s claim, with whether
+    it was listening, or None. A record is the holder's only when its process
+    started before the record was written: a pid an earlier holder left may
+    belong to a newer process by now. A new holder writes its record just
+    after it takes the lock, so a record that fits no process is read again
+    for OWNER_PUBLISH_WAIT_S."""
+    deadline = monotonic() + OWNER_PUBLISH_WAIT_S
+    while True:
+        pid, written, listening = spool.owner()
+        state = state_of(pid) if pid is not None and pid != os.getpid() else None
+        if state is not None and state.started < written:
+            return (pid, state, listening) if _SCRIVO_ENTRY.search(args_of(pid)) else None
+        if monotonic() >= deadline:
+            return None
+        sleep(OWNER_POLL_S)
+
+
+def take_data_folder(spool, *, state_of=process_state, args_of=process_args, kill=os.kill,
+                     monotonic=time.monotonic, sleep=time.sleep, log=log) -> str:
+    """Claim this data folder's capture spool (N9b), or say who holds it.
+
+    "owner": the claim is ours, with our pid recorded (run() records it
+    listening, then stopping). "running": a Scrivo that is not frozen holds it; this
+    launch must not become a second listener on the same key. "shared": the
+    holder cannot be identified (a build from before the record): run as
+    before, without the spool. A frozen Scrivo (still, and suspended, stopped
+    or listening) is SIGKILLed (it runs no SIGTERM handler) and the claim
+    taken; what it had spooled becomes rows at recovery, like a crash's.
+
+    Side effects: may wait up to OWNER_SETTLE_S; may kill the holder; logs."""
+    def claimed() -> bool:
+        if not spool.claim():
+            return False
+        spool.record_owner()
+        return True
+
+    settle = monotonic() + OWNER_SETTLE_S
+    while monotonic() < settle:
+        if claimed():
+            return "owner"
+        found = spool_holder(spool, state_of=state_of, args_of=args_of, monotonic=monotonic, sleep=sleep)
+        if found is None:
+            return "owner" if claimed() else "shared"
+        pid, first, listening = found
+        latest, deadline = first, monotonic() + OWNER_CONFIRM_S
+        while monotonic() < deadline:
+            sleep(OWNER_POLL_S)
+            if claimed():
+                return "owner"
+            latest = state_of(pid)
+            if latest is None or latest.started != first.started:
+                break  # it exited, and its lock with it
+            if latest.activity != first.activity:
+                return "running"
+        else:  # it never moved
+            if not (latest.suspended or listening):
+                return "running"  # starting or stopping: waiting in native code or on a lock, say
+            log(f"! the Scrivo holding this data folder (pid {pid}) made no system call in "
+                f"{OWNER_CONFIRM_S:.0f}s" + (" and macOS has it suspended (it suspends apps when "
+                                              "memory runs out)" if latest.suspended else "")
+                + " — stopping it")
+            try:
+                kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                log(f"! could not stop pid {pid}: {exc}")
+                return "shared"
+        deadline = monotonic() + OWNER_KILL_WAIT_S
+        while monotonic() < deadline:
+            if claimed():
+                return "owner"
+            sleep(0.1)
+        # Another launch (launchd's KeepAlive, say) took it first: look at that one.
+    return "owner" if claimed() else "running"
+
+
+def refuse_second_copy() -> None:
+    """Another Scrivo runs on this data folder: say so and exit rather than
+    listen on the same key beside it (both would paste). A copy launchd
+    started exits 0 without a dialog, so KeepAlive does not start it again.
+
+    Side effects: logs; in Scrivo.app shows one alert; exits."""
+    import login_item
+    log("✗ Scrivo is already running with this data folder — this copy is closing")
+    by_launchd = os.environ.get("XPC_SERVICE_NAME") in (login_item.LABEL, LAUNCHD_LABEL)
+    if app_mode() and not by_launchd:
+        import ui
+        ui.notice_dialog("Scrivo is already running", ALREADY_RUNNING_MESSAGE, icon_path=scrivo_icon_path())
+    sys.exit(0 if app_mode() or by_launchd else 1)
+
+
 def recover_capture_spool(spool, store, coordinator, *, model, speech_config, glossary_terms, log) -> int:
     """At launch, before the UI: every capture a stopped Scrivo left in the
     spool (N9b: a crash, SIGKILL or a logout that skipped the drain) becomes
@@ -1090,6 +1244,13 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             "Microphone → enable your terminal/Python, then run the command again")
         sys.exit(1)
 
+    # One Scrivo per data folder, settled before the model loads and before
+    # History's lock is taken: a paused holder may be holding that one too.
+    import history
+    spool = history.CaptureSpool(history.STORE_DIR, log=log)
+    if take_data_folder(spool, log=log) == "running":
+        refuse_second_copy()
+
     from PyObjCTools import AppHelper
     mlx_whisper = None
     nemotron = None
@@ -1167,10 +1328,8 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             f"{learning_unreadable_message(learning_store)}")
     # N9b: each finished capture waits on disk until its History row exists;
     # what a crash, SIGKILL or logout left there becomes rows before the UI.
-    from history import CaptureSpool
-    spool = CaptureSpool(store.base_dir, log=log)
     spool_waiting = 0
-    if spool.claim():
+    if spool.claimed:
         spool_waiting = recover_capture_spool(spool, store, coordinator, model=model,
                                               speech_config=current_speech_config(),
                                               glossary_terms=glossary_terms, log=log)
@@ -1564,6 +1723,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
 
     def shutdown_watcher() -> None:
         shutdown.event.wait()
+        spool.record_owner("stopping")  # the watchdogs stop next; a slow teardown is not a frozen copy
         threading.Thread(target=exit_if_shutdown_stuck, daemon=True, name="scrivo-exit-guard",
                          args=(run_finished, lambda: restart.foreground_pending)).start()  # armed before any log
         reason = (signal.Signals(shutdown.stop_signal).name if shutdown.stop_signal
@@ -1591,6 +1751,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         log(f"listening on {trigger} · hold to talk, double-tap for hands-free"
             + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
             + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
+        spool.record_owner("listening")  # its watchdog threads run: frozen now means still
     except BaseException:
         run_finished.set()  # run() is raising: no guard may outlive it
         raise
