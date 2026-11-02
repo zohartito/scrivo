@@ -255,6 +255,15 @@ class DataFolderOwnerTests(TemporaryData):
         spool.record_owner("stopping")
         self.assertEqual(spool.owner()[::2], (os.getpid(), False))
 
+    def test_a_record_that_cannot_be_written_is_logged_not_raised(self):
+        # It is written at startup and as shutdown begins: neither may die on it.
+        logs = []
+        spool = new_spool(self.base, logs)
+        with unittest.mock.patch("os.pwrite", side_effect=OSError(30, "Read-only file system")):
+            spool.record_owner("stopping")
+        self.assertEqual(len(logs), 1)
+        self.assertIn("could not record this Scrivo (stopping)", logs[0])
+
     def test_a_free_data_folder_is_taken_and_recorded(self):
         outcome, spool = self.take(FakeClock(), {})
         self.assertEqual(outcome, "owner")

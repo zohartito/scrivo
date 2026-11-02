@@ -883,6 +883,19 @@ class DataFolderTests(unittest.TestCase):
         pid = str(scrivo.os.getpid())
         self.assertEqual(seen, [[pid, "listening"], [pid, "stopping"]])
 
+    def test_a_stopping_record_that_cannot_be_written_does_not_stop_the_shutdown(self):
+        # A read-only data volume, say: the record is lost, the drained shutdown is not.
+        def drive(app):
+            with patch("os.pwrite", side_effect=OSError(30, "Read-only file system")):
+                app.boundaries[0].request()
+                deadline = time.monotonic() + WAIT_S
+                while not app.logged("● shutting down") and time.monotonic() < deadline:
+                    REAL_SLEEP(0.01)
+
+        app = run_app(self, drive)
+        self.assertTrue(app.logged("! could not record this Scrivo (stopping)"))
+        self.assertTrue(app.logged("● shutting down"), "the shutdown watcher died on the failed write")
+
     def test_a_launch_beside_a_holder_it_cannot_identify_runs_as_before_without_the_spool(self):
         with patch("scrivo.take_data_folder", return_value="shared"):
             app = run_app(self, lambda app: None)

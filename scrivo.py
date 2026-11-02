@@ -1723,9 +1723,9 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
 
     def shutdown_watcher() -> None:
         shutdown.event.wait()
-        spool.record_owner("stopping")  # the watchdogs stop next; a slow teardown is not a frozen copy
         threading.Thread(target=exit_if_shutdown_stuck, daemon=True, name="scrivo-exit-guard",
                          args=(run_finished, lambda: restart.foreground_pending)).start()  # armed before any log
+        spool.record_owner("stopping")  # the watchdogs stop next; a slow teardown is not a frozen copy
         reason = (signal.Signals(shutdown.stop_signal).name if shutdown.stop_signal
                   else "restart" if restart.foreground_pending else "quit")
         log(f"● shutting down ({reason})")
