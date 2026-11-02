@@ -752,6 +752,46 @@ class CaptureSpool:
             unlock_exclusive(fd)
             os.close(fd)
 
+    def record_owner(self, phase: str = "starting") -> None:
+        """macOS: write this process id into ``.owner`` with its phase:
+        "starting", "listening" (its watchdog threads run) or "stopping", so a
+        later launch can find the process that holds the claim and tell a
+        frozen one from one starting or stopping (scrivo.take_data_folder).
+        The file's mtime says when: a pid an earlier holder left may belong to
+        a newer process by now, one that started after it was written. Never
+        raises (it runs at startup and as shutdown begins): without a record a
+        later launch runs as it did before records, beside this one.
+
+        Side effects: rewrites ``.owner``; logs a failed write."""
+        with self._lock:
+            if self._owner_fd is None:
+                return
+            # One fixed-width write, then the cut: a reader never sees it empty.
+            record = f"{os.getpid():>10} {phase:<9}\n".encode("ascii")
+            try:
+                os.pwrite(self._owner_fd, record, 0)
+                os.ftruncate(self._owner_fd, len(record))
+            except OSError as exc:
+                self.log(f"! could not record this Scrivo ({phase}) in {self.directory / '.owner'}: {exc}")
+
+    def owner(self) -> tuple[int | None, float | None, bool]:
+        """The pid ``record_owner`` wrote, when (the file's mtime, epoch
+        seconds) and whether its phase was "listening"; None for what is
+        missing or unreadable."""
+        try:
+            fd = os.open(self.directory / ".owner", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            return None, None, False
+        try:
+            written = os.fstat(fd).st_mtime
+            fields = os.read(fd, 32).decode("ascii", "replace").split()
+        except OSError:
+            return None, None, False
+        finally:
+            os.close(fd)
+        pid = int(fields[0]) if fields and fields[0].isdigit() else None
+        return pid, written, fields[1:] == ["listening"]
+
     def submit(self, capture_id: str, raw: np.ndarray, native_rate: float, captured_ts: float) -> None:
         """Queue one finished capture for the writer and return at once.
 

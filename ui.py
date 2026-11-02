@@ -142,6 +142,19 @@ class _PermissionWait(AppKit.NSObject):
             AppKit.NSApp.abortModal()
 
 
+def notice_dialog(title: str, message: str, *, icon_path=None) -> None:
+    """One OK alert before the menu bar exists (Scrivo.app has no terminal)."""
+    app = AppKit.NSApplication.sharedApplication()
+    app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+    use_app_icon(icon_path)
+    app.activateIgnoringOtherApps_(True)
+    alert = new_alert()
+    alert.setMessageText_(title)
+    alert.setInformativeText_(message)
+    alert.addButtonWithTitle_("OK")
+    alert.runModal()
+
+
 def permission_dialog(title: str, message: str, url: str, *, granted=None, register=None,
                       icon_path=None) -> bool:
     """Explain a missing permission and offer its System Settings pane.

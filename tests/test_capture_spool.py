@@ -164,6 +164,315 @@ class CaptureSpoolTests(TemporaryData):
         self.assertEqual(len(second.leftovers()), 1)
 
 
+class FakeClock:
+    """time.monotonic and time.sleep for take_data_folder: sleeping moves the clock."""
+
+    def __init__(self, on_sleep=None, on_monotonic=None):
+        self.now, self.on_sleep, self.on_monotonic, self.slept = 1000.0, on_sleep, on_monotonic, 0.0
+
+    def monotonic(self):
+        if self.on_monotonic is not None:
+            self.on_monotonic(self)
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+        self.slept += seconds
+        if self.on_sleep is not None:
+            self.on_sleep(self)
+
+
+SCRIVO_ARGS = "/opt/homebrew/bin/python3.12 -u /Users/someone/scrivo/scrivo.py run --idle-release 0"
+RECORDED_AT = 1_790_000_000.0
+# Started a minute before its record: the process that wrote it.
+HOLDER = scrivo.ProcessState(started=RECORDED_AT - 60.0, activity=5000, suspended=False)
+SUSPENDED = HOLDER._replace(suspended=True)
+
+HOLDER_CHILD = """
+import sys, time
+sys.path.insert(0, sys.argv[1])
+from history import CaptureSpool
+spool = CaptureSpool(sys.argv[2], log=print)
+assert spool.claim()
+spool.record_owner()
+print("ready", flush=True)
+while True:
+    time.sleep(0.05)
+"""
+
+
+def moving(states, pid):
+    """on_sleep: ``pid`` makes system calls while the launch looks."""
+    def tick(clock):
+        if pid in states:
+            states[pid] = states[pid]._replace(activity=states[pid].activity + 1)
+    return tick
+
+
+@unittest.skipUnless(sys.platform == "darwin", "one Scrivo per data folder is macOS-only (Windows has its named mutex)")
+class DataFolderOwnerTests(TemporaryData):
+    """2026-11-01: swap ran out and macOS suspended Scrivo. The suspended copy
+    kept the data folder, its hotkey and its menu bar slot, ran no SIGTERM
+    handler, and opening Scrivo.app again started a second copy beside it."""
+
+    def holder(self, pid=4242, *, phase="listening"):
+        """Another Scrivo holding the folder, its record written at RECORDED_AT."""
+        spool = new_spool(self.base)
+        self.record(pid, phase=phase)
+        return spool
+
+    def record(self, pid, written=RECORDED_AT, *, phase="listening"):
+        owner = self.base / "capture-spool" / ".owner"
+        owner.write_text(f"{pid:>10} {phase:<9}\n" if pid is not None else "", encoding="ascii")
+        os.utime(owner, (written, written))
+
+    def take(self, clock, states, *, args=SCRIVO_ARGS, kill=None, logs=None):
+        """take_data_folder with ``states`` as the kernel's view of each pid."""
+        from history import CaptureSpool
+        spool = CaptureSpool(self.base, log=lambda line: None)
+        _OPEN_SPOOLS.append(spool)
+        self.kill = kill or unittest.mock.Mock(side_effect=AssertionError("killed a Scrivo that was not suspended"))
+        outcome = scrivo.take_data_folder(
+            spool, state_of=states.get, args_of=lambda pid: args, kill=self.kill, monotonic=clock.monotonic,
+            sleep=clock.sleep, log=(logs if logs is not None else []).append)
+        return outcome, spool
+
+    def killing(self, holder):
+        """kill() for ``holder``: the lock goes with the process."""
+        return unittest.mock.Mock(side_effect=lambda pid, sig: holder.close())
+
+    def test_the_holder_records_its_pid_and_phase_in_one_fixed_width_write(self):
+        spool = new_spool(self.base)
+        (spool.directory / ".owner").write_text("123456789012345 something longer\n", encoding="ascii")
+        spool.record_owner()
+        self.assertEqual((spool.directory / ".owner").read_bytes(), f"{os.getpid():>10} starting \n".encode())
+        pid, written, listening = spool.owner()
+        self.assertEqual((pid, listening), (os.getpid(), False))
+        self.assertAlmostEqual(written, time.time(), delta=5)
+        spool.record_owner("listening")
+        self.assertEqual((spool.directory / ".owner").read_bytes(), f"{os.getpid():>10} listening\n".encode())
+        self.assertEqual(spool.owner()[::2], (os.getpid(), True))
+        spool.record_owner("stopping")
+        self.assertEqual(spool.owner()[::2], (os.getpid(), False))
+
+    def test_a_record_that_cannot_be_written_is_logged_not_raised(self):
+        # It is written at startup and as shutdown begins: neither may die on it.
+        logs = []
+        spool = new_spool(self.base, logs)
+        with unittest.mock.patch("os.pwrite", side_effect=OSError(30, "Read-only file system")):
+            spool.record_owner("stopping")
+        self.assertEqual(len(logs), 1)
+        self.assertIn("could not record this Scrivo (stopping)", logs[0])
+
+    def test_a_free_data_folder_is_taken_and_recorded(self):
+        outcome, spool = self.take(FakeClock(), {})
+        self.assertEqual(outcome, "owner")
+        self.assertTrue(spool.claimed)
+        self.assertEqual(spool.owner()[0], os.getpid())
+
+    def test_a_running_scrivo_keeps_its_data_folder_and_this_launch_is_told_so(self):
+        self.holder()
+        states = {4242: HOLDER}
+        clock = FakeClock(on_sleep=moving(states, 4242))
+        outcome, spool = self.take(clock, states)
+        self.assertEqual(outcome, "running")
+        self.assertFalse(spool.claimed)
+        self.assertEqual(clock.slept, scrivo.OWNER_POLL_S, "a running holder answers at the first look")
+
+    def test_a_scrivo_macos_suspended_is_killed_and_its_data_folder_taken(self):
+        holder, logs, clock = self.holder(phase="starting"), [], FakeClock()  # even one still starting
+        kill = self.killing(holder)
+        outcome, spool = self.take(clock, {4242: SUSPENDED}, kill=kill, logs=logs)
+        self.assertEqual(outcome, "owner")
+        self.assertEqual(spool.owner()[0], os.getpid())
+        kill.assert_called_once_with(4242, scrivo.signal.SIGKILL)
+        self.assertGreaterEqual(clock.slept, scrivo.OWNER_CONFIRM_S, "it was killed before it was watched")
+        self.assertIn("pid 4242", logs[0])
+        self.assertIn("suspended", logs[0])
+
+    def test_a_listening_scrivo_that_never_moves_is_killed(self):
+        # However it was frozen: once listening, its watchdog threads move every second.
+        holder = self.holder(phase="listening")
+        kill = self.killing(holder)
+        outcome, _ = self.take(FakeClock(), {4242: HOLDER}, kill=kill)
+        self.assertEqual(outcome, "owner")
+        kill.assert_called_once_with(4242, scrivo.signal.SIGKILL)
+
+    def test_a_scrivo_starting_up_or_stopping_is_left_alone_while_nothing_in_it_moves(self):
+        # A model load may wait in native code with nothing else running yet,
+        # however long ago it started (a Mac that slept through its warmup);
+        # a teardown may wait on History's lock after its watchdogs stopped.
+        for phase in ("starting", "stopping"):
+            with self.subTest(phase):
+                self.holder(phase=phase)
+                outcome, spool = self.take(FakeClock(), {4242: HOLDER._replace(started=RECORDED_AT - 86400.0)})
+                self.assertEqual(outcome, "running")
+                self.assertFalse(spool.claimed)
+                close_open_spools()
+
+    def test_a_holder_that_exits_while_the_launch_watches_hands_the_folder_over(self):
+        holder, states = self.holder(), {4242: HOLDER}
+
+        def exit_holder(clock):
+            states.pop(4242, None)
+            holder.close()
+        outcome, _ = self.take(FakeClock(on_sleep=exit_holder), states)
+        self.assertEqual(outcome, "owner")
+
+    def test_a_record_whose_pid_now_belongs_to_a_newer_process_is_not_the_holder(self):
+        # An earlier holder's pid, reused by a Scrivo that started just after the record.
+        self.holder()
+        clock = FakeClock()
+        outcome, spool = self.take(clock, {4242: SUSPENDED._replace(started=RECORDED_AT + 0.5)})
+        self.assertEqual(outcome, "shared")
+        self.assertFalse(spool.claimed)
+        self.assertGreaterEqual(clock.slept, scrivo.OWNER_PUBLISH_WAIT_S, "the record was not read again")
+
+    def test_a_holder_slow_to_write_its_record_is_still_found(self):
+        # It took the lock; seconds later the record still names the one before it.
+        self.holder(pid=4242)
+        states = {5151: HOLDER._replace(started=RECORDED_AT + 100.0)}
+
+        def publish_late(clock):
+            if clock.slept == 3.0:
+                self.record(5151, written=RECORDED_AT + 200.0)
+            moving(states, 5151)(clock)
+        outcome, _ = self.take(FakeClock(on_sleep=publish_late), states)
+        self.assertEqual(outcome, "running")
+
+    def test_a_holder_that_is_not_scrivo_or_left_no_pid_is_never_killed(self):
+        cases = {"no pid (a build from before the record)": (None, SCRIVO_ARGS),
+                 "a pid now used by another program": (4242, "/usr/bin/vim notes.txt"),
+                 "a pid that no longer exists": (4343, SCRIVO_ARGS),
+                 "this very process": (os.getpid(), SCRIVO_ARGS)}
+        for label, (pid, args) in cases.items():
+            with self.subTest(label):
+                holder = self.holder(pid)
+                outcome, spool = self.take(FakeClock(), {4242: SUSPENDED, os.getpid(): SUSPENDED}, args=args)
+                self.assertEqual(outcome, "shared")
+                self.assertFalse(spool.claimed)
+                holder.close()
+
+    def test_a_relative_script_path_is_still_scrivo(self):
+        # venv-alpha/bin/python scrivo.py run: the documented source launch.
+        self.holder()
+        states = {4242: HOLDER}
+        outcome, _ = self.take(FakeClock(on_sleep=moving(states, 4242)), states,
+                               args="venv-alpha/bin/python scrivo.py run")
+        self.assertEqual(outcome, "running")
+
+    def test_a_holder_it_may_not_kill_leaves_the_launch_running_as_before(self):
+        self.holder()
+        outcome, _ = self.take(FakeClock(), {4242: SUSPENDED},
+                               kill=unittest.mock.Mock(side_effect=PermissionError("not permitted")))
+        self.assertEqual(outcome, "shared")
+
+    def test_a_launch_that_loses_the_folder_does_not_listen_beside_the_winner(self):
+        # launchd's KeepAlive, or another launch, takes the folder first: after
+        # the kill, or when the holder exits on its own while it is watched.
+        for how in ("killed", "exited"):
+            with self.subTest(how):
+                outcome, spool = self.lose_the_folder(how)
+                self.assertEqual(outcome, "running")
+                self.assertFalse(spool.claimed)
+                close_open_spools()
+
+    def lose_the_folder(self, how):
+        holder, states = self.holder(), {4242: SUSPENDED if how == "killed" else HOLDER}
+
+        def another_launch_wins(*_args):
+            if 4242 not in states:
+                return
+            holder.close()
+            states.pop(4242)
+            winner = new_spool(self.base)
+            self.assertTrue(winner.claimed)
+            self.record(5151, written=RECORDED_AT + 7200.0)
+            states[5151] = HOLDER._replace(started=RECORDED_AT + 7000.0)
+
+        def tick(clock):
+            if how == "exited" and clock.slept >= 2.0:
+                another_launch_wins()
+            moving(states, 5151)(clock)
+        return self.take(FakeClock(on_sleep=tick), states, kill=unittest.mock.Mock(side_effect=another_launch_wins))
+
+    def test_a_folder_freed_as_the_settle_time_runs_out_is_taken_not_refused(self):
+        # The holder exits on its own; its lock goes only after the last look.
+        holder, states, gone = self.holder(), {4242: HOLDER}, []
+
+        def exit_holder(clock):
+            if clock.slept >= 1.0:
+                states.pop(4242, None)
+                gone.append(True)
+
+        def lock_goes(clock):
+            if gone and holder.claimed:
+                holder.close()
+        clock = FakeClock(on_sleep=exit_holder, on_monotonic=lock_goes)
+        with unittest.mock.patch.multiple(scrivo, OWNER_SETTLE_S=1.0, OWNER_KILL_WAIT_S=0.0):
+            outcome, spool = self.take(clock, states)
+        self.assertEqual(outcome, "owner")
+        self.assertTrue(spool.claimed)
+
+    def test_the_kernel_view_of_a_real_process(self):
+        me = scrivo.process_state(os.getpid())
+        self.assertLess(me.started, time.time())
+        self.assertFalse(me.suspended)
+        self.assertIsNone(scrivo.process_state(2 ** 22 + 12345), "a pid that cannot exist")
+
+    def test_a_real_stopped_holder_is_replaced_and_a_real_running_one_is_not(self):
+        # The kernel's view for real: libproc's flags and counters, ps, SIGKILL.
+        folder = Path(tempfile.mkdtemp(prefix="scrivo-holder-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, ignore_errors=True))
+        script = folder / "scrivo.py"
+        script.write_text(HOLDER_CHILD, encoding="utf-8")
+        child = subprocess.Popen([sys.executable, str(script), str(ROOT), str(self.base)],
+                                 stdout=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: (child.kill(), child.wait(), child.stdout.close()))
+        self.assertEqual(child.stdout.readline().strip(), "ready")
+        from history import CaptureSpool
+        logs = []
+        with unittest.mock.patch.object(scrivo, "OWNER_CONFIRM_S", 2.0):
+            first = CaptureSpool(self.base, log=lambda line: None)
+            _OPEN_SPOOLS.append(first)
+            self.assertEqual(scrivo.take_data_folder(first, log=logs.append), "running")
+            os.kill(child.pid, scrivo.signal.SIGSTOP)
+            self.assertTrue(wait_for(lambda: scrivo.process_state(child.pid).suspended), "the holder never stopped")
+            time.sleep(0.2)  # its last system calls on the way into the stop
+            second = CaptureSpool(self.base, log=lambda line: None)
+            _OPEN_SPOOLS.append(second)
+            self.assertEqual(scrivo.take_data_folder(second, log=logs.append), "owner")
+        self.assertEqual(child.wait(timeout=WAIT_S), -scrivo.signal.SIGKILL)
+        self.assertEqual(second.owner()[0], os.getpid())
+        self.assertIn(f"pid {child.pid}", logs[-1])
+
+
+@unittest.skipIf(sys.platform == "win32", "Scrivo.app and launchd are macOS-only")
+class SecondCopyTests(unittest.TestCase):
+    def refuse(self, environ):
+        with unittest.mock.patch.dict(os.environ, environ), \
+                unittest.mock.patch("ui.notice_dialog") as dialog, \
+                unittest.mock.patch("scrivo.log"), \
+                self.assertRaises(SystemExit) as stopped:
+            scrivo.refuse_second_copy()
+        return stopped.exception.code, dialog.called
+
+    def test_a_second_copy_exits_and_only_scrivo_app_opened_by_hand_says_why(self):
+        import login_item
+        cases = {"a terminal run": ({"SCRIVO_LAUNCHER": "", "XPC_SERVICE_NAME": "0"}, (1, False)),
+                 "Scrivo.app opened again": ({"SCRIVO_LAUNCHER": "app",
+                                              "XPC_SERVICE_NAME": "application.io.github.zohartito.scrivo.1.2"},
+                                             (0, True)),
+                 # KeepAlive restarts the login item after its frozen copy was
+                 # killed: no dialog, and 0 so launchd stops there.
+                 "the login item": ({"SCRIVO_LAUNCHER": "app", "XPC_SERVICE_NAME": login_item.LABEL}, (0, False)),
+                 "the sealed LaunchAgent": ({"SCRIVO_LAUNCHER": "", "XPC_SERVICE_NAME": scrivo.LAUNCHD_LABEL},
+                                            (0, False))}
+        for label, (environ, expected) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self.refuse({"SOTTO_LAUNCHER": "", **environ}), expected)
+
+
 class RecoveryTests(TemporaryData):
     def die_with_a_spooled_capture(self) -> tuple[str, float, np.ndarray]:
         """Spool one capture in a separate process that then exits without any

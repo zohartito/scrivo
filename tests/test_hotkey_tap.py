@@ -324,6 +324,7 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
             "scrivo.microphone_permission": lambda **_kw: True,
             "scrivo.inject": lambda text, **_kw: test.fail(f"pasted {text!r}"),
             "nemotron_backend.NemotronRuntime": runtime,
+            "history.STORE_DIR": root,  # the data folder run() claims before History opens
             "history.HistoryStore": lambda **kw: real_store(root, **kw),
             "learning.LearningStore": lambda **kw: real_learning(root, **kw),
             "ui.init_app": lambda: status,
@@ -848,6 +849,58 @@ class ShutdownTests(unittest.TestCase):
 
         app = run_app(self, drive)
         self.assertEqual(app.logged("! event tap re-enabled"), [])
+
+
+@unittest.skipUnless(sys.platform == "darwin", "drives scrivo.run(), which needs PyObjC; macOS-only")
+class DataFolderTests(unittest.TestCase):
+    def test_a_launch_beside_a_running_scrivo_exits_before_it_listens(self):
+        # 2026-11-01: a second copy beside one macOS had paused; had both
+        # been running, both would have pasted every dictation.
+        drove = []
+        with patch("scrivo.take_data_folder", return_value="running"), patch("scrivo.app_mode", return_value=False), \
+                self.assertRaises(SystemExit) as stopped:
+            run_app(self, drove.append)
+        self.assertEqual(stopped.exception.code, 1)  # a terminal run
+        self.assertEqual(drove, [], "a second copy reached the run loop")
+        self.assertEqual(self.app.tap_os.created, [], "a second copy created an event tap")
+        self.assertTrue(self.app.logged("✗ Scrivo is already running"))
+
+    def test_a_scrivo_records_itself_listening_then_stopping(self):
+        # Listening: its watchdogs run, so a still copy is frozen. Stopping:
+        # they are about to stop, and a slow teardown must not look frozen.
+        seen = []
+
+        def drive(app):
+            owner = history.STORE_DIR / "capture-spool" / ".owner"
+            seen.append(owner.read_text(encoding="ascii").split())
+            app.boundaries[0].request()
+            deadline = time.monotonic() + WAIT_S
+            while "stopping" not in owner.read_text(encoding="ascii") and time.monotonic() < deadline:
+                REAL_SLEEP(0.01)
+            seen.append(owner.read_text(encoding="ascii").split())
+
+        run_app(self, drive)
+        pid = str(scrivo.os.getpid())
+        self.assertEqual(seen, [[pid, "listening"], [pid, "stopping"]])
+
+    def test_a_stopping_record_that_cannot_be_written_does_not_stop_the_shutdown(self):
+        # A read-only data volume, say: the record is lost, the drained shutdown is not.
+        def drive(app):
+            with patch("os.pwrite", side_effect=OSError(30, "Read-only file system")):
+                app.boundaries[0].request()
+                deadline = time.monotonic() + WAIT_S
+                while not app.logged("● shutting down") and time.monotonic() < deadline:
+                    REAL_SLEEP(0.01)
+
+        app = run_app(self, drive)
+        self.assertTrue(app.logged("! could not record this Scrivo (stopping)"))
+        self.assertTrue(app.logged("● shutting down"), "the shutdown watcher died on the failed write")
+
+    def test_a_launch_beside_a_holder_it_cannot_identify_runs_as_before_without_the_spool(self):
+        with patch("scrivo.take_data_folder", return_value="shared"):
+            app = run_app(self, lambda app: None)
+        self.assertTrue(app.logged("! another Scrivo is using this data folder"))
+        self.assertEqual(len(app.tap_os.created), 1)
 
 
 if __name__ == "__main__":
