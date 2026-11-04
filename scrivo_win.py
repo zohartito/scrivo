@@ -70,7 +70,9 @@ INSERT_WAIT_S = 120.0  # insert once modifiers are released; after this, History
 # Restart waits for the dictation in flight: the longest recording (the
 # hands-free watchdog) plus time to transcribe it on the CPU, then goes ahead
 # anyway, so a wedged CUDA/CT2 call cannot block recovery for good.
-RESTART_TRANSCRIBE_S = 300.0  # a long CPU dictation transcribes well inside this
+# A long CPU dictation transcribes well inside half its length (300 s for the
+# old 600 s limit); it scales with the limit so the longest one still fits.
+RESTART_TRANSCRIBE_S = scrivo.HANDS_FREE_MAX_S / 2
 RESTART_DRAIN_CAP_S = scrivo.HANDS_FREE_MAX_S + RESTART_TRANSCRIBE_S
 # Quit finishes the dictation in flight up to lifecycle.QUIT_DRAIN_S, the
 # Mac's, the owner's choice for both; a drain re-checks every DRAIN_POLL_S.

@@ -403,8 +403,15 @@ Deletion cannot guarantee erasure from backups or SSD snapshots.
 - **No Scrivo icon in the menu bar:** on a full menu bar (especially beside the
   notch) macOS hides new icons behind **«**. Click it to find Scrivo's small `◦`,
   then hold ⌘ and drag the icon to a visible spot. Dictation works either way.
+  Newer macOS can also turn it off under System Settings → Menu Bar → Allow in
+  the Menu Bar (it may be listed as “Python”). Scrivo tells you at launch when
+  its icon is hidden, so you don't open a second copy looking for it.
+- **"can't hear you — check the mic" beside the orb:** the mic has been nearly
+  silent for 15 seconds. AirPods often go quiet right after music playback,
+  while they switch to their mic; pause the music, or pick another mic.
 - **Recording won't stop:** a double-tap starts hands-free mode; one tap of the
-  same key stops it (it also stops by itself after 10 minutes).
+  same key stops it (it also stops by itself after 30 minutes, with a sound and
+  "1 min left" beside the orb a minute before).
 - **Permission error / no hotkey:** rerun `doctor` in the same terminal and
   check that terminal/Python's Accessibility and microphone grants. After a
   Python/venv replacement the old grant may no longer apply. For Fn conflicts,

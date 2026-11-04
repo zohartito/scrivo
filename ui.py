@@ -23,6 +23,19 @@ ISLAND_W, ISLAND_H = 88, 34
 HINT_FONT_SIZE = 12.0   # hands-free "tap … to stop" beside the orb
 LIVE_CHARS = 48         # live words shown beside the orb (the newest end)
 LIVE_REFRESH_S = 0.2
+# The menu bar remembers an icon by app name + autosave name. Scrivo runs inside
+# Python, so the default "Item-0" made it "Python::Item-0" — the same icon to
+# macOS as any other Python menu bar app (2026-11-04: a screenshot tool's icon
+# showed and Scrivo's was hidden).
+STATUS_ITEM_AUTOSAVE = "io.github.zohartito.scrivo"
+# Advisory only, never a gate: while recording, a mic whose level stays under
+# HEARD_RMS for QUIET_HINT_S gets the quiet hint beside the orb. 2026-11-04:
+# AirPods switching out of music playback gave 148 s at peak block RMS 0.015,
+# while speech on the same AirPods reaches 0.03+ whenever the user talks.
+HEARD_RMS = 0.02
+QUIET_HINT_S = 15.0
+QUIET_HINT = "can't hear you — check the mic"
+WARNING_SOUND = "Tink"  # the hands-free limit's one-minute heads-up
 ORB_SIZE = 19.0
 DECAY = 0.85            # per-push falloff — the orb sinks, never snaps
 EASE_S = 0.14           # animation duration per level change
@@ -219,7 +232,9 @@ class _MenuTarget(AppKit.NSObject):
 
     def levelTick_(self, _timer):
         if self.ui is not None and self.ui.level_source is not None:
-            self.ui.push_level(self.ui.level_source())
+            rms = self.ui.level_source()
+            self.ui.push_level(rms)
+            self.ui.track_quiet(rms)
         if self.ui is not None:
             self.ui.refresh_live_text()
 
@@ -302,6 +317,7 @@ class StatusUI:
     def __init__(self) -> None:
         bar = AppKit.NSStatusBar.systemStatusBar()
         self._status = bar.statusItemWithLength_(AppKit.NSVariableStatusItemLength)
+        self._status.setAutosaveName_(STATUS_ITEM_AUTOSAVE)
         self._status.button().setTitle_("◦")
         self._target = _MenuTarget.alloc().init()
         self._menu = AppKit.NSMenu.alloc().init()
@@ -329,6 +345,8 @@ class StatusUI:
         self.level_source = None  # callable() -> rms, polled by a main-thread
         self._level_timer = None  # timer — the audio thread never touches UI
         self._hint = None         # hands-free stop hint, shown beside the orb
+        self._heard_at = 0.0      # last tick the mic was above HEARD_RMS
+        self._quiet = False       # QUIET_HINT is showing
         self.live_text_source = None  # callable() -> words so far (streaming engines)
         self._live_text = ""
         self._live_checked = 0.0
@@ -717,6 +735,8 @@ class StatusUI:
         self._mode = "recording"
         self._indicator_state = "recording"
         self._display_level = 0.0
+        self._heard_at = time.monotonic()
+        self._quiet = False
         self._apply_indicator_state()
         self._show_panel()
         if self._level_timer is None and self.level_source is not None:
@@ -740,6 +760,37 @@ class StatusUI:
         if self._mode != "idle":
             self._position()
 
+    def show_hands_free_warning(self, hint: str) -> None:
+        """One minute before the hands-free limit: a sound and a countdown
+        beside the orb, so the end of a long dictation is never a surprise."""
+        sound = AppKit.NSSound.soundNamed_(WARNING_SOUND)
+        if sound is not None:
+            sound.play()
+        self.show_hands_free(f"1 min left · {hint}")
+
+    def track_quiet(self, rms: float) -> None:
+        """Show QUIET_HINT while a recording hears nothing for QUIET_HINT_S;
+        the next real sound clears it. Display only: the capture is untouched."""
+        if self._indicator_state != "recording":
+            return
+        now = time.monotonic()
+        if rms >= HEARD_RMS:
+            self._heard_at = now
+            if self._quiet:
+                self._quiet = False
+                self._position()
+        elif not self._quiet and now - self._heard_at >= QUIET_HINT_S:
+            self._quiet = True
+            self._report_overlay(f"! mic quiet for {QUIET_HINT_S:.0f}s while recording — hint shown")
+            self._position()
+
+    def icon_hidden(self) -> bool:
+        """True when macOS keeps Scrivo's menu bar icon off the bar (a full
+        menu bar, or turned off in System Settings → Menu Bar): its button
+        window then has no height (seen on macOS 27.2)."""
+        window = self._status.button().window()
+        return window is None or window.frame().size.height < 1
+
     def refresh_live_text(self) -> None:
         """Show the streaming engine's words while recording (display only)."""
         source = getattr(self, "live_text_source", None)
@@ -757,6 +808,7 @@ class StatusUI:
     def show_transcribing(self) -> None:
         self._mode = "transcribing"
         self._hint = None
+        self._quiet = False
         self._live_text = ""
         self._indicator_state = "transcribing"
         self._stop_level_timer()
@@ -770,6 +822,7 @@ class StatusUI:
     def hide(self) -> None:
         self._mode = "idle"
         self._hint = None
+        self._quiet = False
         self._live_text = ""
         self._indicator_state = "idle"
         self._visibility_generation += 1
@@ -952,7 +1005,12 @@ class StatusUI:
         """Place the orb (and the hands-free hint) and return the island width.
         Runs on every position, so a rebuilt panel gets the same layout."""
         live = getattr(self, "_live_text", "")
-        hint = live_snippet(live) if live else getattr(self, "_hint", None)
+        if live:
+            hint = live_snippet(live)
+        elif getattr(self, "_quiet", False):
+            hint = QUIET_HINT
+        else:
+            hint = getattr(self, "_hint", None)
         root = self._panel.contentView().layer()
         layer = getattr(self, "_hint_layer", None)
         Quartz.CATransaction.begin()

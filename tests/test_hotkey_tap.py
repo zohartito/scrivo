@@ -43,7 +43,8 @@ class FakeEngine:
     """Stands in for GestureEngine: records every call; ``recording`` and
     ``hands_free`` are what snapshot() reports."""
 
-    def __init__(self, on_start, on_finish, on_discard, on_hands_free=None):
+    def __init__(self, on_start, on_finish, on_discard, on_hands_free=None,
+                 on_hands_free_warning=None):
         self.calls = []
         self.recording = False
         self.hands_free = False

@@ -177,8 +177,8 @@ Right-click the tray icon (left-click opens Settings):
   dictation is done.
 - **Progress** — see below. **Dictionary** — opens your dictionary in Notepad.
 - **Settings…**, **Restart** (finishes a dictation in flight first and ignores
-  new presses meanwhile; it waits up to 15 minutes, enough for the longest
-  hands-free recording, 10 minutes, and its transcription on the CPU, then
+  new presses meanwhile; it waits up to 45 minutes, enough for the longest
+  hands-free recording, 30 minutes, and its transcription on the CPU, then
   restarts anyway and logs what it abandoned), **Quit**.
 - **Check for updates…** — compares this git copy with GitHub. **Update**
   waits for Scrivo to quit, installs the new version's pinned packages (the CPU
