@@ -187,6 +187,37 @@ class QuietMicHintTests(unittest.TestCase):
             self.tick(status, 0.0, 100.0 + 10 * ui.QUIET_HINT_S)
             self.assertFalse(status._quiet, state)
 
+    def test_an_instance_without_its_fields_yet_does_not_raise(self):
+        status = StatusUI.__new__(StatusUI)
+        status._indicator_state = "recording"
+        status._position = MagicMock()
+        status.on_overlay_event = None
+        self.tick(status, 0.0, 100.0)
+        self.tick(status, 0.5, 101.0)
+        self.assertFalse(getattr(status, "_quiet", False))
+
+    def test_warnings_show_over_streaming_words(self):
+        # Nemotron keeps its finished words on screen through silence; they
+        # used to hide both the quiet hint and the "1 min left" warning.
+        import ui
+        status = StatusUI.__new__(StatusUI)
+        status._live_text = "the peel should be the perforated mesh"
+        status._hint = "1 min left · tap right ⌥ to stop"
+        layer = MagicMock()
+        status._hint_layer = layer
+        status._panel = MagicMock()
+        layer.superlayer.return_value = status._panel.contentView.return_value.layer.return_value
+        status._orb = MagicMock()
+
+        def shown(quiet, warning):
+            status._quiet, status._warning = quiet, warning
+            status._layout_island()
+            return layer.setString_.call_args[0][0]
+
+        self.assertEqual(shown(quiet=False, warning=False), ui.live_snippet(status._live_text))
+        self.assertEqual(shown(quiet=False, warning=True), status._hint)
+        self.assertEqual(shown(quiet=True, warning=True), ui.QUIET_HINT)
+
 
 class MenuBarIconTests(unittest.TestCase):
     def status(self, frame_height=None, no_window=False):
@@ -197,7 +228,7 @@ class MenuBarIconTests(unittest.TestCase):
             status._status.button.return_value.window.return_value = None
         else:
             window.frame.return_value = AppKit.NSMakeRect(1358, 1084, 29, frame_height)
-        status.show_info = MagicMock()
+        status.show_notice = MagicMock()
         return status
 
     def test_a_zero_height_button_window_is_a_hidden_icon(self):
@@ -214,7 +245,7 @@ class MenuBarIconTests(unittest.TestCase):
         logs = []
         with patch.object(scrivo, "log", logs.append):
             scrivo.check_menu_bar_icon(status, shutdown)
-        status.show_info.assert_called_once_with(scrivo.ICON_HIDDEN_TITLE, scrivo.ICON_HIDDEN_MESSAGE)
+        status.show_notice.assert_called_once_with(scrivo.ICON_HIDDEN_TITLE, scrivo.ICON_HIDDEN_MESSAGE)
         self.assertEqual(len(logs), 1)
         self.assertIn("menu bar icon is hidden", logs[0])
 
@@ -224,11 +255,27 @@ class MenuBarIconTests(unittest.TestCase):
         shutdown.requested.return_value = False
         visible = self.status(frame_height=24.0)
         scrivo.check_menu_bar_icon(visible, shutdown)
-        visible.show_info.assert_not_called()
+        visible.show_notice.assert_not_called()
         shutdown.requested.return_value = True
         hidden = self.status(frame_height=0.0)
         scrivo.check_menu_bar_icon(hidden, shutdown)
-        hidden.show_info.assert_not_called()
+        hidden.show_notice.assert_not_called()
+
+    def test_the_notice_never_runs_modally(self):
+        # runModal pauses the main loop's signal tick; a launch notice can sit
+        # unattended, and a SIGTERM would then wait until launchd SIGKILLs.
+        import ui
+        status = StatusUI.__new__(StatusUI)
+        alert = MagicMock()
+        with patch.object(ui, "new_alert", return_value=alert), patch.object(ui.AppKit, "NSApp"):
+            status.show_notice("title", "message")
+        alert.runModal.assert_not_called()
+        window = alert.window.return_value
+        button = alert.addButtonWithTitle_.return_value
+        button.setTarget_.assert_called_once_with(window)
+        button.setAction_.assert_called_once_with("orderOut:")
+        window.makeKeyAndOrderFront_.assert_called_once_with(None)
+        self.assertIs(status._notice, alert, "kept alive while it is open")
 
 
 if __name__ == "__main__":

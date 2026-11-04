@@ -25,7 +25,7 @@ DOUBLE_TAP_WINDOW_S = 0.40
 # Watchdog: force-finish a forgotten open mic. 2026-11-04: at 600 s it cut a
 # real 10-minute dictation mid-word with no warning, which looked like a crash.
 HANDS_FREE_MAX_S = 1800.0
-HANDS_FREE_WARN_S = 60.0        # on_hands_free_warning fires this long before it
+HANDS_FREE_WARN_S = 60.0        # on_hands_free_warning(token) fires this long before it
 
 
 class GestureEngine:
@@ -266,9 +266,23 @@ class GestureEngine:
                 return
             log(f"● hands-free: {HANDS_FREE_WARN_S:.0f}s left before the "
                 f"{HANDS_FREE_MAX_S / 60:.0f}-minute limit")
-            fires.append(self._on_hands_free_warning)
+            fires.append(lambda: self._warn(token))
             self._queue(fires)
         self._drain()
+
+    def _warn(self, token: int) -> None:
+        """Advisory only: a failing warning is logged here, so _drain never
+        sees it and never idles a gesture whose mic is still recording."""
+        try:
+            self._on_hands_free_warning(token)
+        except Exception as exc:
+            log(f"! hands-free warning failed: {str(exc)[:120]}")
+
+    def is_current_hands_free(self, token: int) -> bool:
+        """True while the hands-free capture that armed `token` still records:
+        a warning that waited on another thread must not speak for a newer one."""
+        with self._lock:
+            return self._hands_free and token == self._hands_free_token
 
     def _hands_free_timeout(self, token: int) -> None:
         fires = []

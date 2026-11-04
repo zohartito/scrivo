@@ -810,7 +810,7 @@ def check_menu_bar_icon(status_ui, shutdown) -> None:
     if shutdown.requested() or not status_ui.icon_hidden():
         return
     log("! the menu bar icon is hidden by macOS (menu bar full, or turned off in System Settings → Menu Bar)")
-    status_ui.show_info(ICON_HIDDEN_TITLE, ICON_HIDDEN_MESSAGE)
+    status_ui.show_notice(ICON_HIDDEN_TITLE, ICON_HIDDEN_MESSAGE)
 
 
 class ProcessState(NamedTuple):
@@ -1510,9 +1510,15 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         if status_ui:
             ui_call(status_ui.show_hands_free, hands_free_hint(binding["trigger"]))
 
-    def on_hands_free_warning() -> None:
+    def on_hands_free_warning(token: int) -> None:
         if status_ui:
-            ui_call(status_ui.show_hands_free_warning, hands_free_hint(binding["trigger"]))
+            ui_call(show_hands_free_warning, token)
+
+    def show_hands_free_warning(token: int) -> None:
+        """Main thread: the capture that armed the warning may have ended (and
+        another started) while this call waited in the queue."""
+        if engine.is_current_hands_free(token):
+            status_ui.show_hands_free_warning(hands_free_hint(binding["trigger"]))
 
     def hide_refused_start() -> None:
         """The finish of a hands-free start the closed gate refused: there is

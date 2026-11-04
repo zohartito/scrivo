@@ -237,7 +237,7 @@ fields are never typed or pasted into.
 | Gesture/control | Effect |
 | --- | --- |
 | Hold trigger, then release | Push-to-talk; transcribe/paste after release |
-| Double-tap trigger | Hands-free; next tap stops (10-minute maximum) |
+| Double-tap trigger | Hands-free; next tap stops (30-minute maximum, with a one-minute warning) |
 | Lone short tap | Ignored |
 | Control–Option–D | Alternate hotkey: hold/release or tap to start/stop |
 | Menu → Start / Finish dictation | Hands-free controls without the key |

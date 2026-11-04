@@ -347,6 +347,8 @@ class StatusUI:
         self._hint = None         # hands-free stop hint, shown beside the orb
         self._heard_at = 0.0      # last tick the mic was above HEARD_RMS
         self._quiet = False       # QUIET_HINT is showing
+        self._warning = False     # the hands-free limit's "1 min left" is showing
+        self._notice = None       # the open non-modal notice (kept alive)
         self.live_text_source = None  # callable() -> words so far (streaming engines)
         self._live_text = ""
         self._live_checked = 0.0
@@ -707,6 +709,25 @@ class StatusUI:
         Not logged: an info message can quote dictated text."""
         self._alert(AppKit.NSAlertStyleInformational, title, message)
 
+    def show_notice(self, title: str, message: str) -> None:
+        """An informational alert that never runs modally: OK just closes it.
+        For notices nobody asked for (one at launch can sit unattended for
+        hours), because runModal pauses the main loop's signal tick and a
+        SIGTERM would then wait for the click until launchd SIGKILLs."""
+        alert = new_alert()
+        alert.setAlertStyle_(AppKit.NSAlertStyleInformational)
+        alert.setMessageText_(title)
+        alert.setInformativeText_(message)
+        button = alert.addButtonWithTitle_("OK")
+        window = alert.window()
+        button.setTarget_(window)
+        button.setAction_("orderOut:")
+        alert.layout()
+        window.center()
+        self._notice = alert
+        AppKit.NSApp.activateIgnoringOtherApps_(True)
+        window.makeKeyAndOrderFront_(None)
+
     def ask(self, title: str, message: str, yes: str, no: str) -> bool:
         """A two-button question on the main thread; True for the first button."""
         alert = new_alert()
@@ -737,6 +758,7 @@ class StatusUI:
         self._display_level = 0.0
         self._heard_at = time.monotonic()
         self._quiet = False
+        self._warning = False
         self._apply_indicator_state()
         self._show_panel()
         if self._level_timer is None and self.level_source is not None:
@@ -766,20 +788,22 @@ class StatusUI:
         sound = AppKit.NSSound.soundNamed_(WARNING_SOUND)
         if sound is not None:
             sound.play()
+        self._warning = True  # shown over streaming words (_layout_island)
         self.show_hands_free(f"1 min left · {hint}")
 
     def track_quiet(self, rms: float) -> None:
         """Show QUIET_HINT while a recording hears nothing for QUIET_HINT_S;
         the next real sound clears it. Display only: the capture is untouched."""
-        if self._indicator_state != "recording":
+        if getattr(self, "_indicator_state", "idle") != "recording":
             return
         now = time.monotonic()
+        quiet = getattr(self, "_quiet", False)
         if rms >= HEARD_RMS:
             self._heard_at = now
-            if self._quiet:
+            if quiet:
                 self._quiet = False
                 self._position()
-        elif not self._quiet and now - self._heard_at >= QUIET_HINT_S:
+        elif not quiet and now - getattr(self, "_heard_at", now) >= QUIET_HINT_S:
             self._quiet = True
             self._report_overlay(f"! mic quiet for {QUIET_HINT_S:.0f}s while recording — hint shown")
             self._position()
@@ -809,6 +833,7 @@ class StatusUI:
         self._mode = "transcribing"
         self._hint = None
         self._quiet = False
+        self._warning = False
         self._live_text = ""
         self._indicator_state = "transcribing"
         self._stop_level_timer()
@@ -823,6 +848,7 @@ class StatusUI:
         self._mode = "idle"
         self._hint = None
         self._quiet = False
+        self._warning = False
         self._live_text = ""
         self._indicator_state = "idle"
         self._visibility_generation += 1
@@ -1005,10 +1031,14 @@ class StatusUI:
         """Place the orb (and the hands-free hint) and return the island width.
         Runs on every position, so a rebuilt panel gets the same layout."""
         live = getattr(self, "_live_text", "")
-        if live:
-            hint = live_snippet(live)
-        elif getattr(self, "_quiet", False):
+        # A warning outranks the streaming words, which stay on screen through
+        # silence (Nemotron keeps its finished words) and would hide it.
+        if getattr(self, "_quiet", False):
             hint = QUIET_HINT
+        elif getattr(self, "_warning", False):
+            hint = getattr(self, "_hint", None)
+        elif live:
+            hint = live_snippet(live)
         else:
             hint = getattr(self, "_hint", None)
         root = self._panel.contentView().layer()

@@ -140,7 +140,7 @@ seconds, say a short sentence, release, and wait for the text.
 | Gesture | Effect |
 | --- | --- |
 | Hold the trigger, then release | Push-to-talk; transcribe and insert after release |
-| Double-tap the trigger | Hands-free; the next tap stops (10-minute maximum) |
+| Double-tap the trigger | Hands-free; the next tap stops (30-minute maximum) |
 | Lone short tap | Ignored |
 | Another key while holding the trigger (e.g. Ctrl-C) | A shortcut: the capture is discarded, nothing inserted |
 | Tray → Start dictation / Finish dictation | Hands-free without the key; finishing from the tray copies the text (paste it with Ctrl+V) |
