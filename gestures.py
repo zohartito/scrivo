@@ -1,7 +1,8 @@
 """Trigger-key gestures: press/release edges become start, finish and discard.
 
 hold = push-to-talk (release finishes), double-tap = hands-free (the next tap
-finishes; a watchdog finishes a forgotten one after HANDS_FREE_MAX_S), a lone
+finishes; a watchdog finishes a forgotten one after HANDS_FREE_MAX_S, with a
+heads-up HANDS_FREE_WARN_S before it), a lone
 tap is discarded after DOUBLE_TAP_WINDOW_S. Shared by the Mac event tap and
 the Windows keyboard hook.
 
@@ -21,7 +22,10 @@ from scrivo_log import log
 
 HOLD_THRESHOLD_S = 0.35
 DOUBLE_TAP_WINDOW_S = 0.40
-HANDS_FREE_MAX_S = 600.0        # watchdog: force-finish a forgotten open mic
+# Watchdog: force-finish a forgotten open mic. 2026-11-04: at 600 s it cut a
+# real 10-minute dictation mid-word with no warning, which looked like a crash.
+HANDS_FREE_MAX_S = 1800.0
+HANDS_FREE_WARN_S = 60.0        # on_hands_free_warning(token) fires this long before it
 
 
 class GestureEngine:
@@ -39,11 +43,13 @@ class GestureEngine:
     held short = arm hands-free, held long = it was a deliberate push-to-talk.
     """
 
-    def __init__(self, on_start, on_finish, on_discard, on_hands_free=None) -> None:
+    def __init__(self, on_start, on_finish, on_discard, on_hands_free=None,
+                 on_hands_free_warning=None) -> None:
         self._on_start = on_start
         self._on_finish = on_finish
         self._on_discard = on_discard
         self._on_hands_free = on_hands_free
+        self._on_hands_free_warning = on_hands_free_warning
         self._lock = threading.Lock()
         self._epoch = 0
         self._hands_free_token = 0
@@ -233,10 +239,14 @@ class GestureEngine:
         """Caller holds the lock. The watchdog is bound to THIS hands-free
         capture: pressing the key again must not disarm it (a stop tap whose
         release is lost used to leave the mic open forever), and a re-armed
-        hands-free gets a fresh token so the old deadline cannot end it."""
+        hands-free gets a fresh token so the old deadline cannot end it. Its
+        heads-up carries the same token, so it only speaks for this capture."""
         self._hands_free_token += 1
         self._schedule(HANDS_FREE_MAX_S, self._hands_free_timeout,
                        self._hands_free_token)
+        if self._on_hands_free_warning is not None:
+            self._schedule(HANDS_FREE_MAX_S - HANDS_FREE_WARN_S,
+                           self._hands_free_warning, self._hands_free_token)
 
     def _expire_tap(self, epoch: int) -> None:
         fires = []
@@ -248,6 +258,31 @@ class GestureEngine:
             fires.append(self._on_discard)
             self._queue(fires)
         self._drain()
+
+    def _hands_free_warning(self, token: int) -> None:
+        fires = []
+        with self._lock:
+            if token != self._hands_free_token or not self._hands_free:
+                return
+            log(f"● hands-free: {HANDS_FREE_WARN_S:.0f}s left before the "
+                f"{HANDS_FREE_MAX_S / 60:.0f}-minute limit")
+            fires.append(lambda: self._warn(token))
+            self._queue(fires)
+        self._drain()
+
+    def _warn(self, token: int) -> None:
+        """Advisory only: a failing warning is logged here, so _drain never
+        sees it and never idles a gesture whose mic is still recording."""
+        try:
+            self._on_hands_free_warning(token)
+        except Exception as exc:
+            log(f"! hands-free warning failed: {str(exc)[:120]}")
+
+    def is_current_hands_free(self, token: int) -> bool:
+        """True while the hands-free capture that armed `token` still records:
+        a warning that waited on another thread must not speak for a newer one."""
+        with self._lock:
+            return self._hands_free and token == self._hands_free_token
 
     def _hands_free_timeout(self, token: int) -> None:
         fires = []

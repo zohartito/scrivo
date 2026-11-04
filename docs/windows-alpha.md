@@ -140,7 +140,7 @@ seconds, say a short sentence, release, and wait for the text.
 | Gesture | Effect |
 | --- | --- |
 | Hold the trigger, then release | Push-to-talk; transcribe and insert after release |
-| Double-tap the trigger | Hands-free; the next tap stops (10-minute maximum) |
+| Double-tap the trigger | Hands-free; the next tap stops (30-minute maximum) |
 | Lone short tap | Ignored |
 | Another key while holding the trigger (e.g. Ctrl-C) | A shortcut: the capture is discarded, nothing inserted |
 | Tray → Start dictation / Finish dictation | Hands-free without the key; finishing from the tray copies the text (paste it with Ctrl+V) |
@@ -177,8 +177,8 @@ Right-click the tray icon (left-click opens Settings):
   dictation is done.
 - **Progress** — see below. **Dictionary** — opens your dictionary in Notepad.
 - **Settings…**, **Restart** (finishes a dictation in flight first and ignores
-  new presses meanwhile; it waits up to 15 minutes, enough for the longest
-  hands-free recording, 10 minutes, and its transcription on the CPU, then
+  new presses meanwhile; it waits up to 45 minutes, enough for the longest
+  hands-free recording, 30 minutes, and its transcription on the CPU, then
   restarts anyway and logs what it abandoned), **Quit**.
 - **Check for updates…** — compares this git copy with GitHub. **Update**
   waits for Scrivo to quit, installs the new version's pinned packages (the CPU

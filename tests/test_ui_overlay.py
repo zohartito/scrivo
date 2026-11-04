@@ -129,12 +129,153 @@ class AlertIconTests(unittest.TestCase):
         self.assertIsNotNone(alert.icon())
         self.assertEqual(tuple(alert.icon().size()), (16.0, 16.0))
 
+    def test_the_status_item_has_its_own_menu_bar_identity(self):
+        # macOS keys icons by app + autosave name; the default "Item-0" made
+        # Scrivo the same icon as any other Python menu bar app (2026-11-04).
+        import ui
+        from pathlib import Path
+        self.assertNotEqual(ui.STATUS_ITEM_AUTOSAVE, "Item-0")
+        source = (Path(__file__).resolve().parents[1] / "ui.py").read_text(encoding="utf-8")
+        self.assertIn("self._status.setAutosaveName_(STATUS_ITEM_AUTOSAVE)", source)
+
     def test_no_dialog_is_built_without_it(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
         counts = {name: (root / name).read_text(encoding="utf-8").count("NSAlert.alloc().init()")
                   for name in ("ui.py", "settings_window.py")}
         self.assertEqual(counts, {"ui.py": 1, "settings_window.py": 0}, "only new_alert() builds an NSAlert")
+
+
+class QuietMicHintTests(unittest.TestCase):
+    """The hint is display only: it changes what the island says, nothing else."""
+
+    def status(self, state="recording"):
+        status = StatusUI.__new__(StatusUI)
+        status._indicator_state = state
+        status._quiet = False
+        status._heard_at = 100.0
+        status.on_overlay_event = None
+        status._position = MagicMock()
+        return status
+
+    def tick(self, status, rms, now):
+        with patch("ui.time.monotonic", return_value=now):
+            status.track_quiet(rms)
+
+    def test_a_silent_mic_shows_the_hint_after_the_quiet_window(self):
+        import ui
+        status = self.status()
+        self.tick(status, 0.015, 100.0 + ui.QUIET_HINT_S - 0.1)   # the AirPods clip's loudest block
+        self.assertFalse(status._quiet)
+        self.tick(status, 0.015, 100.0 + ui.QUIET_HINT_S)
+        self.assertTrue(status._quiet)
+        status._position.assert_called_once_with()
+
+    def test_speech_clears_it_and_restarts_the_window(self):
+        import ui
+        status = self.status()
+        self.tick(status, 0.0, 100.0 + ui.QUIET_HINT_S)
+        self.tick(status, 0.03, 120.0)
+        self.assertFalse(status._quiet)
+        self.tick(status, 0.0, 120.0 + ui.QUIET_HINT_S - 0.1)
+        self.assertFalse(status._quiet)
+
+    def test_only_while_recording(self):
+        import ui
+        for state in ("waking", "transcribing", "idle"):
+            status = self.status(state)
+            self.tick(status, 0.0, 100.0 + 10 * ui.QUIET_HINT_S)
+            self.assertFalse(status._quiet, state)
+
+    def test_an_instance_without_its_fields_yet_does_not_raise(self):
+        status = StatusUI.__new__(StatusUI)
+        status._indicator_state = "recording"
+        status._position = MagicMock()
+        status.on_overlay_event = None
+        self.tick(status, 0.0, 100.0)
+        self.tick(status, 0.5, 101.0)
+        self.assertFalse(getattr(status, "_quiet", False))
+
+    def test_warnings_show_over_streaming_words(self):
+        # Nemotron keeps its finished words on screen through silence; they
+        # used to hide both the quiet hint and the "1 min left" warning.
+        import ui
+        status = StatusUI.__new__(StatusUI)
+        status._live_text = "the peel should be the perforated mesh"
+        status._hint = "1 min left · tap right ⌥ to stop"
+        layer = MagicMock()
+        status._hint_layer = layer
+        status._panel = MagicMock()
+        layer.superlayer.return_value = status._panel.contentView.return_value.layer.return_value
+        status._orb = MagicMock()
+
+        def shown(quiet, warning):
+            status._quiet, status._warning = quiet, warning
+            status._layout_island()
+            return layer.setString_.call_args[0][0]
+
+        self.assertEqual(shown(quiet=False, warning=False), ui.live_snippet(status._live_text))
+        self.assertEqual(shown(quiet=False, warning=True), status._hint)
+        self.assertEqual(shown(quiet=True, warning=True), ui.QUIET_HINT)
+
+
+class MenuBarIconTests(unittest.TestCase):
+    def status(self, frame_height=None, no_window=False):
+        status = StatusUI.__new__(StatusUI)
+        status._status = MagicMock()
+        window = status._status.button.return_value.window.return_value
+        if no_window:
+            status._status.button.return_value.window.return_value = None
+        else:
+            window.frame.return_value = AppKit.NSMakeRect(1358, 1084, 29, frame_height)
+        status.show_notice = MagicMock()
+        return status
+
+    def test_a_zero_height_button_window_is_a_hidden_icon(self):
+        # what a hidden status item reports in-process on macOS 27.2
+        self.assertTrue(self.status(frame_height=0.0).icon_hidden())
+        self.assertTrue(self.status(no_window=True).icon_hidden())
+        self.assertFalse(self.status(frame_height=24.0).icon_hidden())
+
+    def test_launch_check_alerts_once_when_hidden(self):
+        import scrivo
+        shutdown = MagicMock()
+        shutdown.requested.return_value = False
+        status = self.status(frame_height=0.0)
+        logs = []
+        with patch.object(scrivo, "log", logs.append):
+            scrivo.check_menu_bar_icon(status, shutdown)
+        status.show_notice.assert_called_once_with(scrivo.ICON_HIDDEN_TITLE, scrivo.ICON_HIDDEN_MESSAGE)
+        self.assertEqual(len(logs), 1)
+        self.assertIn("menu bar icon is hidden", logs[0])
+
+    def test_launch_check_is_silent_when_visible_or_stopping(self):
+        import scrivo
+        shutdown = MagicMock()
+        shutdown.requested.return_value = False
+        visible = self.status(frame_height=24.0)
+        scrivo.check_menu_bar_icon(visible, shutdown)
+        visible.show_notice.assert_not_called()
+        shutdown.requested.return_value = True
+        hidden = self.status(frame_height=0.0)
+        scrivo.check_menu_bar_icon(hidden, shutdown)
+        hidden.show_notice.assert_not_called()
+
+    def test_the_notice_never_runs_modally(self):
+        # runModal pauses the main loop's signal tick; a launch notice can sit
+        # unattended, and a SIGTERM would then wait until launchd SIGKILLs.
+        import ui
+        status = StatusUI.__new__(StatusUI)
+        alert = MagicMock()
+        with patch.object(ui, "new_alert", return_value=alert), patch.object(ui.AppKit, "NSApp"):
+            status.show_notice("title", "message")
+        alert.runModal.assert_not_called()
+        window = alert.window.return_value
+        button = alert.addButtonWithTitle_.return_value
+        button.setTarget_.assert_called_once_with(window)
+        button.setAction_.assert_called_once_with("orderOut:")
+        window.makeKeyAndOrderFront_.assert_called_once_with(None)
+        self.assertIs(status._notice, alert, "kept alive while it is open")
 
 
 if __name__ == "__main__":

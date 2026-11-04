@@ -794,6 +794,25 @@ ALREADY_RUNNING_MESSAGE = (
     "Not responding? Quit “Python” in Activity Monitor, then open Scrivo again.")
 
 
+ICON_CHECK_DELAY_S = 5.0  # the menu bar places a new icon within a second or two
+ICON_HIDDEN_TITLE = "Scrivo is running, but macOS is hiding its menu bar icon"
+ICON_HIDDEN_MESSAGE = (
+    "Dictation works as usual. Only Scrivo's ◦ (History, Settings, Quit) is out of sight.\n\n"
+    "To bring it back, make room in the menu bar (quit a menu bar app, or hold ⌘ and drag "
+    "icons off the bar), or turn Scrivo on under System Settings → Menu Bar → Allow in the "
+    "Menu Bar (it may be listed as “Python”). Then use Restart, or quit and open Scrivo again.")
+
+
+def check_menu_bar_icon(status_ui, shutdown) -> None:
+    """Main thread, once per launch: say so when macOS keeps the icon off the
+    bar. 2026-11-04: with the icon hidden, Scrivo looked like it had quit, so
+    it was opened again (and again) beside the copy still running."""
+    if shutdown.requested() or not status_ui.icon_hidden():
+        return
+    log("! the menu bar icon is hidden by macOS (menu bar full, or turned off in System Settings → Menu Bar)")
+    status_ui.show_notice(ICON_HIDDEN_TITLE, ICON_HIDDEN_MESSAGE)
+
+
 class ProcessState(NamedTuple):
     started: float  # epoch seconds
     activity: int  # context switches + system calls so far: still while suspended or stopped
@@ -1491,6 +1510,16 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         if status_ui:
             ui_call(status_ui.show_hands_free, hands_free_hint(binding["trigger"]))
 
+    def on_hands_free_warning(token: int) -> None:
+        if status_ui:
+            ui_call(show_hands_free_warning, token)
+
+    def show_hands_free_warning(token: int) -> None:
+        """Main thread: the capture that armed the warning may have ended (and
+        another started) while this call waited in the queue."""
+        if engine.is_current_hands_free(token):
+            status_ui.show_hands_free_warning(hands_free_hint(binding["trigger"]))
+
     def hide_refused_start() -> None:
         """The finish of a hands-free start the closed gate refused: there is
         no capture, so only its orb goes away. A refused key press shows no
@@ -1529,7 +1558,8 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             raise
 
     mic_alert = threading.Lock()   # held while the mic-failure alert is open
-    engine = GestureEngine(on_start, on_finish, on_discard, on_hands_free=on_hands_free)
+    engine = GestureEngine(on_start, on_finish, on_discard, on_hands_free=on_hands_free,
+                           on_hands_free_warning=on_hands_free_warning)
     capture.on_start_failed = on_mic_failed
     lifecycle = Lifecycle(
         shutdown, capture_gate, end_recording=lambda: end_capture_now(engine, capture, on_finish),
@@ -1752,6 +1782,8 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
             + (f" · {hotkey_spec}: hold or tap (remote-friendly)" if hotkeys.hotkey else "")
             + f" · model: {model.split('/')[-1]} · language: {language_state['mode']} · ^C to quit")
         spool.record_owner("listening")  # its watchdog threads run: frozen now means still
+        if status_ui is not None:
+            AppHelper.callLater(ICON_CHECK_DELAY_S, check_menu_bar_icon, status_ui, shutdown)
     except BaseException:
         run_finished.set()  # run() is raising: no guard may outlive it
         raise

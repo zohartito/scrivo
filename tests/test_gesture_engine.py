@@ -327,6 +327,94 @@ class GestureDecisionTests(EngineHarness):
             self.arm_hands_free()
         self.assertEqual(logs, ["● hands-free (tap again to stop)"])
 
+    def test_without_a_warning_callback_only_the_watchdog_is_armed(self):
+        self.arm_hands_free()
+        warn_at = gestures.HANDS_FREE_MAX_S - gestures.HANDS_FREE_WARN_S
+        self.assertEqual([t for t in self.timers.armed if t[0] == warn_at], [])
+
+
+# -- the hands-free limit gives a heads-up before it ends the recording ---------
+
+class HandsFreeWarningTests(EngineHarness):
+    """2026-11-04: the 600 s watchdog cut a real 10-minute dictation mid-word
+    with no warning. The limit is longer now and warns HANDS_FREE_WARN_S first."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine = scrivo.GestureEngine(lambda: self.events.append("start"),
+                                          lambda: self.events.append("finish"),
+                                          lambda: self.events.append("discard"),
+                                          on_hands_free_warning=self.warned)
+        self.warn_at = gestures.HANDS_FREE_MAX_S - gestures.HANDS_FREE_WARN_S
+        self.tokens = []
+
+    def warned(self, token):
+        self.tokens.append(token)
+        self.events.append("warning")
+
+    def test_the_limit_outlasts_a_ten_minute_dictation(self):
+        self.assertGreaterEqual(gestures.HANDS_FREE_MAX_S, 1800.0)
+        self.assertGreater(self.warn_at, 600.0)
+
+    def test_the_warning_comes_before_the_watchdog_and_keeps_recording(self):
+        fire_watchdog = self.arm_hands_free()
+        self.timers.only(self.warn_at)()
+        self.assertEqual(self.events, ["start", "warning"])
+        self.assertEqual(self.engine.snapshot(), (True, True), "a warning never ends the recording")
+        fire_watchdog()
+        self.assertEqual(self.events, ["start", "warning", "finish"])
+
+    def test_no_warning_after_the_user_stopped(self):
+        self.arm_hands_free()
+        self.engine.pressed(); self.engine.released()            # the stop tap
+        self.timers.only(self.warn_at)()
+        self.assertEqual(self.events, ["start", "finish"])
+
+    def test_an_old_capture_s_warning_does_not_speak_for_a_new_one(self):
+        self.arm_hands_free()
+        old_warning = self.timers.only(self.warn_at)
+        self.engine.pressed(); self.engine.released()            # stop
+        self.timers.armed.clear()
+        self.arm_hands_free()                                    # a new hands-free capture
+        old_warning()
+        self.assertEqual(self.events, ["start", "finish", "start"])
+        self.timers.only(self.warn_at)()
+        self.assertEqual(self.events[-1], "warning")
+
+    def test_a_menu_started_recording_warns_too(self):
+        self.assertTrue(self.engine.force_start())
+        self.timers.only(self.warn_at)()
+        self.assertEqual(self.events, ["start", "warning"])
+
+    def test_the_token_it_carries_is_current_only_for_its_own_capture(self):
+        # A warning queued for the main thread re-checks this there, so one
+        # that waited while its capture ended never shows on the next one.
+        self.arm_hands_free()
+        self.timers.only(self.warn_at)()
+        (token,) = self.tokens
+        self.assertTrue(self.engine.is_current_hands_free(token))
+        self.engine.pressed(); self.engine.released()            # stop
+        self.assertFalse(self.engine.is_current_hands_free(token))
+        self.arm_hands_free()                                    # a newer capture
+        self.assertFalse(self.engine.is_current_hands_free(token))
+
+    def test_a_failing_warning_leaves_the_recording_and_its_watchdog_alone(self):
+        def failing(_token):
+            raise RuntimeError("no main thread")
+        engine = scrivo.GestureEngine(lambda: self.events.append("start"),
+                                     lambda: self.events.append("finish"),
+                                     lambda: self.events.append("discard"),
+                                     on_hands_free_warning=failing)
+        engine.pressed(); engine.released()
+        engine.pressed(); engine.released()
+        logs = []
+        with mock.patch.object(gestures, "log", logs.append):
+            self.timers.only(self.warn_at)()
+        self.assertEqual(engine.snapshot(), (True, True), "the mic is still recording")
+        self.assertIn("! hands-free warning failed: no main thread", logs)
+        self.timers.only(gestures.HANDS_FREE_MAX_S)()
+        self.assertEqual(self.events, ["start", "finish"])
+
 
 if __name__ == "__main__":
     unittest.main()
