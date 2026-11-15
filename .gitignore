@@ -9,3 +9,6 @@ __pycache__/
 venv-alpha/
 .alpha-state/
 .alpha-cache/
+
+# Isolated benchmark dependencies; recordings and references belong outside the repo.
+.venv-bench/
