@@ -122,7 +122,8 @@ def model_path(cache_dir):
     try:
         folder = Path(snapshot_download(WHISPER_REPO, revision=WHISPER_REVISION,
                                        cache_dir=str(outside_repo(Path(cache_dir))), local_files_only=True))
-        if not all((folder / name).is_file() for name in ("config.json", "weights.npz")):
+        if (not (folder / "config.json").is_file()
+                or not any((folder / name).is_file() for name in ("weights.safetensors", "weights.npz"))):
             raise ValueError
         return str(folder)
     except Exception:
@@ -206,7 +207,7 @@ def write_reports(reports):
             with path.open("x", encoding="utf-8") as handle:
                 written.append(path)
                 handle.write(payload)
-    except Exception:
+    except BaseException:
         for path in written:
             path.unlink(missing_ok=True)
         raise BenchError("Could not write the aggregate reports; no previous files were changed.") from None
