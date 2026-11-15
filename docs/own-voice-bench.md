@@ -10,7 +10,8 @@ added to the existing CLI.
 
 ## Prepare once (Apple Silicon macOS)
 
-From `/path/to/repo`, use a separate environment; leave the app and its venv alone:
+Use a framework build of Python 3.12 (for example Homebrew) and `ffmpeg` on
+`PATH`. From `/path/to/repo`, use a separate environment; leave the app and its venv alone:
 
 ```sh
 python3.12 -m venv .venv-bench

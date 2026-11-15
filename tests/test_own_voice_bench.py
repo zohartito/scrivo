@@ -8,7 +8,10 @@ from unittest.mock import patch
 
 from evaluation import aggregate_results, evaluate_sample
 from scripts import bench_common as bench, own_voice_bench
-from tests.test_platform_baseline import BenchFixture, MARKER
+if __package__:
+    from .test_platform_baseline import BenchFixture, MARKER
+else:  # unittest discovery imports modules directly (also on Windows).
+    from test_platform_baseline import BenchFixture, MARKER
 
 
 class OwnVoiceTests(BenchFixture):
@@ -92,8 +95,8 @@ class BootstrapTests(unittest.TestCase):
 class ConsolePrivacyTests(unittest.TestCase):
     def test_python_and_native_backend_output_are_discarded_in_subprocess(self):
         done = subprocess.run(
-            [sys.executable, "-m", "unittest",
-             "tests.test_platform_baseline.PlatformBaselineTests.test_exact_schema_same_clips_and_no_private_output"],
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_platform_baseline.py",
+             "-k", "test_exact_schema_same_clips_and_no_private_output"],
             cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=30)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertNotIn(MARKER, done.stdout + done.stderr)
