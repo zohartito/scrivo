@@ -147,7 +147,7 @@ class LastInsertTests(unittest.TestCase):
             (10.0 + window + 0.01, (1, 2), 3, "nothing recent to undo"),
             (11.0, None, 3, "the window in front is unknown — nothing undone"),
             (11.0, (9, 9), 3, "the dictation went to another window — nothing undone"),
-            (11.0, (1, 2), 4, "you typed since the dictation — nothing undone"),
+            (11.0, (1, 2), 4, "you typed or clicked since the dictation — nothing undone"),
         ]
         for now, target, keydowns, expected in cases:
             self.assertEqual(self.refusal(last, now=now, target=target, keydowns=keydowns), expected,

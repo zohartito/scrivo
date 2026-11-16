@@ -277,10 +277,11 @@ words · about 4.2 hours saved vs typing at 40 wpm" (counts only, kept in
 Say **"new line"** or **"new paragraph"** anywhere in a dictation, pauses or not,
 for a line break or a blank line ("a new line of products" stays as words).
 Say **"scratch that"** as a dictation of its own, in a new press after the text
-you want gone, to undo that last dictation with the app's own ⌘Z. It only undoes
-Scrivo's own insert: within a minute of the paste, while the same app is still
-in front, and only if you have not typed since; otherwise nothing happens and
-the log says why. Filler words (um, uh) are removed with the comma around them.
+you want gone, to undo that last dictation with the app's own ⌘Z. On macOS it
+requires a paste within the last minute, the same focused window, text control
+and exposed document identity, and no typing or mouse clicks since. If any check
+fails or the app does not expose its focused target, nothing happens and the log
+says why. Filler words (um, uh) are removed with the comma around them.
 Both apply only to dictation the engine reports as English (Whisper and
 Nemotron; Parakeet does not report a language, so its text stays as spoken)
 and can be switched off under **Settings… → Cleanup**; History keeps what the

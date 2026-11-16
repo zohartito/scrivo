@@ -244,6 +244,10 @@ class HotkeyListener:
     def callback(self, _proxy, event_type, event, _refcon):
         if self.shutdown.requested():
             return event
+        if event_type in (self.quartz.kCGEventLeftMouseDown, self.quartz.kCGEventRightMouseDown,
+                          self.quartz.kCGEventOtherMouseDown):
+            self.user_keydowns["count"] += 1  # a click can change document, tab, caret or undo history
+            return event
         if event_type in (self.quartz.kCGEventKeyDown, self.quartz.kCGEventKeyUp,
                           self.quartz.kCGEventFlagsChanged) and self.is_own_event(event):
             return event  # Scrivo's own ⌘V / ⌘Z / typing: never a chord, never the user typing
@@ -391,6 +395,9 @@ class HotkeyListener:
             self.quartz.kCGEventTapOptionListenOnly,
             self.quartz.CGEventMaskBit(self.quartz.kCGEventFlagsChanged)
             | self.quartz.CGEventMaskBit(self.quartz.kCGEventKeyDown)
+            | self.quartz.CGEventMaskBit(self.quartz.kCGEventLeftMouseDown)
+            | self.quartz.CGEventMaskBit(self.quartz.kCGEventRightMouseDown)
+            | self.quartz.CGEventMaskBit(self.quartz.kCGEventOtherMouseDown)
             | self.quartz.CGEventMaskBit(self.quartz.kCGEventKeyUp), self.callback, None,
         )
         if self.tap is None:

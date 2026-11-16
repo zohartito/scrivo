@@ -361,6 +361,7 @@ class DeliveryQueueHarness:
         self.held_until = held_until
         self.recording_while_held = recording_while_held
         self.pid = pid
+        self.focus = ("window", "text control", "document")
         self.keydowns = 0
         self.secure = False
         self.inserts_ok = True
@@ -377,6 +378,7 @@ class DeliveryQueueHarness:
             shutdown_requested=lambda: self.shutdown, clock=lambda: self.timers.now,
             timer=self.timers.Timer, copy=self.copied.append,
             **({} if on_done is None else {"on_done": on_done}))
+        self.queue._focused_target = lambda: self.focus
 
     def held(self):
         return self.timers.now < self.held_until
@@ -607,6 +609,53 @@ class InjectReportsInsertTests(unittest.TestCase):
 # -- F7: "scratch that" undoes only Scrivo's own insert ---------------------------
 
 class ScratchThatTests(unittest.TestCase):
+    def test_scr02_focus_probe_binds_window_control_and_document(self):
+        import ApplicationServices as AS
+        values = [(0, "control"), (0, "window"), (0, "document")]
+        with patch.object(AS, "AXUIElementCreateSystemWide", return_value="system"), \
+             patch.object(AS, "AXUIElementSetMessagingTimeout") as timeout, \
+             patch.object(AS, "AXUIElementCopyAttributeValue", side_effect=values) as read:
+            self.assertEqual(delivery.focused_target(), ("window", "control", "document"))
+        self.assertEqual([call.args[0] for call in read.call_args_list], ["system", "control", "window"])
+        self.assertEqual(timeout.call_count, 3)
+
+    def test_scr02_unavailable_focus_probe_is_unknown(self):
+        import ApplicationServices as AS
+        with patch.object(AS, "AXUIElementCreateSystemWide", side_effect=OSError("unavailable")):
+            self.assertIsNone(delivery.focused_target())
+
+    def test_scr02_mouse_switch_to_another_document_in_the_same_app_refuses_undo(self):
+        world = DeliveryQueueHarness(pid=111)
+        world.keydowns = 5
+        world.queue.paste("my dictation")
+        world.focus = ("other window", "other control", "other document")
+        world.queue.undo()
+        self.assertEqual(world.undos, [])
+
+    def test_scr02_reused_control_with_another_document_refuses_undo(self):
+        world = DeliveryQueueHarness()
+        world.queue.paste("my dictation")
+        world.focus = ("window", "text control", "other document")
+        world.queue.undo()
+        self.assertEqual(world.undos, [])
+
+    def test_scr02_unknown_focused_target_cannot_arm_undo(self):
+        world = DeliveryQueueHarness()
+        world.focus = None
+        world.queue.paste("my dictation")
+        world.queue.undo()
+        self.assertEqual(world.undos, [])
+
+    def test_scr02_mouse_click_invalidates_undo_even_when_focus_is_reused(self):
+        quartz = FakeQuartz()
+        tap = EventTapCallbackHarness(self, quartz)
+        world = DeliveryQueueHarness()
+        world.queue._keydowns = lambda: tap.user_keydowns["count"]
+        world.queue.paste("my dictation")
+        tap.callback(None, RealQuartz.kCGEventLeftMouseDown, {}, None)
+        world.queue.undo()
+        self.assertEqual(world.undos, [])
+
     def test_secure_input_decline_does_not_arm_undo(self):
         world = DeliveryQueueHarness()
         world.inserts_ok = False                              # a password field had focus

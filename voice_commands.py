@@ -84,7 +84,7 @@ class LastInsert:
     with no key typed by the user since.
 
     Both apps share this rule; each supplies its own identity of where an
-    insert went (the Mac: the frontmost app's pid; Windows: the foreground
+    insert went (the Mac: the app's pid and focused AX target; Windows: the foreground
     window and its pid), its own count of the user's real key-downs, and
     presses its own undo keys. No clock or platform calls of its own.
     """
@@ -112,7 +112,7 @@ class LastInsert:
         if current != last["target"]:
             return f"the dictation went to another {self.noun} — nothing undone"
         if keydowns() != last["keydowns"]:
-            return "you typed since the dictation — nothing undone"
+            return "you typed or clicked since the dictation — nothing undone"
         return None
 
     def forget(self) -> None:

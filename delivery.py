@@ -171,6 +171,31 @@ def frontmost_pid() -> int | None:
         return None
 
 
+def focused_target(timeout: float = 0.15) -> tuple | None:
+    """The focused AX window, control and document, or unknown (no undo).
+
+    AX elements retain their identity across queries. A document URL adds a
+    guard for editors that reuse a control; clicks invalidate the gesture's
+    input count too, including tabs that expose no document attribute.
+    """
+    try:
+        import ApplicationServices as AS
+        system = AS.AXUIElementCreateSystemWide()
+        AS.AXUIElementSetMessagingTimeout(system, timeout)
+        error, focused = AS.AXUIElementCopyAttributeValue(system, AS.kAXFocusedUIElementAttribute, None)
+        if error or focused is None:
+            return None
+        AS.AXUIElementSetMessagingTimeout(focused, timeout)
+        error, window = AS.AXUIElementCopyAttributeValue(focused, AS.kAXWindowAttribute, None)
+        if error or window is None:
+            return None
+        AS.AXUIElementSetMessagingTimeout(window, timeout)
+        error, document = AS.AXUIElementCopyAttributeValue(window, AS.kAXDocumentAttribute, None)
+        return window, focused, None if error else document
+    except Exception:
+        return None
+
+
 def own_window_without_text_field() -> bool:
     """Is Scrivo itself the active app with no text field to take a paste?
 
@@ -347,6 +372,7 @@ class DeliveryQueue:
         self._keys_held = keys_held      # () -> bool: trigger or modifier physically down
         self._recording = recording      # () -> bool: a dictation is being captured
         self._frontmost_pid = frontmost_pid  # () -> pid of the app a key event reaches
+        self._focused_target = focused_target
         self._keydowns = keydowns        # () -> count of the user's real key-downs so far
         self._secure_input = secure_input
         self._call_after = call_after
@@ -362,7 +388,7 @@ class DeliveryQueue:
         self._poll_armed = False
         self._waiting = False
         self._blocked_since: float | None = None
-        self.last_insert = voice_commands.LastInsert("app")  # the insert "scratch that" may undo
+        self.last_insert = voice_commands.LastInsert("app or text field")
 
     def paste(self, text: str, in_history: bool = True) -> None:
         """in_history is False when History could not keep this dictation
@@ -477,19 +503,23 @@ class DeliveryQueue:
         self._pump()
 
     def _deliver(self, text: str, in_history: bool = True) -> None:
-        pid, keydowns = self._frontmost_pid(), self._keydowns()  # the paste target, before ⌘V
+        target, keydowns = self._target(), self._keydowns()  # the paste target, before ⌘V
         if self._insert(text):  # a secure-input decline inserted nothing: arm no undo
-            self.last_insert.record(at=self._clock(), target=pid, keydowns=keydowns)
+            self.last_insert.record(at=self._clock(), target=target, keydowns=keydowns)
         else:  # N34: every other drop path tells the user, so this one does too
             self._note("Dictation not pasted",
                        "Secure input is on (a password field may have focus), so Scrivo did not "
                        "paste. " + ("Open History to copy the text." if in_history else NOT_IN_HISTORY_EITHER))
 
+    def _target(self) -> tuple | None:
+        pid, focus = self._frontmost_pid(), self._focused_target()
+        return (pid, focus) if pid is not None and focus is not None else None
+
     def _undo(self) -> None:
         """'scratch that': the app's own ⌘Z, only for Scrivo's own recent insert —
-        same app still in front, nothing typed by the user since (the rule
+        same focused target, nothing typed or clicked by the user since (the rule
         voice_commands.LastInsert shares with Windows)."""
-        refusal = self.last_insert.refusal(now=self._clock(), target=self._frontmost_pid,
+        refusal = self.last_insert.refusal(now=self._clock(), target=self._target,
                                            keydowns=self._keydowns)
         if refusal:
             self._log(f"  scratch that: {refusal}")
