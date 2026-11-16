@@ -18,8 +18,12 @@ computer; there is no account, cloud service or telemetry.
   Windows.
 - **Text delivery.** Your clipboard is put back after each paste, results paste
   in the order you spoke them, and "scratch that" only undoes Scrivo's own text.
-- **Safer install and update.** A failed update rolls back, and on a fresh Mac
-  the one-line installer opens Scrivo when it finishes.
+- **Safer install and update.** On macOS, failures while installing/checking
+  update packages or fast-forwarding source attempt to restore the previous
+  packages. That rollback ends after the source switch: a later model-setup or
+  app-build failure leaves the new source and packages installed. Rerun the
+  installer to finish those steps. On a fresh Mac, the one-line installer opens
+  Scrivo when it finishes.
 - **Windows** now matches the Mac on keeping failed captures and finishing
   dictations on Restart, Quit and Update.
 
