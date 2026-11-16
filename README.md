@@ -396,7 +396,12 @@ To remove everything: quit Scrivo, run `~/scrivo/scripts/install-mac.sh
 your own clone) and `~/Library/Application Support/sotto-alpha` to the Trash.
 That removes your recordings, transcripts, learning data, settings and models.
 To remove only the models, quit and move the `huggingface` and optional
-`nemotron` folders to the Trash; they download again when needed.
+`nemotron` folders to the Trash. Hugging Face models download again when needed
+on a non-offline run. Nemotron requires explicit reinstallation: rerun
+`venv-alpha/bin/python scripts/setup_nemotron.py` with the same alpha data
+variables, or use **Settings → Install Nemotron (700 MB)…**. If its files are missing
+at launch, Scrivo falls back to Whisper and saves that engine choice; select
+Nemotron again after reinstalling it.
 
 Saved audio on Desktop, deliberately exported corpora, clipboard-manager
 history, text pasted into other apps, pip's package cache, backups and filesystem
