@@ -388,6 +388,30 @@ class DeliveryQueueHarness:
 
 
 class DeliveryQueueOrderTests(unittest.TestCase):
+    def test_scr01_delayed_target_reads_each_queued_dictation_before_the_next_paste(self):
+        world = patch_insertion(self)
+        queue_world = DeliveryQueueHarness()
+        queue_world.timers = world.timers
+        queue_world.held_until = 0.5
+        queue_world.queue._timer = world.timers.Timer
+        queue_world.queue._insert = lambda text: scrivo.inject(text, spacing="none")
+        received = []
+        post = delivery.post_command_key
+
+        def delayed_target(keycode):
+            post(keycode)
+            world.timers.Timer(1.5, lambda: received.append(world.pasteboard.text())).start()
+
+        with patch.object(delivery, "post_command_key", delayed_target):
+            queue_world.queue.paste("first dictation")
+            queue_world.queue.paste("second dictation")
+            world.timers.advance_to(2.5)
+            self.assertEqual(received, ["first dictation"])
+            world.timers.advance_to(8.0)
+        self.assertEqual(received, ["first dictation", "second dictation"])
+        self.assertEqual(world.pasteboard.text(), "ORIGINAL user clipboard")
+        self.assertEqual(len(world.quartz.key_downs(9)), 2)
+
     def test_a_failing_insert_does_not_strand_the_dictations_behind_it(self):
         world = DeliveryQueueHarness(held_until=0.5)
 

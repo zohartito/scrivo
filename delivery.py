@@ -379,6 +379,13 @@ class DeliveryQueue:
             if self._shutdown_requested():  # checked per item: Quit can land mid-pump
                 self._discard_all()  # nothing is posted once shutdown is requested
                 return
+            if _pending_restore is not None:
+                # A target may consume Cmd-V later. Keep the previous paste's
+                # clipboard ownership until its bounded restore has settled,
+                # before another queued paste (or undo) can overtake it.
+                self._blocked_since = None
+                self._arm_poll()
+                return
             if self._keys_held():
                 self._wait_or_drop()
                 return
