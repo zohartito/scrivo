@@ -499,6 +499,79 @@ class TapWarningTests(unittest.TestCase):
 class AppLogRotationTests(unittest.TestCase):
     """The app's log is rotated while Scrivo runs, not only at launch."""
 
+    @unittest.skipUnless(os.name == "posix", "macOS app log uses POSIX directory descriptors")
+    def test_scr08_symlink_log_never_redirects_output_outside_the_data_folder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            logs = base / "data" / "logs"
+            logs.mkdir(parents=True, mode=0o700)
+            outside = base / "outside.txt"
+            outside.write_text("original")
+            (logs / "scrivo.log").symlink_to(outside)
+            with patch.object(scrivo_log.os, "dup2", side_effect=lambda fd, stream: os.write(fd, b"synthetic")), \
+                 patch.dict(scrivo_log._app_log, {"path": None, "max_bytes": 0}):
+                try:
+                    scrivo.route_app_logs(base / "data")
+                except (OSError, RuntimeError):
+                    pass
+            self.assertEqual(outside.read_text(), "original")
+
+    @unittest.skipUnless(os.name == "posix", "macOS app log uses POSIX permissions")
+    def test_scr08_existing_log_is_private_before_output_is_redirected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            logs = Path(folder) / "logs"
+            logs.mkdir(mode=0o755)
+            path = logs / "scrivo.log"
+            path.write_text("original")
+            path.chmod(0o644)
+            modes = []
+            with patch.object(scrivo_log.os, "dup2", side_effect=lambda fd, stream: modes.append(
+                    os.fstat(fd).st_mode & 0o777)), patch.dict(scrivo_log._app_log, {"path": None, "max_bytes": 0}):
+                scrivo.route_app_logs(Path(folder))
+            self.assertEqual(modes, [0o600, 0o600])
+            self.assertEqual(logs.stat().st_mode & 0o777, 0o700)
+
+    @unittest.skipUnless(os.name == "posix", "macOS app log uses no-follow directory descriptors")
+    def test_scr08_symlinked_log_directory_and_ancestor_are_refused(self):
+        for ancestor in (False, True):
+            with self.subTest(ancestor=ancestor), tempfile.TemporaryDirectory() as folder:
+                base = Path(folder)
+                outside = base / "outside"
+                outside.mkdir(mode=0o700)
+                data = base / "data"
+                if ancestor:
+                    data.symlink_to(outside, target_is_directory=True)
+                else:
+                    data.mkdir(mode=0o700)
+                    (data / "logs").symlink_to(outside, target_is_directory=True)
+                with patch.object(scrivo_log.os, "dup2") as redirect:
+                    with self.assertRaises((OSError, RuntimeError)):
+                        scrivo.route_app_logs(data)
+                    redirect.assert_not_called()
+                self.assertEqual(list(outside.iterdir()), [])
+
+    @unittest.skipUnless(os.name == "posix", "macOS app log rejects FIFO and hard links")
+    def test_scr08_nonregular_and_hardlinked_logs_are_refused(self):
+        for kind in ("fifo", "hardlink"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "scrivo.log"
+                reader = None
+                if kind == "fifo":
+                    os.mkfifo(path)
+                    reader = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                else:
+                    outside = Path(folder) / "outside.txt"
+                    outside.write_text("original")
+                    os.link(outside, path)
+                try:
+                    with patch.object(scrivo_log.os, "dup2") as redirect:
+                        with self.assertRaises((OSError, RuntimeError)):
+                            scrivo_log._point_output_at(path)
+                        redirect.assert_not_called()
+                finally:
+                    if reader is not None:
+                        os.close(reader)
+
     def test_a_log_that_grows_past_its_limit_is_rotated_and_reopened(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "scrivo.log"
@@ -539,12 +612,12 @@ class AppLogRotationTests(unittest.TestCase):
     def test_n35_two_threads_rotating_at_once_neither_raises(self):
         real_replace, errors, reopened, callers = os.replace, [], [], []
 
-        def slow_replace(source, target):
+        def slow_replace(source, target, **kwargs):
             # Both threads saw the oversized log before either moved it; the
             # second mover is slower, so it finds the first one's fresh log.
             callers.append(1)
             time.sleep(0.05 * len(callers) ** 2)
-            real_replace(source, target)
+            real_replace(source, target, **kwargs)
 
         def reopen(path):
             reopened.append(path)
