@@ -778,19 +778,25 @@ class CaptureSpool:
         """The pid ``record_owner`` wrote, when (the file's mtime, epoch
         seconds) and whether its phase was "listening"; None for what is
         missing or unreadable."""
+        pid, written, phase = self.record()
+        return pid, written, phase == "listening"
+
+    def record(self) -> tuple[int | None, float | None, str | None]:
+        """The pid, the time (mtime) and the phase ``record_owner`` last
+        wrote; None for what is missing or unreadable."""
         try:
             fd = os.open(self.directory / ".owner", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except OSError:
-            return None, None, False
+            return None, None, None
         try:
             written = os.fstat(fd).st_mtime
             fields = os.read(fd, 32).decode("ascii", "replace").split()
         except OSError:
-            return None, None, False
+            return None, None, None
         finally:
             os.close(fd)
         pid = int(fields[0]) if fields and fields[0].isdigit() else None
-        return pid, written, fields[1:] == ["listening"]
+        return pid, written, (fields[1] if len(fields) == 2 else None)
 
     def submit(self, capture_id: str, raw: np.ndarray, native_rate: float, captured_ts: float) -> None:
         """Queue one finished capture for the writer and return at once.

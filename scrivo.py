@@ -925,6 +925,73 @@ def take_data_folder(spool, *, state_of=process_state, args_of=process_args, kil
     return "owner" if claimed() else "running"
 
 
+DIAGNOSTIC_REPORTS = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+_REPORT_PID = re.compile(r'^\s*"pid"\s*:\s*(\d+)\s*,?\s*$', re.MULTILINE)
+
+
+def boot_time() -> float | None:
+    """When the Mac last started (kern.boottime, epoch seconds); None if unknown."""
+    try:
+        out = subprocess.run(["/usr/sbin/sysctl", "-n", "kern.boottime"], capture_output=True, text=True,
+                             timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = re.search(r"sec = (\d+)", out)
+    return float(found.group(1)) if found else None
+
+
+def crash_report_for(pid: int, since: float, reports: Path = DIAGNOSTIC_REPORTS) -> Path | None:
+    """The macOS crash report (``.ips``) of process ``pid`` written after
+    ``since``, in ``reports`` or its Retired folder; None when there is none."""
+    candidates = []
+    for folder in (reports, reports / "Retired"):
+        try:
+            candidates += [path for path in folder.iterdir()
+                           if path.suffix == ".ips" and path.name.lower().startswith(("python", "scrivo"))]
+        except OSError:
+            continue
+    for path in sorted(candidates, key=lambda path: path.name):
+        try:
+            if path.stat().st_mtime < since:
+                continue
+            body = path.read_text(encoding="utf-8", errors="replace").partition("\n")[2]
+        except OSError:
+            continue
+        found = _REPORT_PID.search(body)
+        if found and int(found.group(1)) == pid:
+            return path
+    return None
+
+
+def previous_run_note(record, *, state_of=process_state, reports: Path | None = None, boot_time=None,
+                      now=time.time) -> str | None:
+    """At launch, from the record the last holder of this data folder left
+    (``CaptureSpool.record``, read before this launch writes its own): the
+    line to log when that Scrivo ended without starting a shutdown. Quit,
+    Restart, an update and a signal all write "stopping" first, so a record
+    still "starting" or "listening" whose process is gone means a crash,
+    SIGKILL, memory pressure, a power cut, or AppKit exiting on its own
+    (before 2026-11-15, macOS's quit at logout). Scrivo's log has no clock and
+    such an exit wrote nothing to it. Names the macOS crash report for that pid
+    and whether the Mac started again since. Evidence only, stays local."""
+    pid, written, phase = record
+    if pid is None or written is None or phase not in ("starting", "listening") or pid == os.getpid():
+        return None
+    state = state_of(pid)
+    if state is not None and state.started < written:
+        return None  # that process still runs; take_data_folder settled it
+    stamp = "%Y-%m-%d %H:%M:%S"
+    report = crash_report_for(pid, written, DIAGNOSTIC_REPORTS if reports is None else reports)
+    parts = [f"! the last Scrivo (pid {pid}) ended without shutting down: {phase} since "
+             f"{time.strftime(stamp, time.localtime(written))}",
+             f"crash report {report}" if report is not None else
+             "no crash report for it (SIGKILL, memory pressure, a power cut or a restart leave none)"]
+    if boot_time is not None and boot_time > written:
+        parts.append(f"the Mac started again at {time.strftime(stamp, time.localtime(boot_time))}")
+    parts.append(f"this launch {time.strftime(stamp, time.localtime(now()))}")
+    return " · ".join(parts)
+
+
 def refuse_second_copy() -> None:
     """Another Scrivo runs on this data folder: say so and exit rather than
     listen on the same key beside it (both would paste). A copy launchd
@@ -1267,8 +1334,13 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     # History's lock is taken: a paused holder may be holding that one too.
     import history
     spool = history.CaptureSpool(history.STORE_DIR, log=log)
+    previous_run = spool.record()  # read before this launch records itself
     if take_data_folder(spool, log=log) == "running":
         refuse_second_copy()
+    if spool.claimed:
+        note = previous_run_note(previous_run, boot_time=boot_time())
+        if note is not None:
+            log(note)
 
     from PyObjCTools import AppHelper
     mlx_whisper = None
