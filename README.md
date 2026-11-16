@@ -226,8 +226,11 @@ you chose in Settings) for at least
 changing fields. Compare it with what you said. Scrivo uses the clipboard to
 paste and attempts to restore its previous contents; clipboard managers and
 apps may retain what was pasted. In **Settings** you can switch to **Type**
-(dictation never touches the clipboard; History's Copy and Retry put text on it
-on purpose) and choose the spacing: **Smart** (default) adds a
+(normal dictation insertion leaves the clipboard alone; History's Copy and
+Retry deliberately copy text). On macOS, if History cannot save a dictation
+and a held key prevents insertion for more than 30 seconds after recording,
+Scrivo copies the unsaved text to the clipboard even in Type mode and tells
+you, so a recoverable copy remains. You can also choose the spacing: **Smart** (default) adds a
 space before the text only where it would touch the previous word, in apps
 that expose the cursor; elsewhere it adds a space after, like before. On macOS,
 typing and pasting are blocked when secure input is active or cannot be checked.
