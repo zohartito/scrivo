@@ -66,7 +66,7 @@ from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAU
                        dictation_in_flight, end_capture_now, launchd_owns_this_process, launched_as_sealed_job,
                        UPDATE_DRAIN_DEADLINE_S, main_thread_dispatch, relaunch_app_after_exit,
                        shutdown_signal_handlers, wait_until_idle)
-from lifecycle import EXIT_GUARD_S, exit_if_shutdown_stuck  # noqa: F401
+from lifecycle import EXIT_GUARD_S, SystemQuit, exit_if_shutdown_stuck  # noqa: F401
 # The trigger-key gesture engine lives in gestures.py (it imports nothing from
 # scrivo); these names stay importable from scrivo for existing callers.
 from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, GestureEngine  # noqa: F401
@@ -925,6 +925,73 @@ def take_data_folder(spool, *, state_of=process_state, args_of=process_args, kil
     return "owner" if claimed() else "running"
 
 
+DIAGNOSTIC_REPORTS = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+_REPORT_PID = re.compile(r'^\s*"pid"\s*:\s*(\d+)\s*,?\s*$', re.MULTILINE)
+
+
+def boot_time() -> float | None:
+    """When the Mac last started (kern.boottime, epoch seconds); None if unknown."""
+    try:
+        out = subprocess.run(["/usr/sbin/sysctl", "-n", "kern.boottime"], capture_output=True, text=True,
+                             timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = re.search(r"sec = (\d+)", out)
+    return float(found.group(1)) if found else None
+
+
+def crash_report_for(pid: int, since: float, reports: Path = DIAGNOSTIC_REPORTS) -> Path | None:
+    """The macOS crash report (``.ips``) of process ``pid`` written after
+    ``since``, in ``reports`` or its Retired folder; None when there is none."""
+    candidates = []
+    for folder in (reports, reports / "Retired"):
+        try:
+            candidates += [path for path in folder.iterdir()
+                           if path.suffix == ".ips" and path.name.lower().startswith(("python", "scrivo"))]
+        except OSError:
+            continue
+    for path in sorted(candidates, key=lambda path: path.name):
+        try:
+            if path.stat().st_mtime < since:
+                continue
+            body = path.read_text(encoding="utf-8", errors="replace").partition("\n")[2]
+        except OSError:
+            continue
+        found = _REPORT_PID.search(body)
+        if found and int(found.group(1)) == pid:
+            return path
+    return None
+
+
+def previous_run_note(record, *, state_of=process_state, reports: Path | None = None, boot_time=None,
+                      now=time.time) -> str | None:
+    """At launch, from the record the last holder of this data folder left
+    (``CaptureSpool.record``, read before this launch writes its own): the
+    line to log when that Scrivo ended without starting a shutdown. Quit,
+    Restart, an update and a signal all write "stopping" first, so a record
+    still "starting" or "listening" whose process is gone means a crash,
+    SIGKILL, memory pressure, a power cut, or AppKit exiting on its own
+    (before 2026-11-15, macOS's quit at logout). Scrivo's log has no clock and
+    such an exit wrote nothing to it. Names the macOS crash report for that pid
+    and whether the Mac started again since. Evidence only, stays local."""
+    pid, written, phase = record
+    if pid is None or written is None or phase not in ("starting", "listening") or pid == os.getpid():
+        return None
+    state = state_of(pid)
+    if state is not None and state.started < written:
+        return None  # that process still runs; take_data_folder settled it
+    stamp = "%Y-%m-%d %H:%M:%S"
+    report = crash_report_for(pid, written, DIAGNOSTIC_REPORTS if reports is None else reports)
+    parts = [f"! the last Scrivo (pid {pid}) ended without shutting down: {phase} since "
+             f"{time.strftime(stamp, time.localtime(written))}",
+             f"crash report {report}" if report is not None else
+             "no crash report for it (SIGKILL, memory pressure, a power cut or a restart leave none)"]
+    if boot_time is not None and boot_time > written:
+        parts.append(f"the Mac started again at {time.strftime(stamp, time.localtime(boot_time))}")
+    parts.append(f"this launch {time.strftime(stamp, time.localtime(now()))}")
+    return " · ".join(parts)
+
+
 def refuse_second_copy() -> None:
     """Another Scrivo runs on this data folder: say so and exit rather than
     listen on the same key beside it (both would paste). A copy launchd
@@ -1267,8 +1334,13 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
     # History's lock is taken: a paused holder may be holding that one too.
     import history
     spool = history.CaptureSpool(history.STORE_DIR, log=log)
+    previous_run = spool.record()  # read before this launch records itself
     if take_data_folder(spool, log=log) == "running":
         refuse_second_copy()
+    if spool.claimed:
+        note = previous_run_note(previous_run, boot_time=boot_time())
+        if note is not None:
+            log(note)
 
     from PyObjCTools import AppHelper
     mlx_whisper = None
@@ -1565,6 +1637,12 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown, capture_gate, end_recording=lambda: end_capture_now(engine, capture, on_finish),
         busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,
                                          warming=bool(model_activity["rewarming"])))
+
+    def reply_to_terminate() -> None:
+        import AppKit
+        ui_call(AppKit.NSApp.replyToApplicationShouldTerminate_, True)
+
+    system_quit = SystemQuit(lifecycle, reply_to_terminate=reply_to_terminate, log=log)
     # Real key-downs seen by the tap (Scrivo's tagged events excluded): typing
     # after a paste means "scratch that" must not undo it.
     user_keydowns = {"count": 0}
@@ -1682,67 +1760,78 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         (N6) and keeps untranscribed captures in History (N9); then ends the
         process — exec for a foreground restart, exit status
         RESTART_FAILED_EXIT if that exec fails (N27)."""
-        shutdown.stop_capture(capture)
-        if not restart_drain["kept"]:
-            restart_drain["kept"] = True
-            flush_clipboard_restore(shutdown.teardown_wait_s(
-                SIGTERM_RESTORE_WAIT_S if shutdown.stop_signal == signal.SIGTERM else RESTORE_DELAY_S,
-                time.monotonic()))
-            keep_untranscribed()
-        shutdown.discard_queued(jobs)
-        drained = True
-        if restart.foreground_pending or nemotron is not None:
-            # Let the worker finish its current job; shutdown already fences
-            # every paste/commit, so nothing it produces is kept.
-            transcription_thread.join(APP_DRAIN_TIMEOUT)
-            drained = not transcription_thread.is_alive()
-        if not drained:
-            if restart_drain["deadline"] is None:
-                restart_drain["deadline"] = time.monotonic() + RESTART_DRAIN_DEADLINE_S
-            if time.monotonic() < restart_drain["deadline"]:
-                AppHelper.callLater(0.1, stop_runtime_on_main)
-                return
-            if not restart.foreground_pending:
-                # A wedged native call must not hang Quit forever, and freeing
-                # the native engine underneath it could crash: leave directly.
-                log("! transcription did not finish in time — quitting anyway")
-                os._exit(0)
-            # exec replaces the whole image, so a wedged native call cannot
-            # follow it; waiting forever would strand the user instead.
-            log("! transcription did not finish in time — restarting anyway")
-        if nemotron is not None and drained:
-            # Cocoa terminate exits without unwinding run()'s finally block.
-            # Free native streams/model before Metal's global destructors run.
-            nemotron.close()
+        rescheduled = False
         try:
-            Quartz.CGEventTapEnable(hotkeys.tap, False)
-        except Exception:
-            pass
-        if restart.foreground_pending:
-            if not capture.wait_released(RESTART_RELEASE_WAIT_S):
-                log("! microphone teardown still running — restarting anyway")
+            shutdown.stop_capture(capture)
+            if not restart_drain["kept"]:
+                restart_drain["kept"] = True
+                flush_clipboard_restore(shutdown.teardown_wait_s(
+                    SIGTERM_RESTORE_WAIT_S if shutdown.stop_signal == signal.SIGTERM else RESTORE_DELAY_S,
+                    time.monotonic()))
+                keep_untranscribed()
+            shutdown.discard_queued(jobs)
+            drained = True
+            if restart.foreground_pending or nemotron is not None:
+                # Let the worker finish its current job; shutdown already fences
+                # every paste/commit, so nothing it produces is kept.
+                transcription_thread.join(APP_DRAIN_TIMEOUT)
+                drained = not transcription_thread.is_alive()
+            if not drained:
+                if restart_drain["deadline"] is None:
+                    restart_drain["deadline"] = time.monotonic() + RESTART_DRAIN_DEADLINE_S
+                if time.monotonic() < restart_drain["deadline"]:
+                    AppHelper.callLater(0.1, stop_runtime_on_main)
+                    rescheduled = True
+                    return
+                if not restart.foreground_pending:
+                    # A wedged native call must not hang Quit forever, and freeing
+                    # the native engine underneath it could crash: leave directly.
+                    log("! transcription did not finish in time — quitting anyway")
+                    os._exit(0)
+                # exec replaces the whole image, so a wedged native call cannot
+                # follow it; waiting forever would strand the user instead.
+                log("! transcription did not finish in time — restarting anyway")
+            if nemotron is not None and drained:
+                # Cocoa terminate exits without unwinding run()'s finally block.
+                # Free native streams/model before Metal's global destructors run.
+                nemotron.close()
             try:
-                restart.exec_foreground()
-            except Exception as exc:
-                # Shutdown is one-way, so this process cannot carry on. Exit
-                # non-zero: KeepAlive (the login item, the LaunchAgent) starts
-                # Scrivo again; exit 0 would be a Quit it leaves alone, and an
-                # alert queued now would never be shown.
-                restart.foreground_pending = False
-                try:
-                    restart.failed(f"foreground restart failed ({type(exc).__name__}: {str(exc)[:120]})")
-                except Exception as callback_exc:
-                    log(f"! restart failure handling failed: {str(callback_exc)[:120]}")
-                log(f"! exiting with status {RESTART_FAILED_EXIT} so launchd can start Scrivo again; "
-                    "from a terminal, run the command again")
-                os._exit(RESTART_FAILED_EXIT)
-        if status_ui is not None:
-            ui_call(status_ui.hide)
-            try:
-                import AppKit
-                AppKit.NSApp.terminate_(None)
+                Quartz.CGEventTapEnable(hotkeys.tap, False)
             except Exception:
                 pass
+            if restart.foreground_pending:
+                if not capture.wait_released(RESTART_RELEASE_WAIT_S):
+                    log("! microphone teardown still running — restarting anyway")
+                try:
+                    restart.exec_foreground()
+                except Exception as exc:
+                    # Shutdown is one-way, so this process cannot carry on. Exit
+                    # non-zero: KeepAlive (the login item, the LaunchAgent) starts
+                    # Scrivo again; exit 0 would be a Quit it leaves alone, and an
+                    # alert queued now would never be shown.
+                    restart.foreground_pending = False
+                    try:
+                        restart.failed(f"foreground restart failed ({type(exc).__name__}: {str(exc)[:120]})")
+                    except Exception as callback_exc:
+                        log(f"! restart failure handling failed: {str(callback_exc)[:120]}")
+                    log(f"! exiting with status {RESTART_FAILED_EXIT} so launchd can start Scrivo again; "
+                        "from a terminal, run the command again")
+                    os._exit(RESTART_FAILED_EXIT)
+            if status_ui is not None:
+                ui_call(status_ui.hide)
+        finally:
+            # Answer the original system request even if cleanup raised,
+            # but keep waiting when the native worker needs another pass.
+            system_termination = False
+            if not rescheduled and status_ui is not None:
+                system_termination = system_quit.teardown_finished()
+        if status_ui is not None:
+            if not system_termination:
+                try:
+                    import AppKit
+                    AppKit.NSApp.terminate_(None)
+                except Exception:
+                    pass
         else:
             try:
                 Quartz.CFRunLoopStop(Quartz.CFRunLoopGetMain())
@@ -1774,6 +1863,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         if status_ui is not None:
             # menu actions + system lifecycle hooks
             status_ui.set_history_callbacks(controller.menu_callbacks())
+            status_ui.set_terminate_handler(system_quit.should_terminate)
             status_ui.on_wake = lambda: (not shutdown.requested() and
                                          (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
             controller.refresh_history()

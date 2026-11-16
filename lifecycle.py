@@ -530,3 +530,60 @@ class Lifecycle:
             finally:
                 then()
         threading.Thread(target=work, daemon=True, name=f"scrivo-{verb}").start()
+
+
+class SystemQuit:
+    """macOS's own quit request: the quit Apple event that logout, restart and
+    shut down send (and Activity Monitor's Quit, or ``osascript`` quitting the
+    app), which AppKit puts to the app delegate's applicationShouldTerminate:.
+
+    2026-11-08, 11-11, 11-12, 11-14: at each logout loginwindow sent Scrivo
+    that event, and with no delegate -[NSApplication terminate:] called exit()
+    at once: no drain, no "shutting down" line, no "stopping" record, and
+    Nemotron's Metal device was freed by a C++ static destructor with its
+    residency sets still open (GGML_ASSERT, SIGABRT, a Python crash report).
+    Now the delegate defers with NSTerminateLater while the menu's drained
+    Quit runs. ``teardown_finished`` answers the original request once via
+    ``reply_to_terminate`` (the caller marshals an affirmative reply to the
+    main thread), without starting a second terminate request. A menu Quit
+    with no system request still terminates normally after teardown."""
+
+    def __init__(self, lifecycle: Lifecycle, *, reply_to_terminate, log=log) -> None:
+        self.lifecycle = lifecycle
+        self.reply_to_terminate = reply_to_terminate
+        self.log = log
+        self._finished = threading.Event()
+        self._requested = False
+
+    def teardown_finished(self) -> bool:
+        """Reply once on completion; True means the system owns termination.
+        With no deferred request, the caller must terminate the app itself."""
+        if self._finished.is_set():
+            return self._requested
+        self._finished.set()
+        if self._requested:
+            self.reply_to_terminate()
+        return self._requested
+
+    def should_terminate(self) -> bool:
+        """Main thread (the delegate): True after teardown or a failed start.
+        Otherwise starts the drained quit once and returns False to defer.
+
+        Side effects: may log one line; may close the gate and end the recording."""
+        if self._finished.is_set():
+            return True
+        if self._requested:
+            return False
+        self._requested = True
+        try:
+            if not self.lifecycle.shutdown.requested() and self.lifecycle.closed != "quitting":
+                self.log("● macOS asked Scrivo to quit (log out, restart, shut down, or another app's Quit)")
+            self.lifecycle.quit()
+        except Exception as exc:
+            # The delegate has not returned NSTerminateLater yet: allow this
+            # request immediately, never reply from inside the delegate call.
+            self._requested = False
+            self._finished.set()
+            self.log(f"! could not start the quit drain: {str(exc)[:160]}")
+            return True
+        return False

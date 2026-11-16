@@ -307,6 +307,33 @@ class _MenuTarget(AppKit.NSObject):
         self.callbacks["check_updates"]()
 
 
+class _AppDelegate(AppKit.NSObject, protocols=[objc.protocolNamed("NSApplicationDelegate")]):
+    """NSApplication's delegate. Without one, macOS's quit request (logout,
+    restart, shut down, Activity Monitor's Quit) made -[NSApplication
+    terminate:] call exit() at once (2026-11-08 to 11-14: four crash reports).
+    The protocol gives the reply its NSUInteger width."""
+
+    should_terminate = None  # callable() -> bool, set by install_terminate_handler
+
+    def applicationShouldTerminate_(self, _sender):
+        try:
+            allowed = self.should_terminate is None or bool(self.should_terminate())
+        except Exception:
+            allowed = True  # a broken handler must never keep the app from quitting
+        return AppKit.NSTerminateNow if allowed else AppKit.NSTerminateLater
+
+
+def install_terminate_handler(should_terminate, app=None) -> _AppDelegate:
+    """Make ``should_terminate()`` decide every terminate (True: exit now;
+    False: defer with NSTerminateLater). The owner must later call NSApp's
+    replyToApplicationShouldTerminate_. Keep the returned delegate alive:
+    NSApp holds it weakly."""
+    delegate = _AppDelegate.alloc().init()
+    delegate.should_terminate = should_terminate
+    (AppKit.NSApp if app is None else app).setDelegate_(delegate)
+    return delegate
+
+
 def init_app() -> "StatusUI":
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
@@ -362,6 +389,10 @@ class StatusUI:
         AppKit.NSWorkspace.sharedWorkspace().notificationCenter(
         ).addObserver_selector_name_object_(
             self._target, "didWake:", AppKit.NSWorkspaceDidWakeNotification, None)
+
+    def set_terminate_handler(self, should_terminate) -> None:
+        """Route macOS's quit request through ``should_terminate()``."""
+        self._app_delegate = install_terminate_handler(should_terminate)
 
     # -- history menu ------------------------------------------------------
 

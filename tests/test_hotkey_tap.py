@@ -243,7 +243,7 @@ class App:
         return [call.args[0] for call in self.status.set_tap_health.call_args_list]
 
 
-def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", create_ok=True):
+def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", create_ok=True, prepare=None):
     """scrivo.run() with every OS boundary faked; drive(app) runs as the main
     loop, then shutdown is requested and run() returns. Returns the App."""
     tap_os, gate = FakeTapOS(create_ok=create_ok), PollerGate()
@@ -252,7 +252,7 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
     status.set_history_callbacks.side_effect = lambda callbacks: None
 
     started = []
-    ns_app = MagicMock()
+    ns_app = app.ns_app = MagicMock()
 
     class InterceptThread(REAL_THREAD):
         def start(self):
@@ -338,16 +338,19 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
         }
         for name, replacement in replacements.items():
             stack.enter_context(patch(name, replacement))
+        if prepare is not None:
+            prepare(root)  # the data folder as the previous run left it
         try:
             scrivo.run(trigger, speech_config=resolve_speech_config("nemotron-en"), hotkey_spec=hotkey_spec)
         finally:
             for boundary in app.boundaries:
                 boundary.request()  # also when run() exits early: let its worker thread end
             # The shutdown watcher tears down on its own thread (it disables
-            # the tap, then terminates NSApp last): let it finish under the
+            # the tap, then terminates NSApp or replies to its request): let it finish under the
             # fakes, never against the real window server.
             deadline = time.monotonic() + WAIT_S
             while ("shutdown_watcher" in started and not ns_app.terminate_.called
+                   and not ns_app.replyToApplicationShouldTerminate_.called
                    and time.monotonic() < deadline):
                 REAL_SLEEP(0.01)
     return app
@@ -399,6 +402,50 @@ class TapSetupTests(unittest.TestCase):
         finished, restart_pending = guard.call_args.args
         self.assertTrue(finished.is_set(), "run() returned, so the guard stands down")
         self.assertFalse(restart_pending())
+
+    def test_a_quit_from_macos_runs_the_drained_quit_and_only_then_lets_appkit_exit(self):
+        # 2026-11-08/11/12/14: a logout's quit event made AppKit call exit()
+        # at once, past the drain and the teardown (Nemotron's Metal device
+        # then aborted in a static destructor: a SIGABRT crash report).
+        seen = {}
+
+        def drive(app):
+            handler = app.status.set_terminate_handler.call_args.args[0]
+            seen["first"] = handler()
+            deadline = time.monotonic() + WAIT_S
+            while not app.ns_app.replyToApplicationShouldTerminate_.called and time.monotonic() < deadline:
+                REAL_SLEEP(0.01)
+            seen["replied"] = app.ns_app.replyToApplicationShouldTerminate_.called
+            seen["after"] = handler()
+
+        app = run_app(self, drive)
+        self.assertFalse(seen["first"], "AppKit was allowed to exit before the drained quit")
+        self.assertTrue(seen["replied"], "the drained quit never answered the system request")
+        app.ns_app.replyToApplicationShouldTerminate_.assert_called_once_with(True)
+        app.ns_app.terminate_.assert_not_called()
+        self.assertTrue(seen["after"], "a terminate after teardown was refused")
+        self.assertEqual(len(app.logged("● macOS asked Scrivo to quit")), 1)
+        self.assertEqual(app.logged("● shutting down"), ["● shutting down (quit)"])
+
+    def test_a_launch_names_the_previous_run_that_ended_without_shutting_down(self):
+        import os
+        import subprocess
+        gone = subprocess.Popen(["/usr/bin/true"])
+        gone.wait()
+
+        def prepare(root):
+            owner = root / "capture-spool" / ".owner"
+            owner.parent.mkdir(mode=0o700)
+            owner.write_text(f"{gone.pid:>10} listening\n", encoding="ascii")
+            written = time.time() - 30.0
+            os.utime(owner, (written, written))
+
+        with tempfile.TemporaryDirectory() as reports, patch("scrivo.DIAGNOSTIC_REPORTS", Path(reports)):
+            app = run_app(self, lambda app: None, prepare=prepare)
+        notes = app.logged("! the last Scrivo")
+        self.assertEqual(len(notes), 1, app.logs)
+        self.assertIn(f"pid {gone.pid}", notes[0])
+        self.assertLess(app.logs.index(notes[0]), app.logs.index(app.logged("listening on")[0]))
 
     def test_without_a_tap_run_exits_with_the_accessibility_hint(self):
         with self.assertRaises(SystemExit) as raised:
