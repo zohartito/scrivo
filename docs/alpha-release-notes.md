@@ -8,9 +8,12 @@ computer; there is no account, cloud service or telemetry.
 
 - **Sotto is now Scrivo.** Same app, new name. A Sotto install moves over when
   you paste the install line again; your settings, History and models stay.
-- **Crash-safe dictation.** Each recording is saved at key-up, and one that
-  Scrivo could not transcribe (a crash, a force quit) comes back in History for
-  Retry. A failed transcription keeps its recording too.
+- **Crash recovery.** At key-up, each finished recording is queued for a
+  background disk write. Once that write is flushed, atomically renamed and
+  its directory synced, a recording interrupted before transcription can
+  return in History for Retry. A crash before the write completes can lose
+  that recording; queueing alone does not acknowledge a durable save. A failed
+  transcription keeps its recording too when History can save it.
 - **Quit, Restart and updates finish what you said first**, on the Mac and on
   Windows.
 - **Text delivery.** Your clipboard is put back after each paste, results paste

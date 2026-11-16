@@ -367,7 +367,7 @@ With the commands above, all Scrivo-managed alpha state lives under
 | --- | --- |
 | `history.jsonl`, `audio/`, `audio-raw/` | Transcripts/metadata, and the processed and raw-capture WAV audio of each item; ordinary history capped at 200 |
 | `language-mode`, `engine-mode`, `settings.json` | Saved language, engine and Settings choices |
-| `capture-spool/` | Each finished recording's raw audio, only until its History item is saved (recovered into History after a crash) |
+| `capture-spool/` | Finished recordings queued for background writing at key-up; completed durable writes can be recovered into History after a crash, until their History item is saved |
 | `dictionary.txt`, `glossary.txt` | Your personal spelling rules, and terms to help Whisper hear them |
 | `stats.json`, `logs/` | Word counts for **Your progress**, and Scrivo's log (counts and timings, never your words) |
 | `models/silero_vad.onnx` | Voice-detection model (Silero v6.2, MIT) used to drop silence phrases |
