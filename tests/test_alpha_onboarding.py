@@ -572,6 +572,16 @@ class AppLogRotationTests(unittest.TestCase):
                     if reader is not None:
                         os.close(reader)
 
+    @unittest.skipUnless(os.name == "posix", "macOS app log rejects hard links")
+    def test_scr08_unsafe_path_after_startup_does_not_raise_from_log(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "scrivo.log"
+            path.write_text("original")
+            os.link(path, Path(folder) / "other.txt")
+            with patch.dict(scrivo_log._app_log, {"path": path, "max_bytes": 100}), \
+                 patch("sys.stderr", new=Mock()):
+                scrivo.log("synthetic line")
+
     def test_a_log_that_grows_past_its_limit_is_rotated_and_reopened(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "scrivo.log"

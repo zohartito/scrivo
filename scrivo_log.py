@@ -67,7 +67,7 @@ def _log_directory(folder: Path):
     folder = Path(os.path.abspath(folder))
     if os.name != "posix":
         if any(part.is_symlink() for part in (folder, *folder.parents)):
-            raise RuntimeError("unsafe log directory")
+            raise OSError("unsafe log directory")
         folder.mkdir(parents=True, exist_ok=True)
         yield None
         return
@@ -86,10 +86,10 @@ def _log_directory(folder: Path):
             try:
                 info = os.fstat(child)
                 if info.st_uid not in {0, os.getuid()} or info.st_mode & 0o022:
-                    raise RuntimeError("unsafe log directory")
+                    raise OSError("unsafe log directory")
                 if index == len(folder.parts) - 1:
                     if info.st_uid != os.getuid():
-                        raise RuntimeError("log directory is not owned by this user")
+                        raise OSError("log directory is not owned by this user")
                     os.fchmod(child, 0o700)
             except BaseException:
                 os.close(child)
@@ -108,10 +108,10 @@ def _open_log(path: Path, directory: int | None, *, create: bool = False) -> int
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise RuntimeError("log is not a regular file with a single link")
+            raise OSError("log is not a regular file with a single link")
         if os.name == "posix":
             if info.st_uid != os.getuid():
-                raise RuntimeError("log is not owned by this user")
+                raise OSError("log is not owned by this user")
             os.fchmod(descriptor, 0o600)
         return descriptor
     except BaseException:
