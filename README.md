@@ -436,7 +436,11 @@ Deletion cannot guarantee erasure from backups or SSD snapshots.
 - **"Thank you." appears when you said nothing:** Whisper invents short stock
   phrases for silence. `scrivo.py setup` (run by the installer) adds the small
   Silero voice-detection model, which keeps those out of the text field (they
-  stay in History). It never blocks real dictation, including whispers.
+  stay in History). This check can also hold real short dictation, including
+  whispers: transcripts of at most 20 characters are held when Silero scores
+  less than 6% speech. Recover the text with History → Copy, or use Retry on
+  the saved audio (Retry applies the same checks). Longer transcripts can pass
+  with a zero speech score; real short-whisper accuracy has not been measured.
 - **Restart / engine switch fails:** use the reported error, Quit and rerun.
   Explicit `--profile`/`--model` locks engine selection; omit them for menu
   switching.

@@ -97,7 +97,8 @@ def reads_as_no_speech(text: str, speech_fraction: float) -> str | None:
     """Output-side no-speech verdict, judged AFTER transcription. Whisper
     turns silence and dead-mic captures into short stock phrases ("you",
     "Thank you."), so a tiny transcript from a capture the VAD scored as
-    speechless is silence, not dictation. A substantial transcript wins over
+    speechless is held as possible silence; real short whispers can be held
+    too, with the text retained in History. A substantial transcript wins over
     the VAD score — Silero scores real whispered dictation at 0% speech
     (whispers on this machine: 240+ chars at VAD 0%; silence: <=15 chars)."""
     if not text.strip():
