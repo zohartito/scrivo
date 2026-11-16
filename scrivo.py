@@ -66,7 +66,7 @@ from lifecycle import (APP_DRAIN_TIMEOUT, APP_RELAUNCH_SCRIPT, DRAIN_POLL_S, LAU
                        dictation_in_flight, end_capture_now, launchd_owns_this_process, launched_as_sealed_job,
                        UPDATE_DRAIN_DEADLINE_S, main_thread_dispatch, relaunch_app_after_exit,
                        shutdown_signal_handlers, wait_until_idle)
-from lifecycle import EXIT_GUARD_S, exit_if_shutdown_stuck  # noqa: F401
+from lifecycle import EXIT_GUARD_S, SystemQuit, exit_if_shutdown_stuck  # noqa: F401
 # The trigger-key gesture engine lives in gestures.py (it imports nothing from
 # scrivo); these names stay importable from scrivo for existing callers.
 from gestures import DOUBLE_TAP_WINDOW_S, HANDS_FREE_MAX_S, HOLD_THRESHOLD_S, GestureEngine  # noqa: F401
@@ -1565,6 +1565,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown, capture_gate, end_recording=lambda: end_capture_now(engine, capture, on_finish),
         busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,
                                          warming=bool(model_activity["rewarming"])))
+    system_quit = SystemQuit(lifecycle, log=log)  # macOS's quit request (logout, restart) drains like Quit
     # Real key-downs seen by the tap (Scrivo's tagged events excluded): typing
     # after a paste means "scratch that" must not undo it.
     user_keydowns = {"count": 0}
@@ -1738,6 +1739,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
                 os._exit(RESTART_FAILED_EXIT)
         if status_ui is not None:
             ui_call(status_ui.hide)
+            system_quit.teardown_finished()  # the delegate lets this terminate through
             try:
                 import AppKit
                 AppKit.NSApp.terminate_(None)
@@ -1774,6 +1776,7 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         if status_ui is not None:
             # menu actions + system lifecycle hooks
             status_ui.set_history_callbacks(controller.menu_callbacks())
+            status_ui.set_terminate_handler(system_quit.should_terminate)
             status_ui.on_wake = lambda: (not shutdown.requested() and
                                          (engine.force_reset(), Quartz.CGEventTapEnable(hotkeys.tap, True)))
             controller.refresh_history()

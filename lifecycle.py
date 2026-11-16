@@ -530,3 +530,39 @@ class Lifecycle:
             finally:
                 then()
         threading.Thread(target=work, daemon=True, name=f"scrivo-{verb}").start()
+
+
+class SystemQuit:
+    """macOS's own quit request: the quit Apple event that logout, restart and
+    shut down send (and Activity Monitor's Quit, or ``osascript`` quitting the
+    app), which AppKit puts to the app delegate's applicationShouldTerminate:.
+
+    2026-11-08, 11-11, 11-12, 11-14: at each logout loginwindow sent Scrivo
+    that event, and with no delegate -[NSApplication terminate:] called exit()
+    at once: no drain, no "shutting down" line, no "stopping" record, and
+    Nemotron's Metal device was freed by a C++ static destructor with its
+    residency sets still open (GGML_ASSERT, SIGABRT, a Python crash report).
+    Now the request quits the way the menu's Quit does and the immediate exit
+    is cancelled; the teardown ends the app itself once it has run
+    (``teardown_finished``), and that terminate goes ahead."""
+
+    def __init__(self, lifecycle: Lifecycle, *, log=log) -> None:
+        self.lifecycle = lifecycle
+        self.log = log
+        self._finished = threading.Event()
+
+    def teardown_finished(self) -> None:
+        """The teardown is about to terminate the app: let AppKit do it."""
+        self._finished.set()
+
+    def should_terminate(self) -> bool:
+        """Main thread (the delegate): True only after the teardown ran.
+        Otherwise starts the drained quit (once) and returns False.
+
+        Side effects: may log one line; may close the gate and end the recording."""
+        if self._finished.is_set():
+            return True
+        if not self.lifecycle.shutdown.requested() and self.lifecycle.closed != "quitting":
+            self.log("● macOS asked Scrivo to quit (log out, restart, shut down, or another app's Quit)")
+        self.lifecycle.quit()
+        return False

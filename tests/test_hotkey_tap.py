@@ -252,7 +252,7 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
     status.set_history_callbacks.side_effect = lambda callbacks: None
 
     started = []
-    ns_app = MagicMock()
+    ns_app = app.ns_app = MagicMock()
 
     class InterceptThread(REAL_THREAD):
         def start(self):
@@ -399,6 +399,28 @@ class TapSetupTests(unittest.TestCase):
         finished, restart_pending = guard.call_args.args
         self.assertTrue(finished.is_set(), "run() returned, so the guard stands down")
         self.assertFalse(restart_pending())
+
+    def test_a_quit_from_macos_runs_the_drained_quit_and_only_then_lets_appkit_exit(self):
+        # 2026-11-08/11/12/14: a logout's quit event made AppKit call exit()
+        # at once, past the drain and the teardown (Nemotron's Metal device
+        # then aborted in a static destructor: a SIGABRT crash report).
+        seen = {}
+
+        def drive(app):
+            handler = app.status.set_terminate_handler.call_args.args[0]
+            seen["first"] = handler()
+            deadline = time.monotonic() + WAIT_S
+            while not app.ns_app.terminate_.called and time.monotonic() < deadline:
+                REAL_SLEEP(0.01)
+            seen["terminated"] = app.ns_app.terminate_.called
+            seen["after"] = handler()
+
+        app = run_app(self, drive)
+        self.assertFalse(seen["first"], "AppKit was allowed to exit before the drained quit")
+        self.assertTrue(seen["terminated"], "the drained quit never ended the app")
+        self.assertTrue(seen["after"], "the teardown's own terminate was refused")
+        self.assertEqual(len(app.logged("● macOS asked Scrivo to quit")), 1)
+        self.assertEqual(app.logged("● shutting down"), ["● shutting down (quit)"])
 
     def test_without_a_tap_run_exits_with_the_accessibility_hint(self):
         with self.assertRaises(SystemExit) as raised:

@@ -201,6 +201,59 @@ class QuitTests(unittest.TestCase):
         self.assertLess(world.clock(), scrivo.QUIT_DRAIN_S + 1.0)
 
 
+# -- macOS's own quit request (log out, restart, shut down, another app's Quit) --
+
+class SystemQuitTests(unittest.TestCase):
+    """2026-11-08, 11-11, 11-12, 11-14: at each logout loginwindow sent Scrivo
+    a quit event, and with no app delegate -[NSApplication terminate:] called
+    exit() at once: no drain, no "shutting down" line, and a SIGABRT crash
+    report from Nemotron's Metal device freed by a static destructor."""
+
+    def wire(self, world):
+        self.logs = []
+        return lifecycle.SystemQuit(world.lifecycle, log=self.logs.append)
+
+    def test_a_quit_from_macos_finishes_the_dictation_like_the_menu_quit_instead_of_exiting_at_once(self):
+        world = World(frozen=True)
+        world.busy.set()
+        system_quit = self.wire(world)
+        self.assertFalse(system_quit.should_terminate(), "macOS's quit exited with a dictation in flight")
+        self.assertTrue(wait_for(lambda: world.ended), "the recording in progress was not ended")
+        self.assertEqual(world.lifecycle.closed, "quitting")
+        self.assertFalse(gate_open(world.gate), "a new recording could start during the drain")
+        time.sleep(0.05)
+        self.assertFalse(world.shutdown.requested(), "stopped before the dictation was pasted")
+        world.busy.clear()
+        self.assertTrue(world.shutdown.event.wait(WAIT_S))
+        self.assertEqual(len(self.logs), 1)
+        self.assertIn("macOS asked Scrivo to quit", self.logs[0])
+
+    def test_the_teardown_own_terminate_goes_ahead(self):
+        world = World()
+        system_quit = self.wire(world)
+        system_quit.teardown_finished()
+        self.assertTrue(system_quit.should_terminate())
+        self.assertIsNone(world.lifecycle.closed, "a terminate after the teardown started another quit")
+        self.assertEqual(self.logs, [])
+
+    def test_repeated_quit_events_start_one_drain_and_log_once(self):
+        world = World(frozen=True)
+        world.busy.set()
+        system_quit = self.wire(world)
+        self.assertFalse(system_quit.should_terminate())
+        self.assertFalse(system_quit.should_terminate())
+        self.assertEqual(len(self.logs), 1)
+        world.busy.clear()
+        self.assertTrue(world.shutdown.event.wait(WAIT_S))
+
+    def test_a_quit_event_while_a_quit_is_already_stopping_waits_for_that_teardown(self):
+        world = World()
+        system_quit = self.wire(world)
+        world.shutdown.request()
+        self.assertFalse(system_quit.should_terminate(), "exited before the teardown ran")
+        self.assertEqual(self.logs, [])
+
+
 # -- N12: the menu Restart drains like Quit ----------------------------------
 
 class MenuRestartTests(unittest.TestCase):

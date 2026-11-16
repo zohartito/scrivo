@@ -278,5 +278,39 @@ class MenuBarIconTests(unittest.TestCase):
         self.assertIs(status._notice, alert, "kept alive while it is open")
 
 
+class TerminateRequestTests(unittest.TestCase):
+    """macOS's quit request (logout, restart, shut down, another app's Quit)
+    reaches NSApplication's delegate before anything exits."""
+
+    def install(self, should_terminate):
+        import ui
+        app = MagicMock()
+        delegate = ui.install_terminate_handler(should_terminate, app=app)
+        app.setDelegate_.assert_called_once_with(delegate)
+        return delegate
+
+    def test_the_handler_decides_between_terminating_now_and_cancelling(self):
+        self.assertEqual(self.install(lambda: False).applicationShouldTerminate_(None), AppKit.NSTerminateCancel)
+        self.assertEqual(self.install(lambda: True).applicationShouldTerminate_(None), AppKit.NSTerminateNow)
+
+    def test_a_failing_handler_never_strands_the_quit(self):
+        def broken():
+            raise RuntimeError("boom")
+        self.assertEqual(self.install(broken).applicationShouldTerminate_(None), AppKit.NSTerminateNow)
+
+    def test_the_reply_has_the_width_appkit_reads(self):
+        # NSApplicationTerminateReply is an NSUInteger: without the protocol
+        # PyObjC would guess a 32-bit return for the delegate method.
+        import ui
+        self.assertEqual(ui._AppDelegate.applicationShouldTerminate_.signature, b"Q@:@")
+
+    def test_status_ui_keeps_the_delegate_alive(self):
+        # NSApp holds its delegate weakly.
+        status = StatusUI.__new__(StatusUI)
+        with patch("ui.AppKit.NSApp") as app:
+            status.set_terminate_handler(lambda: True)
+        app.setDelegate_.assert_called_once_with(status._app_delegate)
+
+
 if __name__ == "__main__":
     unittest.main()
