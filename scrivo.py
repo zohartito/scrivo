@@ -1637,7 +1637,12 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         shutdown, capture_gate, end_recording=lambda: end_capture_now(engine, capture, on_finish),
         busy=lambda: dictation_in_flight(capture, jobs, pending_deliveries,
                                          warming=bool(model_activity["rewarming"])))
-    system_quit = SystemQuit(lifecycle, log=log)  # macOS's quit request (logout, restart) drains like Quit
+
+    def reply_to_terminate() -> None:
+        import AppKit
+        ui_call(AppKit.NSApp.replyToApplicationShouldTerminate_, True)
+
+    system_quit = SystemQuit(lifecycle, reply_to_terminate=reply_to_terminate, log=log)
     # Real key-downs seen by the tap (Scrivo's tagged events excluded): typing
     # after a paste means "scratch that" must not undo it.
     user_keydowns = {"count": 0}
@@ -1755,68 +1760,78 @@ def run(trigger: str, model: str | None = None, overlay: bool = True,
         (N6) and keeps untranscribed captures in History (N9); then ends the
         process — exec for a foreground restart, exit status
         RESTART_FAILED_EXIT if that exec fails (N27)."""
-        shutdown.stop_capture(capture)
-        if not restart_drain["kept"]:
-            restart_drain["kept"] = True
-            flush_clipboard_restore(shutdown.teardown_wait_s(
-                SIGTERM_RESTORE_WAIT_S if shutdown.stop_signal == signal.SIGTERM else RESTORE_DELAY_S,
-                time.monotonic()))
-            keep_untranscribed()
-        shutdown.discard_queued(jobs)
-        drained = True
-        if restart.foreground_pending or nemotron is not None:
-            # Let the worker finish its current job; shutdown already fences
-            # every paste/commit, so nothing it produces is kept.
-            transcription_thread.join(APP_DRAIN_TIMEOUT)
-            drained = not transcription_thread.is_alive()
-        if not drained:
-            if restart_drain["deadline"] is None:
-                restart_drain["deadline"] = time.monotonic() + RESTART_DRAIN_DEADLINE_S
-            if time.monotonic() < restart_drain["deadline"]:
-                AppHelper.callLater(0.1, stop_runtime_on_main)
-                return
-            if not restart.foreground_pending:
-                # A wedged native call must not hang Quit forever, and freeing
-                # the native engine underneath it could crash: leave directly.
-                log("! transcription did not finish in time — quitting anyway")
-                os._exit(0)
-            # exec replaces the whole image, so a wedged native call cannot
-            # follow it; waiting forever would strand the user instead.
-            log("! transcription did not finish in time — restarting anyway")
-        if nemotron is not None and drained:
-            # Cocoa terminate exits without unwinding run()'s finally block.
-            # Free native streams/model before Metal's global destructors run.
-            nemotron.close()
+        rescheduled = False
         try:
-            Quartz.CGEventTapEnable(hotkeys.tap, False)
-        except Exception:
-            pass
-        if restart.foreground_pending:
-            if not capture.wait_released(RESTART_RELEASE_WAIT_S):
-                log("! microphone teardown still running — restarting anyway")
+            shutdown.stop_capture(capture)
+            if not restart_drain["kept"]:
+                restart_drain["kept"] = True
+                flush_clipboard_restore(shutdown.teardown_wait_s(
+                    SIGTERM_RESTORE_WAIT_S if shutdown.stop_signal == signal.SIGTERM else RESTORE_DELAY_S,
+                    time.monotonic()))
+                keep_untranscribed()
+            shutdown.discard_queued(jobs)
+            drained = True
+            if restart.foreground_pending or nemotron is not None:
+                # Let the worker finish its current job; shutdown already fences
+                # every paste/commit, so nothing it produces is kept.
+                transcription_thread.join(APP_DRAIN_TIMEOUT)
+                drained = not transcription_thread.is_alive()
+            if not drained:
+                if restart_drain["deadline"] is None:
+                    restart_drain["deadline"] = time.monotonic() + RESTART_DRAIN_DEADLINE_S
+                if time.monotonic() < restart_drain["deadline"]:
+                    AppHelper.callLater(0.1, stop_runtime_on_main)
+                    rescheduled = True
+                    return
+                if not restart.foreground_pending:
+                    # A wedged native call must not hang Quit forever, and freeing
+                    # the native engine underneath it could crash: leave directly.
+                    log("! transcription did not finish in time — quitting anyway")
+                    os._exit(0)
+                # exec replaces the whole image, so a wedged native call cannot
+                # follow it; waiting forever would strand the user instead.
+                log("! transcription did not finish in time — restarting anyway")
+            if nemotron is not None and drained:
+                # Cocoa terminate exits without unwinding run()'s finally block.
+                # Free native streams/model before Metal's global destructors run.
+                nemotron.close()
             try:
-                restart.exec_foreground()
-            except Exception as exc:
-                # Shutdown is one-way, so this process cannot carry on. Exit
-                # non-zero: KeepAlive (the login item, the LaunchAgent) starts
-                # Scrivo again; exit 0 would be a Quit it leaves alone, and an
-                # alert queued now would never be shown.
-                restart.foreground_pending = False
-                try:
-                    restart.failed(f"foreground restart failed ({type(exc).__name__}: {str(exc)[:120]})")
-                except Exception as callback_exc:
-                    log(f"! restart failure handling failed: {str(callback_exc)[:120]}")
-                log(f"! exiting with status {RESTART_FAILED_EXIT} so launchd can start Scrivo again; "
-                    "from a terminal, run the command again")
-                os._exit(RESTART_FAILED_EXIT)
-        if status_ui is not None:
-            ui_call(status_ui.hide)
-            system_quit.teardown_finished()  # the delegate lets this terminate through
-            try:
-                import AppKit
-                AppKit.NSApp.terminate_(None)
+                Quartz.CGEventTapEnable(hotkeys.tap, False)
             except Exception:
                 pass
+            if restart.foreground_pending:
+                if not capture.wait_released(RESTART_RELEASE_WAIT_S):
+                    log("! microphone teardown still running — restarting anyway")
+                try:
+                    restart.exec_foreground()
+                except Exception as exc:
+                    # Shutdown is one-way, so this process cannot carry on. Exit
+                    # non-zero: KeepAlive (the login item, the LaunchAgent) starts
+                    # Scrivo again; exit 0 would be a Quit it leaves alone, and an
+                    # alert queued now would never be shown.
+                    restart.foreground_pending = False
+                    try:
+                        restart.failed(f"foreground restart failed ({type(exc).__name__}: {str(exc)[:120]})")
+                    except Exception as callback_exc:
+                        log(f"! restart failure handling failed: {str(callback_exc)[:120]}")
+                    log(f"! exiting with status {RESTART_FAILED_EXIT} so launchd can start Scrivo again; "
+                        "from a terminal, run the command again")
+                    os._exit(RESTART_FAILED_EXIT)
+            if status_ui is not None:
+                ui_call(status_ui.hide)
+        finally:
+            # Answer the original system request even if cleanup raised,
+            # but keep waiting when the native worker needs another pass.
+            system_termination = False
+            if not rescheduled and status_ui is not None:
+                system_termination = system_quit.teardown_finished()
+        if status_ui is not None:
+            if not system_termination:
+                try:
+                    import AppKit
+                    AppKit.NSApp.terminate_(None)
+                except Exception:
+                    pass
         else:
             try:
                 Quartz.CFRunLoopStop(Quartz.CFRunLoopGetMain())

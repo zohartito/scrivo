@@ -19,7 +19,7 @@ import time
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 if sys.platform != "darwin":
     raise unittest.SkipTest("the Mac app lifecycle — macOS-only")
@@ -209,9 +209,36 @@ class SystemQuitTests(unittest.TestCase):
     exit() at once: no drain, no "shutting down" line, and a SIGABRT crash
     report from Nemotron's Metal device freed by a static destructor."""
 
-    def wire(self, world):
+    def wire(self, world, *, reply_to_terminate=None):
         self.logs = []
-        return lifecycle.SystemQuit(world.lifecycle, log=self.logs.append)
+        self.reply = Mock() if reply_to_terminate is None else reply_to_terminate
+        return lifecycle.SystemQuit(world.lifecycle, reply_to_terminate=self.reply, log=self.logs.append)
+
+    def wire_teardown(self, world):
+        self.ui_calls = []
+        ui_call, _ = lifecycle.main_thread_dispatch(
+            True, lambda method, *args: self.ui_calls.append((method, args)))
+        namespace = {
+            "shutdown": world.shutdown, "capture": Mock(), "jobs": queue.Queue(),
+            "restart": types.SimpleNamespace(foreground_pending=False), "nemotron": None,
+            "transcription_thread": Mock(is_alive=Mock(return_value=False)),
+            "restart_drain": {"deadline": None, "kept": False},
+            "flush_clipboard_restore": Mock(), "keep_untranscribed": Mock(),
+            "Quartz": Mock(), "hotkeys": types.SimpleNamespace(tap=object()),
+            "status_ui": Mock(), "ui_call": ui_call, "AppHelper": Mock(),
+            "time": time, "signal": signal, "log": Mock(), "os": Mock(),
+        }
+        for name in ("APP_DRAIN_TIMEOUT", "RESTART_DRAIN_DEADLINE_S", "RESTART_RELEASE_WAIT_S",
+                     "SIGTERM_RESTORE_WAIT_S", "RESTORE_DELAY_S", "RESTART_FAILED_EXIT"):
+            namespace[name] = getattr(scrivo, name)
+        closures(["reply_to_terminate", "stop_runtime_on_main"], namespace)
+        namespace["system_quit"] = self.wire(world, reply_to_terminate=namespace["reply_to_terminate"])
+        return namespace
+
+    def run_ui_calls(self):
+        while self.ui_calls:
+            method, args = self.ui_calls.pop(0)
+            method(*args)
 
     def test_a_quit_from_macos_finishes_the_dictation_like_the_menu_quit_instead_of_exiting_at_once(self):
         world = World(frozen=True)
@@ -227,6 +254,9 @@ class SystemQuitTests(unittest.TestCase):
         self.assertTrue(world.shutdown.event.wait(WAIT_S))
         self.assertEqual(len(self.logs), 1)
         self.assertIn("macOS asked Scrivo to quit", self.logs[0])
+        self.reply.assert_not_called()
+        system_quit.teardown_finished()
+        self.reply.assert_called_once_with()
 
     def test_the_teardown_own_terminate_goes_ahead(self):
         world = World()
@@ -235,16 +265,23 @@ class SystemQuitTests(unittest.TestCase):
         self.assertTrue(system_quit.should_terminate())
         self.assertIsNone(world.lifecycle.closed, "a terminate after the teardown started another quit")
         self.assertEqual(self.logs, [])
+        self.reply.assert_not_called()
 
     def test_repeated_quit_events_start_one_drain_and_log_once(self):
         world = World(frozen=True)
         world.busy.set()
         system_quit = self.wire(world)
-        self.assertFalse(system_quit.should_terminate())
-        self.assertFalse(system_quit.should_terminate())
+        with patch.object(world.lifecycle, "quit", wraps=world.lifecycle.quit) as quit_drain:
+            self.assertFalse(system_quit.should_terminate())
+            self.assertFalse(system_quit.should_terminate())
+        quit_drain.assert_called_once_with()
         self.assertEqual(len(self.logs), 1)
+        self.assertEqual(len(world.ended), 1)
         world.busy.clear()
         self.assertTrue(world.shutdown.event.wait(WAIT_S))
+        system_quit.teardown_finished()
+        system_quit.teardown_finished()
+        self.reply.assert_called_once_with()
 
     def test_a_quit_event_while_a_quit_is_already_stopping_waits_for_that_teardown(self):
         world = World()
@@ -252,6 +289,103 @@ class SystemQuitTests(unittest.TestCase):
         world.shutdown.request()
         self.assertFalse(system_quit.should_terminate(), "exited before the teardown ran")
         self.assertEqual(self.logs, [])
+        system_quit.teardown_finished()
+        self.reply.assert_called_once_with()
+
+    def test_a_synchronous_quit_failure_terminates_now_without_a_deferred_reply(self):
+        system_quit = self.wire(World())
+        with patch.object(system_quit.lifecycle, "quit", side_effect=RuntimeError("cannot start drain")):
+            self.assertTrue(system_quit.should_terminate())
+        self.reply.assert_not_called()
+        system_quit.teardown_finished()
+        self.reply.assert_not_called()
+
+    def test_a_failed_background_drain_still_replies_after_teardown(self):
+        world = World()
+        system_quit = self.wire(world)
+        with patch.object(world.lifecycle, "busy", side_effect=RuntimeError("drain failed")):
+            self.assertFalse(system_quit.should_terminate())
+            self.assertTrue(world.shutdown.event.wait(WAIT_S))
+        system_quit.teardown_finished()
+        self.reply.assert_called_once_with()
+
+    def test_teardown_replies_once_on_the_main_thread_without_a_second_terminate(self):
+        world = World()
+        namespace = self.wire_teardown(world)
+        self.assertFalse(namespace["system_quit"].should_terminate())
+        self.assertTrue(world.shutdown.event.wait(WAIT_S))
+        with patch("AppKit.NSApp") as app:
+            namespace["stop_runtime_on_main"]()
+            app.replyToApplicationShouldTerminate_.assert_not_called()
+            self.run_ui_calls()
+            namespace["stop_runtime_on_main"]()
+            self.run_ui_calls()
+            app.replyToApplicationShouldTerminate_.assert_called_once_with(True)
+            app.terminate_.assert_not_called()
+
+    def test_an_earlier_teardown_failure_still_replies(self):
+        for step in ("stop_capture", "restore", "keep", "native_close", "hide"):
+            with self.subTest(step=step):
+                world = World()
+                namespace = self.wire_teardown(world)
+                self.assertFalse(namespace["system_quit"].should_terminate())
+                self.assertTrue(world.shutdown.event.wait(WAIT_S))
+                broken = Mock(side_effect=RuntimeError("teardown failed"))
+                if step == "stop_capture":
+                    world.shutdown.stop_capture = broken
+                elif step == "restore":
+                    namespace["flush_clipboard_restore"] = broken
+                elif step == "keep":
+                    namespace["keep_untranscribed"] = broken
+                elif step == "native_close":
+                    namespace["nemotron"] = types.SimpleNamespace(close=broken)
+                else:
+                    ui_call = namespace["ui_call"]
+
+                    def fail_hide(method, *args, hide=namespace["status_ui"].hide, fail=broken, dispatch=ui_call):
+                        if method == hide:
+                            fail()
+                        dispatch(method, *args)
+                    namespace["ui_call"] = fail_hide
+                with patch("AppKit.NSApp") as app:
+                    with self.assertRaisesRegex(RuntimeError, "teardown failed"):
+                        namespace["stop_runtime_on_main"]()
+                    app.replyToApplicationShouldTerminate_.assert_not_called()
+                    self.run_ui_calls()
+                    app.replyToApplicationShouldTerminate_.assert_called_once_with(True)
+                    app.terminate_.assert_not_called()
+
+    def test_rescheduled_teardown_waits_for_the_worker_before_replying(self):
+        world = World()
+        namespace = self.wire_teardown(world)
+        namespace["nemotron"] = Mock()
+        namespace["transcription_thread"].is_alive.return_value = True
+        self.assertFalse(namespace["system_quit"].should_terminate())
+        self.assertTrue(world.shutdown.event.wait(WAIT_S))
+        with patch("AppKit.NSApp") as app:
+            namespace["stop_runtime_on_main"]()
+            self.run_ui_calls()
+            namespace["AppHelper"].callLater.assert_called_once_with(0.1, namespace["stop_runtime_on_main"])
+            app.replyToApplicationShouldTerminate_.assert_not_called()
+            app.terminate_.assert_not_called()
+            namespace["transcription_thread"].is_alive.return_value = False
+            namespace["stop_runtime_on_main"]()
+            self.run_ui_calls()
+            namespace["nemotron"].close.assert_called_once_with()
+            app.replyToApplicationShouldTerminate_.assert_called_once_with(True)
+            app.terminate_.assert_not_called()
+
+    def test_menu_quit_terminates_after_teardown_without_replying(self):
+        world = World()
+        namespace = self.wire_teardown(world)
+        world.lifecycle.quit()
+        self.assertTrue(world.shutdown.event.wait(WAIT_S))
+        with patch("AppKit.NSApp") as app:
+            app.terminate_.side_effect = lambda _: self.assertTrue(namespace["system_quit"].should_terminate())
+            namespace["stop_runtime_on_main"]()
+            self.run_ui_calls()
+            app.terminate_.assert_called_once_with(None)
+            app.replyToApplicationShouldTerminate_.assert_not_called()
 
 
 # -- N12: the menu Restart drains like Quit ----------------------------------

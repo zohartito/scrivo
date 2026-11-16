@@ -320,12 +320,14 @@ class _AppDelegate(AppKit.NSObject, protocols=[objc.protocolNamed("NSApplication
             allowed = self.should_terminate is None or bool(self.should_terminate())
         except Exception:
             allowed = True  # a broken handler must never keep the app from quitting
-        return AppKit.NSTerminateNow if allowed else AppKit.NSTerminateCancel
+        return AppKit.NSTerminateNow if allowed else AppKit.NSTerminateLater
 
 
 def install_terminate_handler(should_terminate, app=None) -> _AppDelegate:
     """Make ``should_terminate()`` decide every terminate (True: exit now;
-    False: cancel it). Returns the delegate: keep it, NSApp holds it weakly."""
+    False: defer with NSTerminateLater). The owner must later call NSApp's
+    replyToApplicationShouldTerminate_. Keep the returned delegate alive:
+    NSApp holds it weakly."""
     delegate = _AppDelegate.alloc().init()
     delegate.should_terminate = should_terminate
     (AppKit.NSApp if app is None else app).setDelegate_(delegate)

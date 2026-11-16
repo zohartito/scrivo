@@ -346,10 +346,11 @@ def run_app(test, drive, *, trigger="right-option", hotkey_spec="ctrl-opt-d", cr
             for boundary in app.boundaries:
                 boundary.request()  # also when run() exits early: let its worker thread end
             # The shutdown watcher tears down on its own thread (it disables
-            # the tap, then terminates NSApp last): let it finish under the
+            # the tap, then terminates NSApp or replies to its request): let it finish under the
             # fakes, never against the real window server.
             deadline = time.monotonic() + WAIT_S
             while ("shutdown_watcher" in started and not ns_app.terminate_.called
+                   and not ns_app.replyToApplicationShouldTerminate_.called
                    and time.monotonic() < deadline):
                 REAL_SLEEP(0.01)
     return app
@@ -412,15 +413,17 @@ class TapSetupTests(unittest.TestCase):
             handler = app.status.set_terminate_handler.call_args.args[0]
             seen["first"] = handler()
             deadline = time.monotonic() + WAIT_S
-            while not app.ns_app.terminate_.called and time.monotonic() < deadline:
+            while not app.ns_app.replyToApplicationShouldTerminate_.called and time.monotonic() < deadline:
                 REAL_SLEEP(0.01)
-            seen["terminated"] = app.ns_app.terminate_.called
+            seen["replied"] = app.ns_app.replyToApplicationShouldTerminate_.called
             seen["after"] = handler()
 
         app = run_app(self, drive)
         self.assertFalse(seen["first"], "AppKit was allowed to exit before the drained quit")
-        self.assertTrue(seen["terminated"], "the drained quit never ended the app")
-        self.assertTrue(seen["after"], "the teardown's own terminate was refused")
+        self.assertTrue(seen["replied"], "the drained quit never answered the system request")
+        app.ns_app.replyToApplicationShouldTerminate_.assert_called_once_with(True)
+        app.ns_app.terminate_.assert_not_called()
+        self.assertTrue(seen["after"], "a terminate after teardown was refused")
         self.assertEqual(len(app.logged("● macOS asked Scrivo to quit")), 1)
         self.assertEqual(app.logged("● shutting down"), ["● shutting down (quit)"])
 
