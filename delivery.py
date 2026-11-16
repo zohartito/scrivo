@@ -148,7 +148,7 @@ def secure_input_active() -> bool:
     """Is a password field (or another secure-input owner) active right now?
 
     PyObjC does not bridge Carbon's IsSecureEventInputEnabled, so this calls
-    it directly; an unavailable probe reports False rather than blocking."""
+    it directly; an unavailable probe reports True to block insertion."""
     global _secure_input_probe
     try:
         if _secure_input_probe is None:
@@ -158,7 +158,7 @@ def secure_input_active() -> bool:
             _secure_input_probe = carbon.IsSecureEventInputEnabled
         return bool(_secure_input_probe())
     except Exception:
-        return False
+        return True
 
 
 def frontmost_pid() -> int | None:
@@ -224,7 +224,7 @@ def inject(text: str, *, insert_mode: str = "paste", spacing: str = "trailing") 
     declined it — only a real insert may arm "scratch that"."""
     global _restore_generation, _pending_restore
     if secure_input_active():
-        log("! secure input active — not inserting")
+        log("! secure input active or unavailable — not inserting")
         return False
 
     text = compose_insertion(text, spacing, character_before_caret() if spacing == "smart" else None)
@@ -508,8 +508,9 @@ class DeliveryQueue:
             self.last_insert.record(at=self._clock(), target=target, keydowns=keydowns)
         else:  # N34: every other drop path tells the user, so this one does too
             self._note("Dictation not pasted",
-                       "Secure input is on (a password field may have focus), so Scrivo did not "
-                       "paste. " + ("Open History to copy the text." if in_history else NOT_IN_HISTORY_EITHER))
+                       "Secure input is on or could not be checked (a password field may have focus), "
+                       "so Scrivo did not paste. "
+                       + ("Open History to copy the text." if in_history else NOT_IN_HISTORY_EITHER))
 
     def _target(self) -> tuple | None:
         pid, focus = self._frontmost_pid(), self._focused_target()

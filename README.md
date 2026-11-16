@@ -229,8 +229,10 @@ apps may retain what was pasted. In **Settings** you can switch to **Type**
 (dictation never touches the clipboard; History's Copy and Retry put text on it
 on purpose) and choose the spacing: **Smart** (default) adds a
 space before the text only where it would touch the previous word, in apps
-that expose the cursor; elsewhere it adds a space after, like before. Password
-fields are never typed or pasted into.
+that expose the cursor; elsewhere it adds a space after, like before. On macOS,
+typing and pasting are blocked when secure input is active or cannot be checked.
+Custom password controls that do not enable secure input cannot be reliably
+identified by this check.
 
 ## Gestures and controls
 

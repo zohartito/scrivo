@@ -60,12 +60,24 @@ class TypingTests(unittest.TestCase):
 
 
 class SecureInputProbeTests(unittest.TestCase):
-    def test_probe_calls_carbon_and_fails_open_only_when_unavailable(self):
+    def test_scr04_unavailable_secure_state_blocks_typing_and_paste(self):
+        with patch.object(delivery, "_secure_input_probe", side_effect=OSError("unavailable")), \
+             patch.object(delivery, "type_text") as typed, \
+             patch.object(delivery, "NSPasteboard") as pasteboard, \
+             patch.object(delivery, "post_command_key") as keys:
+            for mode in ("type", "paste"):
+                with self.subTest(mode=mode):
+                    self.assertFalse(scrivo.inject("synthetic dictation", insert_mode=mode))
+            typed.assert_not_called()
+            pasteboard.generalPasteboard.assert_not_called()
+            keys.assert_not_called()
+
+    def test_probe_calls_carbon_and_blocks_when_unavailable(self):
         self.assertIsInstance(scrivo.secure_input_active(), bool)
         with patch.object(delivery, "_secure_input_probe", lambda: True):
             self.assertTrue(scrivo.secure_input_active())
         with patch.object(delivery, "_secure_input_probe", side_effect=OSError("gone")):
-            self.assertFalse(scrivo.secure_input_active())
+            self.assertTrue(scrivo.secure_input_active())
 
 
 if __name__ == "__main__":
