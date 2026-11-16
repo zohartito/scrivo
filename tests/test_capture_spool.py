@@ -447,6 +447,74 @@ class DataFolderOwnerTests(TemporaryData):
         self.assertIn(f"pid {child.pid}", logs[-1])
 
 
+@unittest.skipUnless(sys.platform == "darwin", "the data folder's owner record is macOS-only")
+class PreviousRunTests(TemporaryData):
+    """A Scrivo that ends without starting a shutdown (a crash, SIGKILL,
+    memory pressure, a power cut, AppKit exiting on its own) used to leave
+    nothing in Scrivo's log, which has no clock: the next launch names it,
+    from the record it left in .owner and the crash report macOS wrote."""
+
+    def setUp(self):
+        super().setUp()
+        self.reports = self.base.parent / "DiagnosticReports"
+        (self.reports / "Retired").mkdir(parents=True)
+
+    def report(self, name, pid, written):
+        path = self.reports / name
+        path.write_text('{"bug_type":"309","name":"Python"}\n{\n  "uptime" : 1,\n  "procRole" : "Unspecified",\n'
+                        f'  "parentPid" : 1,\n  "pid" : {pid},\n  "procName" : "Python"\n}}\n', encoding="utf-8")
+        os.utime(path, (written, written))
+        return path
+
+    def note(self, record, *, states=None, boot_time=RECORDED_AT - 3600.0):
+        return scrivo.previous_run_note(record, state_of=(states or {}).get, reports=self.reports,
+                                        boot_time=boot_time, now=lambda: RECORDED_AT + 7200.0)
+
+    def test_the_spool_reads_back_the_whole_record(self):
+        spool = new_spool(self.base)
+        spool.record_owner("listening")
+        pid, written, phase = spool.record()
+        self.assertEqual((pid, phase), (os.getpid(), "listening"))
+        self.assertAlmostEqual(written, time.time(), delta=5)
+
+    def test_a_run_that_ended_while_listening_is_named_with_its_crash_report(self):
+        self.report("Python-2026-11-14-121832.ips", 9999, RECORDED_AT + 50.0)  # another Python's
+        crash = self.report("Retired/Python-2026-11-14-121833.ips", 4242, RECORDED_AT + 60.0)
+        note = self.note((4242, RECORDED_AT, "listening"))
+        self.assertIn("pid 4242", note)
+        self.assertIn("listening", note)
+        self.assertIn("ended without shutting down", note)
+        self.assertIn(str(crash), note)
+        self.assertNotIn("121832", note)
+
+    def test_a_crash_report_older_than_the_record_is_not_that_run_s(self):
+        self.report("Python-old.ips", 4242, RECORDED_AT - 60.0)  # the pid, from an earlier boot
+        note = self.note((4242, RECORDED_AT, "listening"))
+        self.assertIn("no crash report", note)
+
+    def test_a_restart_of_the_mac_since_is_named(self):
+        note = self.note((4242, RECORDED_AT, "starting"), boot_time=RECORDED_AT + 600.0)
+        self.assertIn("starting", note)
+        self.assertIn("no crash report", note)
+        self.assertIn("the Mac started again", note)
+
+    def test_a_run_that_began_its_shutdown_or_left_no_record_says_nothing(self):
+        for record in ((4242, RECORDED_AT, "stopping"), (None, None, None), (os.getpid(), RECORDED_AT, "listening")):
+            with self.subTest(record):
+                self.assertIsNone(self.note(record))
+
+    def test_a_holder_still_running_is_not_reported(self):
+        self.assertIsNone(self.note((4242, RECORDED_AT, "listening"), states={4242: HOLDER}))
+        # ...but a newer process that took its pid is not that run.
+        note = self.note((4242, RECORDED_AT, "listening"), states={4242: HOLDER._replace(started=RECORDED_AT + 1)})
+        self.assertIn("pid 4242", note)
+
+    def test_an_unreadable_reports_folder_is_not_an_error(self):
+        note = scrivo.previous_run_note((4242, RECORDED_AT, "listening"), state_of={}.get,
+                                        reports=self.base / "missing", boot_time=None, now=time.time)
+        self.assertIn("no crash report", note)
+
+
 @unittest.skipIf(sys.platform == "win32", "Scrivo.app and launchd are macOS-only")
 class SecondCopyTests(unittest.TestCase):
     def refuse(self, environ):
