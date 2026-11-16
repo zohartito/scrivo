@@ -128,7 +128,11 @@ extracted source archive):
 
 ```bash
 scripts/install-mac.sh
-open /Applications/Scrivo.app
+if [ -w /Applications ]; then
+  open /Applications/Scrivo.app
+else
+  open "$HOME/Applications/Scrivo.app"
+fi
 ```
 
 The script checks your Mac (Apple Silicon, macOS 14+, Python 3.12, Apple's
