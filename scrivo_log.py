@@ -57,6 +57,24 @@ def route_app_logs(data_dir: Path, max_bytes: int = 2_000_000) -> Path:
     return path
 
 
+def _follow_root_links(folder: Path) -> Path:
+    """Resolve only symlinks that root owns, such as macOS /var -> private/var.
+
+    Only root can replace those, so following them is as safe as trusting a root-owned
+    directory. Any other symlink is left in place for the no-follow walk to refuse.
+    """
+    resolved = Path(folder.anchor)
+    for part in folder.parts[1:]:
+        candidate = resolved / part
+        try:
+            info = os.lstat(candidate)
+        except FileNotFoundError:
+            resolved = candidate
+            continue
+        resolved = Path(os.path.realpath(candidate)) if stat.S_ISLNK(info.st_mode) and info.st_uid == 0 else candidate
+    return resolved
+
+
 @contextmanager
 def _log_directory(folder: Path):
     """Open/create the private log directory without following any symlink.
@@ -71,6 +89,7 @@ def _log_directory(folder: Path):
         folder.mkdir(parents=True, exist_ok=True)
         yield None
         return
+    folder = _follow_root_links(folder)
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     directory = os.open(folder.anchor, flags)
     try:

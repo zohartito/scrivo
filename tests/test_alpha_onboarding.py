@@ -550,6 +550,18 @@ class AppLogRotationTests(unittest.TestCase):
                     redirect.assert_not_called()
                 self.assertEqual(list(outside.iterdir()), [])
 
+    @unittest.skipUnless(tempfile.gettempdir().startswith("/var/") and os.path.islink("/var")
+                         and os.lstat("/var").st_uid == 0,
+                         "needs the macOS temp folder under the root-owned /var -> private/var link")
+    def test_scr08_root_owned_system_links_are_followed(self):
+        # macOS keeps per-user temp folders under /var -> private/var; logging there must still work.
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(scrivo_log.os, "dup2") as redirect, \
+                 patch.dict(scrivo_log._app_log, {"path": None, "max_bytes": 0}):
+                scrivo.route_app_logs(Path(folder) / "data")
+            redirect.assert_called()
+            self.assertTrue((Path(folder) / "data" / "logs" / "scrivo.log").is_file())
+
     @unittest.skipUnless(os.name == "posix", "macOS app log rejects FIFO and hard links")
     def test_scr08_nonregular_and_hardlinked_logs_are_refused(self):
         for kind in ("fifo", "hardlink"):
