@@ -107,7 +107,7 @@ def reads_as_no_speech(text: str, speech_fraction: float) -> str | None:
     return None
 
 
-def apply_personal_dictionary(text: str, preprocessing: dict, log=_quiet) -> str:
+def apply_personal_dictionary(text: str, preprocessing: dict, log=_quiet, *, protected_spans=None) -> str:
     """The user's own spellings for text that is about to be delivered.
 
     Runs after every hallucination/no-speech guard; the recognizer's original
@@ -116,7 +116,8 @@ def apply_personal_dictionary(text: str, preprocessing: dict, log=_quiet) -> str
     """
     import dictionary
     try:
-        updated, receipt = dictionary.apply(text, dictionary.load(dictionary.DICTIONARY_PATH))
+        updated, receipt = dictionary.apply(text, dictionary.load(dictionary.DICTIONARY_PATH),
+                                            protected_spans=protected_spans)
     except Exception as exc:  # a broken dictionary must never cost a dictation
         log(f"! dictionary skipped ({type(exc).__name__})")
         return text
@@ -126,17 +127,20 @@ def apply_personal_dictionary(text: str, preprocessing: dict, log=_quiet) -> str
     return updated
 
 
-def apply_voice_cleanup(text: str, preprocessing: dict, language: str | None) -> tuple[str, str | None]:
-    """English voice commands and filler removal, after the dictionary. Returns
+def apply_voice_cleanup(text: str, preprocessing: dict, language: str | None, *,
+                        protected_spans=()) -> tuple[str, str | None]:
+    """English identifier formatting, voice commands and filler removal. Returns
     the text to deliver and an action ("scratch" undoes the last dictation).
     Side effects: adds a "voice" receipt to `preprocessing`."""
     import settings
     import voice_commands
+    from spoken_ids import format_identifiers
     preferences = settings.load(settings.SETTINGS_PATH)
     commands, fillers = preferences["voice_commands"], preferences["remove_fillers"]
-    if not (commands or fillers) or not voice_commands.is_english(language):
+    if not voice_commands.is_english(language):
         return text, None
-    cleaned, action = voice_commands.clean(text, fillers=fillers, commands=commands)
+    formatted = format_identifiers(text, protected_spans) if preferences["format_identifiers"] else text
+    cleaned, action = voice_commands.clean(formatted, fillers=fillers, commands=commands)
     if action or cleaned != text:
         preprocessing["voice"] = {"asr_text": text, **({"action": action} if action else {})}
     return cleaned, action
@@ -191,8 +195,9 @@ def screen(text: str, *, seconds: float, speech_fraction: float, language: str |
     held = hallucinated or no_speech
     voice_action = None
     if not held and clean:
-        text = apply_personal_dictionary(text, receipts, log)
-        text, voice_action = apply_voice_cleanup(text, receipts, language)
+        protected = []
+        text = apply_personal_dictionary(text, receipts, log, protected_spans=protected)
+        text, voice_action = apply_voice_cleanup(text, receipts, language, protected_spans=protected)
     return Screened(text, held, voice_action, receipts)
 
 

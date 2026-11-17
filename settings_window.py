@@ -161,7 +161,9 @@ class SettingsController(AppKit.NSObject):
         self._popup(view, y, list(SPACING_LABELS.items()), "spacingChanged:", key="spacing"); y += 32
         self._row_label(view, y, "Cleanup")
         self._checkbox(view, y, "Remove filler words (um, uh)", "fillersToggled:", key="remove_fillers"); y += 24
-        self._checkbox(view, y, "Voice commands", "commandsToggled:", key="voice_commands"); y += 22
+        self._checkbox(view, y, "Voice commands", "commandsToggled:", key="voice_commands", width=136)
+        self._checkbox(view, y, "Format spoken IDs (302A)", "identifiersToggled:",
+                       key="format_identifiers", x=CONTROL_X + 140, width=CONTROL_W - 140); y += 22
         view.addSubview_(_label("Say “new line”, “new paragraph” or “scratch that”. English only.",
                                 AppKit.NSMakeRect(CONTROL_X, y, CONTROL_W, 16), small=True)); y += 30
 
@@ -224,7 +226,7 @@ class SettingsController(AppKit.NSObject):
             box.setState_(AppKit.NSControlStateValueOn if code in chosen else AppKit.NSControlStateValueOff)
         self._select("insert_mode", prefs["insert_mode"])
         self._select("spacing", prefs["spacing"])
-        for key in ("remove_fillers", "voice_commands"):
+        for key in ("remove_fillers", "voice_commands", "format_identifiers"):
             self.controls[key].setState_(AppKit.NSControlStateValueOn if prefs.get(key, True)
                                          else AppKit.NSControlStateValueOff)
         self.controls["launch_at_login"].setState_(AppKit.NSControlStateValueOn if state["login_enabled"]
@@ -276,6 +278,9 @@ class SettingsController(AppKit.NSObject):
 
     def fillersToggled_(self, sender):
         self._apply("remove_fillers", sender.state() == AppKit.NSControlStateValueOn)
+
+    def identifiersToggled_(self, sender):
+        self._apply("format_identifiers", sender.state() == AppKit.NSControlStateValueOn)
 
     def commandsToggled_(self, sender):
         self._apply("voice_commands", sender.state() == AppKit.NSControlStateValueOn)

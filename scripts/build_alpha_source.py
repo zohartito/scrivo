@@ -113,6 +113,7 @@ WINDOWS_FILES = (
     'dictionary.py',
     'settings.py',
     'voice_commands.py',
+    'spoken_ids.py',
     'updates.py',
     'pipeline.py',
     'scrivo_log.py',
