@@ -57,7 +57,7 @@ class NemotronTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.object(nemotron_backend, "INSTALL_ROOT", Path(folder)):
             with self.assertRaisesRegex(RuntimeError, "run scripts/setup_nemotron.py"):
                 nemotron_backend.installation()
-        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
         removal = readme.split("To remove only the models,", 1)[1].split("Saved audio on Desktop", 1)[0]
         self.assertNotIn("they download again when needed", removal)
         self.assertIn("scripts/setup_nemotron.py", removal)

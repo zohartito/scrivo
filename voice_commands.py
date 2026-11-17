@@ -89,8 +89,11 @@ class LastInsert:
     presses its own undo keys. No clock or platform calls of its own.
     """
 
-    def __init__(self, noun: str = "app") -> None:
+    def __init__(self, noun: str = "app", activity: str = "typed") -> None:
         self.noun = noun  # how a refusal names the target: "app" (Mac) or "window" (Windows)
+        # What the app's input count covers: the Mac counts key-downs and mouse clicks (SCR-02);
+        # the Windows hook counts key-downs only, so its refusal must not mention clicks.
+        self.activity = activity
         self.last: dict | None = None
 
     def record(self, *, at: float, target, keydowns: int) -> None:
@@ -112,7 +115,7 @@ class LastInsert:
         if current != last["target"]:
             return f"the dictation went to another {self.noun} — nothing undone"
         if keydowns() != last["keydowns"]:
-            return "you typed or clicked since the dictation — nothing undone"
+            return f"you {self.activity} since the dictation — nothing undone"
         return None
 
     def forget(self) -> None:

@@ -388,7 +388,7 @@ class DeliveryQueue:
         self._poll_armed = False
         self._waiting = False
         self._blocked_since: float | None = None
-        self.last_insert = voice_commands.LastInsert("app or text field")
+        self.last_insert = voice_commands.LastInsert("app or text field", activity="typed or clicked")
 
     def paste(self, text: str, in_history: bool = True) -> None:
         """in_history is False when History could not keep this dictation

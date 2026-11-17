@@ -146,16 +146,17 @@ def _rotate_if_large(path: Path, max_bytes: int) -> bool:
         except FileNotFoundError:
             return False
         try:
-            if os.fstat(descriptor).st_size > max_bytes:
-                if directory is None:
-                    os.replace(path, path.with_suffix(".log.1"))
-                else:
-                    os.replace(path.name, path.with_suffix(".log.1").name,
-                               src_dir_fd=directory, dst_dir_fd=directory)
-                return True
+            large = os.fstat(descriptor).st_size > max_bytes
         finally:
-            os.close(descriptor)
-    return False
+            os.close(descriptor)  # Windows cannot rename a file this process still holds open
+        if not large:
+            return False
+        if directory is None:
+            os.replace(path, path.with_suffix(".log.1"))
+        else:
+            os.replace(path.name, path.with_suffix(".log.1").name,
+                       src_dir_fd=directory, dst_dir_fd=directory)
+        return True
 
 
 def _point_output_at(path: Path) -> None:
