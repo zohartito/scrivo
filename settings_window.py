@@ -16,7 +16,7 @@ SPACING_LABELS = {"smart": "Smart: a space only where needed",
                   "trailing": "Always add a space after",
                   "none": "No automatic spaces"}
 SPEED_LABELS = {"accurate": "Accurate (default)", "fast": "Fast (experimental, about 3x quicker)"}
-WIDTH, LABEL_W, CONTROL_X = 560, 170, 190
+WIDTH, LABEL_W, CONTROL_X = 584, 170, 190
 CONTROL_W = WIDTH - CONTROL_X - 24
 
 
