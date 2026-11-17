@@ -67,6 +67,12 @@ class SuggestTests(unittest.TestCase):
         self.assertEqual(dictionary.suggest("write it in c sharp", "write it in C#"),
                          [Rule("c sharp", "C#")])
 
+    def test_suggested_multiword_rule_replays_internal_punctuation(self):
+        before, after = "Meet in three, oh two A.", "Meet in 302A."
+        rules = dictionary.suggest(before, after)
+        self.assertEqual(rules, [Rule("three, oh two A", "302A")])
+        self.assertEqual(dictionary.apply(before, rules)[0], after)
+
     def test_existing_rules_insertions_and_limits(self):
         existing = [Rule("iphone", "iPhone")]
         self.assertEqual(dictionary.suggest("my iphone", "my iPhone", existing), [])

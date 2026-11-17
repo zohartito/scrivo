@@ -40,6 +40,7 @@ RUNTIME_SOURCE_FILES = (
     "mac_app.py",
     "updates.py",
     "voice_commands.py",
+    "spoken_ids.py",
     "pipeline.py",
     "transcription.py",
     "scrivo_log.py",

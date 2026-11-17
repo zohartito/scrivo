@@ -68,8 +68,12 @@ class SettingsWindowTests(unittest.TestCase):
         controller.spacingChanged_(controller.controls["spacing"])
         select(controller.controls["insert_mode"], "type")
         controller.insertChanged_(controller.controls["insert_mode"])
+        identifiers = controller.controls["format_identifiers"]
+        self.assertEqual(identifiers.state(), AppKit.NSControlStateValueOn)
+        identifiers.setState_(AppKit.NSControlStateValueOff)
+        controller.identifiersToggled_(identifiers)
         self.assertEqual(model.changes, [("trigger", "right-cmd"), ("hotkey", ""),
-                                         ("spacing", "none"), ("insert_mode", "type")])
+                                         ("spacing", "none"), ("insert_mode", "type"), ("format_identifiers", False)])
         controller.openDictionary_(None)
         controller.showDataFolder_(None)
         self.assertEqual(model.actions, ["open_dictionary", "show_data_folder"])
