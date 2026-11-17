@@ -296,6 +296,12 @@ Nemotron; Parakeet does not report a language, so its text stays as spoken)
 and can be switched off under **Settings… → Cleanup**; History keeps what the
 model heard.
 
+Scrivo also formats short spoken identifiers in English. Say “three, oh two A”
+to enter `302A`, “room zero one four B” for `room 014B`, or “section two one
+five” for `section 215`. A code dictated on its own drops the final period.
+In a sentence, punctuation stays in place. Turn **Format spoken IDs (302A)**
+off in Cleanup if you prefer the spelling the recognizer produced.
+
 ## Dictionary: Scrivo learns your spellings
 
 When you fix a transcript with **History → Correct Transcript**, Scrivo offers

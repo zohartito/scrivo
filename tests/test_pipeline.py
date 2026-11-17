@@ -59,6 +59,63 @@ class ScreenTests(TemporaryUserFiles, unittest.TestCase):
         self.assertEqual(result.receipts["dictionary"]["asr_text"], "Um, soto works.")
         self.assertEqual(result.receipts["voice"]["asr_text"], "Um, Scrivo works.")
 
+    def test_spoken_identifiers_in_final_english_text(self):
+        cases = {
+            "three, oh two A.": "302A",
+            "three oh two, A.": "302A",
+            "3, 02A": "302A",  # pinned MLX Whisper on synthetic speech
+            "Three O two a.": "302A",
+            "302 A.": "302A",
+            "302A.": "302A",
+            "two zero two B": "202B",
+            "Three, oh two A is due Friday.": "302A is due Friday.",
+            "Meet in room zero one four B.": "Meet in room 014B.",
+            "Room three oh two a.": "Room 302A.",
+            "We met in room three oh two I’d seen earlier.": "We met in room 302 I’d seen earlier.",
+            "Section two one five and ARCH 302 A.": "Section 215 and ARCH 302A.",
+            "Suite 0 4 B, gate five two.": "Suite 04B, gate 52.",
+            "I was in room three oh two a week ago.": "I was in room 302 a week ago.",
+        }
+        for heard, written in cases.items():
+            with self.subTest(heard=heard):
+                result = self.screen(heard)
+                self.assertEqual(result.text, written)
+                self.assertEqual(result.receipts["voice"]["asr_text"], heard)
+                self.assertEqual(self.screen(written).text, written)
+
+    def test_ambiguous_numbers_and_existing_notation_survive(self):
+        for text in ("I get in at three oh two.", "At three oh two I left.", "I heard three oh two a week ago.",
+                     "One, two, three A grades.", "Room one, two, three.", "I need two A batteries.",
+                     "At 3:02 a.m.", "At three oh two A.M.", "Version two point one.",
+                     "Meet at three oh two A Street.", "The address is three oh two B Avenue.",
+                     "Meet at three oh two A Blvd.", "We are on three oh two B Parkway.",
+                     "12 m.", "24 V.", "20 C.", "My supply reads three oh two V.",
+                     "Use 3.02 A, not 302 A Street.", "Room one two three.pdf", "Room three oh two-bedroom flat.",
+                     "Version three point oh two A", "One hundred three oh two A", "1 1⁄8 inch", "1:50",
+                     "Room three\nOh two.", "See room one two three four five B.", "Room 014B."):
+            with self.subTest(text=text):
+                self.assertEqual(self.screen(text).text, text)
+
+    def test_dictionary_spans_take_priority_without_disabling_other_ids(self):
+        self.dictionary.write_text("rhino => Rhinoceros\nstudio => 302 A\n", encoding="utf-8")
+        heard = "Use rhino in room studio or room three oh two B."
+        self.assertEqual(self.screen(heard).text, "Use Rhinoceros in room 302 A or room 302B.")
+
+    def test_standalone_id_preserves_a_period_explicitly_written_by_the_dictionary(self):
+        self.dictionary.write_text("studio => 302A.\nthree, oh two A => 302A\n", encoding="utf-8")
+        self.assertEqual(self.screen("studio").text, "302A.")
+        self.assertEqual(self.screen("three, oh two A.").text, "302A")
+
+    def test_identifier_formatting_respects_language_guards_and_settings(self):
+        heard = "three, oh two A."
+        for options in ({"language": None}, {"language": "pt"}, {"clean": False}, {"speech_fraction": 0.0}):
+            with self.subTest(options=options):
+                self.assertEqual(self.screen(heard, **options).text, heard)
+        settings.save({"remove_fillers": False, "voice_commands": False}, settings.SETTINGS_PATH)
+        self.assertEqual(self.screen(heard).text, "302A")
+        settings.save({"format_identifiers": False}, settings.SETTINGS_PATH)
+        self.assertEqual(self.screen(heard).text, heard)
+
     def test_scratch_that_is_an_action_not_text(self):
         self.assertEqual(self.screen("Scratch that.").voice_action, "scratch")
 

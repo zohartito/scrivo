@@ -97,15 +97,18 @@ def _pattern(rules: list[Rule]) -> re.Pattern | None:
     return re.compile(r"(?<!\w)(?:" + "|".join(alternatives) + r")(?!\w)", re.IGNORECASE)
 
 
-def apply(text: str, rules: list[Rule]) -> tuple[str, list[dict]]:
-    """Rewrite whole-word matches; returns (text, receipt of rules used)."""
+def apply(text: str, rules: list[Rule], *, protected_spans: list | None = None) -> tuple[str, list[dict]]:
+    """Rewrite matches and optionally record their spans in the resulting text."""
     pattern = _pattern(rules)
     if pattern is None or not text:
         return text, []
     by_key = {rule.heard.lower(): rule for rule in rules}
     counts: dict[str, int] = {}
 
+    shift = 0
+
     def replace(match: re.Match) -> str:
+        nonlocal shift
         rule = by_key.get(_clean(match.group(0)).lower())
         if rule is None:  # exotic case-folding mismatch: leave the text alone
             return match.group(0)
@@ -114,6 +117,10 @@ def apply(text: str, rules: list[Rule]) -> tuple[str, list[dict]]:
         # "Gonna" at a sentence start stays capitalized when the rule is lowercase.
         if match.group(0)[:1].isupper() and write[:1].islower():
             write = write[:1].upper() + write[1:]
+        if protected_spans is not None:
+            start = match.start() + shift
+            protected_spans.append((start, start + len(write)))
+            shift += len(write) - len(match[0])
         return write
 
     result = pattern.sub(replace, text)
@@ -135,7 +142,8 @@ def suggest(before: str, after: str, existing: list[Rule] = ()) -> list[Rule]:
     """Word-level substitutions a correction made that could become rules."""
     raw = before.split()
     old = [_strip_edges(word) for word in raw]
-    new = [_strip_edges(word) for word in after.split()]
+    corrected = after.split()
+    new = [_strip_edges(word) for word in corrected]
     known = {rule.heard.lower() for rule in existing}
     # Align case-insensitively so a sentence-start capital never glues its
     # neighbours into a rule. Words whose case changed next to a replacement
@@ -163,7 +171,10 @@ def suggest(before: str, after: str, existing: list[Rule] = ()) -> list[Rule]:
             i2, j2 = i2 + 1, j2 + 1
         if 1 <= i2 - i1 <= 4 and 1 <= j2 - j1 <= 6:
             consumed.update(range(i1, i2))
-            candidates.append((" ".join(old[i1:i2]), " ".join(new[j1:j2]), i2 - i1))
+            # Align on words, but keep punctuation *inside* a phrase so the
+            # suggested literal rule actually matches this transcript next time.
+            candidates.append((_strip_edges(" ".join(raw[i1:i2])),
+                               _strip_edges(" ".join(corrected[j1:j2])), i2 - i1))
     candidates += [(old[i], new[j], 1) for i, j in sorted(aligned.items())
                    if i not in consumed and old[i][1:] != new[j][1:]]
     suggestions: list[Rule] = []
