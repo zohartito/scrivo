@@ -754,6 +754,33 @@ class TranscriptionWorkerGoldenMaster(TemporaryUserFiles, unittest.TestCase):
 FAILED_TEXT = "[transcription failed]"
 
 
+class FractionReadingTests(TemporaryUserFiles, unittest.TestCase):
+    def test_live_and_retry_reread_the_same_samples_and_keep_the_original(self):
+        primary_samples = []
+        reread_samples = []
+        raw = "The model is 1 1⁄8 inch thick."
+        expected = "The model is 1/8 inch thick."
+
+        def primary(samples, **_options):
+            primary_samples.append(samples)
+            return {"text": raw}
+
+        def fraction_words(samples):
+            reread_samples.append(samples)
+            return "The model is one eighth inch thick."
+
+        h = Harness(primary, snapshot=snapshot(speech(2.0)))
+        h.whisper.fraction_words = fraction_words
+        h.run_jobs(h.live_job(speech(1.5)), h.retry_job())
+        self.assertEqual(h.injected, [expected])
+        self.assertEqual(h.copied, [expected])
+        self.assertEqual(len(reread_samples), 2)
+        for first, second in zip(primary_samples, reread_samples, strict=True):
+            self.assertIs(first, second)
+        for row in h.coordinator.appended + h.coordinator.retries:
+            self.assertEqual(row["preprocessing"]["voice"]["asr_text"], raw)
+
+
 class FailureHandlingTests(TemporaryUserFiles, unittest.TestCase):
     """F4 and F16(a): neither a failed speech model nor a failed History write
     may cost the user the dictation."""

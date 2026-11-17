@@ -30,7 +30,7 @@ _NEXT_WORD = re.compile(r"[ \t]+\w|['’]\w")
 _LIST_COMMA = re.compile(r",(?![ \t]+(?:oh?\b|zero\b|0))", re.I)
 
 
-def format_identifiers(text: str, protected: Sequence[tuple[int, int]] = ()) -> str:
+def identifier_edits(text: str, protected: Sequence[tuple[int, int]] = ()):
     """Keep dictionary substitutions, leading zeroes, and surrounding prose intact."""
     def replace(match: re.Match) -> str:
         number, letter = match.group("number", "letter")
@@ -62,7 +62,26 @@ def format_identifiers(text: str, protected: Sequence[tuple[int, int]] = ()) -> 
             return digits + match[0][len(number):]
         return digits + (letter or "").upper()
 
-    result = _RUN.sub(replace, text)
-    if re.fullmatch(r"[0-9]{2,4}[A-Z]\.", result) and not any(end == len(text) for _, end in protected):
-        return result[:-1]
-    return result
+    for match in _RUN.finditer(text):
+        value = replace(match)
+        end = match.end()
+        if (match.start() == 0 and text[end:] == "." and re.fullmatch(r"[0-9]{2,4}[A-Z]", value)
+                and not any(stop == len(text) for _, stop in protected)):
+            end += 1
+        if value != text[match.start():end]:
+            yield match.start(), end, value
+
+
+def apply_edits(text: str, edits) -> str:
+    """Apply disjoint edits in their original coordinates."""
+    pieces = []
+    cursor = 0
+    for start, end, value in sorted(edits):
+        pieces.extend((text[cursor:start], value))
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+def format_identifiers(text: str, protected: Sequence[tuple[int, int]] = ()) -> str:
+    return apply_edits(text, identifier_edits(text, protected))
