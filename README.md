@@ -292,6 +292,15 @@ five” for `section 215`. A code dictated on its own drops the final period.
 In a sentence, punctuation stays in place. Turn **Format spoken IDs (302A)**
 off in Cleanup if you prefer the spelling the recognizer produced.
 
+**Dimensions, scales, times** in Cleanup formats English phrases such as “one
+eighth inch” (`1/8 inch`), “the drawing scale is one to fifty” (`1:50`) and
+“the meeting is at three oh two” (`3:02`). “One and one eighth inches”
+keeps its whole number (`1 1/8 inches`). For a single ambiguous eighth-inch
+measurement in up to 30 seconds of English Whisper audio, Scrivo can check the
+same audio again with numbers written as words. It changes the quantity only
+when that reading identifies the fraction and agrees with the surrounding
+transcript. History keeps the original recognition text when cleanup changes it.
+
 ## Dictionary: Scrivo learns your spellings
 
 When you fix a transcript with **History → Correct Transcript**, Scrivo offers

@@ -536,6 +536,8 @@ class TrayApp:
         box = section("Cleanup (English dictation)")
         fillers = tk.BooleanVar(window, value=bool(saved["remove_fillers"]))
         ttk.Checkbutton(box, text="Remove filler words (um, uh)", variable=fillers).pack(anchor="w")
+        quantities = tk.BooleanVar(window, value=bool(saved["format_quantities"]))
+        ttk.Checkbutton(box, text="Dimensions, scales, times", variable=quantities).pack(anchor="w")
         identifiers = tk.BooleanVar(window, value=bool(saved["format_identifiers"]))
         ttk.Checkbutton(box, text="Format spoken IDs (302A)", variable=identifiers).pack(anchor="w")
         commands = tk.BooleanVar(window, value=bool(saved["voice_commands"]))
@@ -573,7 +575,7 @@ class TrayApp:
             updates = {"trigger": by_label[trigger.get()], "languages": languages,
                        "insert_mode": insert_mode.get(), "spacing": spacing.get(),
                        "speed": speed.get(), "launch_at_login": bool(login.get()),
-                       "format_identifiers": bool(identifiers.get()),
+                       "format_quantities": bool(quantities.get()), "format_identifiers": bool(identifiers.get()),
                        "remove_fillers": bool(fillers.get()), "voice_commands": bool(commands.get())}
             try:
                 notes = controller.save_settings(updates)

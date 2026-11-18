@@ -455,6 +455,19 @@ class LocalWhisper:
         from mlx_whisper.transcribe import ModelHolder
         return ModelHolder.get_model(self.path, mx.float16)  # the instance transcribe() uses
 
+    def fraction_words(self, samples) -> str:
+        """Re-read a short ambiguous inch measurement with numeric tokens suppressed."""
+        from mlx_whisper.tokenizer import get_tokenizer
+        if not hasattr(self, "_fraction_tokens"):
+            model = self._model()
+            tokenizer = get_tokenizer(model.is_multilingual, num_languages=model.num_languages, language="en")
+            self._fraction_tokens = [-1] + [i for i in range(tokenizer.eot)
+                                            if any(c.isnumeric() for c in tokenizer.decode([i]))]
+        result = self.backend.transcribe(samples, path_or_hf_repo=self.path, language="en",
+                                         suppress_tokens=self._fraction_tokens, temperature=0.0,
+                                         condition_on_previous_text=False)
+        return result["text"].strip()
+
     def detect_language(self, samples, allowed) -> str:
         """Most likely language among ``allowed``, from the first 30 s."""
         model = self._model()

@@ -1000,7 +1000,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         # that passed them: pipeline.screen, the Mac's live and Retry path.
         screened = pipeline.screen(
             text, seconds=prepared_seconds, speech_fraction=speech_fraction,
-            language=preprocessing.get("detected_language") or job_config.language, log=log)
+            language=preprocessing.get("detected_language") or job_config.language, log=log,
+            fraction_reader=restricted.fraction_words, samples=prepared.asr_samples)
         text, reason, voice_action = screened.text, screened.held, screened.voice_action
         preprocessing.update(screened.receipts)
         # Key release until the text is ready to insert (the Mac's measure,
@@ -1142,7 +1143,8 @@ def run(trigger: str, profile: str, model: str | None, language: str | None,
         # and Retry never undoes anything: a "scratch that" result keeps its words.
         screened = pipeline.screen(
             text, seconds=prepared_seconds, speech_fraction=1.0,
-            language=preprocessing.get("detected_language") or job_config.language, log=log)
+            language=preprocessing.get("detected_language") or job_config.language, log=log,
+            fraction_reader=restricted.fraction_words, samples=snapshot.samples)
         preprocessing.update(screened.receipts)
         text = (preprocessing.pop("voice")["asr_text"] if screened.voice_action == "scratch"
                 else screened.text)
