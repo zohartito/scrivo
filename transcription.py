@@ -405,7 +405,9 @@ class TranscriptionWorker:
         # in is never empty; "scratch that" may clean down to "".
         screened = screen(text, seconds=prepared_seconds, speech_fraction=speech_fraction,
                           language=preprocessing.get("detected_language") or job_config.language,
-                          clean=not entry_adaptive, log=self.log)
+                          clean=not entry_adaptive, log=self.log,
+                          fraction_reader=getattr(self.mlx_whisper, "fraction_words", None),
+                          samples=prepared.asr_samples)
         text, reason, voice_action = screened.text, screened.held, screened.voice_action
         preprocessing.update(screened.receipts)
         if not self.shutdown.requested():
@@ -715,7 +717,9 @@ class TranscriptionWorker:
             screened = screen(text, seconds=len(snapshot.samples) / SAMPLE_RATE,
                               speech_fraction=1.0,
                               language=retry_preprocessing.get("detected_language")
-                              or job_config.language, log=self.log)
+                              or job_config.language, log=self.log,
+                              fraction_reader=getattr(self.mlx_whisper, "fraction_words", None),
+                              samples=snapshot.samples)
             retry_preprocessing.update(screened.receipts)
             text = (retry_preprocessing.pop("voice")["asr_text"]
                     if screened.voice_action == "scratch" else screened.text)

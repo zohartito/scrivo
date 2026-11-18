@@ -41,6 +41,7 @@ RUNTIME_SOURCE_FILES = (
     "updates.py",
     "voice_commands.py",
     "spoken_ids.py",
+    "spoken_quantities.py",
     "pipeline.py",
     "transcription.py",
     "scrivo_log.py",

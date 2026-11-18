@@ -192,6 +192,9 @@ class LanguageRestricted:
         # The decode block: the CT2 result carries no per-segment decode fields.
         self.last_decode = {"path": "faster-whisper"}
 
+    def fraction_words(self, samples: Any) -> str:
+        return self._model.fraction_words(samples)
+
     def transcribe(self, samples: Any, *args: Any, **kwargs: Any) -> dict:
         self.last_language = None
         result = self._model.transcribe(samples, *args, allowed_languages=self.allowed, **kwargs)
@@ -318,6 +321,19 @@ class LocalCT2Whisper:
         self._log = log
         self._model: Any = None
         self._lock = threading.Lock()
+
+    def fraction_words(self, samples: Any) -> str:
+        """Use the resident CT2 model without changing the main decode or its language evidence."""
+        with self._lock:
+            model = self._model  # the primary decode has already completed
+            if not hasattr(self, "_fraction_tokens"):
+                tokenizer = model.hf_tokenizer
+                eot = tokenizer.token_to_id("<|endoftext|>")
+                self._fraction_tokens = [-1] + [i for i in range(eot)
+                                                if any(c.isnumeric() for c in tokenizer.decode([i]))]
+            segments, _ = model.transcribe(samples, language="en", suppress_tokens=self._fraction_tokens,
+                                           temperature=0.0, condition_on_previous_text=False)
+            return "".join(segment.text for segment in segments).strip()
 
     def transcribe(self, samples: Any, path_or_hf_repo: str | None = None, *,
                    condition_on_previous_text: bool = False,

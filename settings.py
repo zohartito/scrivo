@@ -34,6 +34,7 @@ DEFAULTS = {
     "speed": "accurate",
     "launch_at_login": False,
     "voice_commands": True,   # English: "new line", "new paragraph", "scratch that"
+    "format_quantities": True,  # English inch fractions, drawing ratios and clock times
     "format_identifiers": True,  # English: "three oh two A" -> "302A"
     "remove_fillers": True,   # English: drop um / uh
 }
@@ -58,7 +59,7 @@ def _valid(key: str, value):
         return value if value in SPACING_MODES else None
     if key == "speed":
         return value if value in SPEEDS else None
-    if key in ("launch_at_login", "voice_commands", "remove_fillers", "format_identifiers"):
+    if key in ("launch_at_login", "voice_commands", "remove_fillers", "format_identifiers", "format_quantities"):
         return value if isinstance(value, bool) else None
     return None
 

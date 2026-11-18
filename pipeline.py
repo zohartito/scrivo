@@ -129,18 +129,24 @@ def apply_personal_dictionary(text: str, preprocessing: dict, log=_quiet, *, pro
 
 
 def apply_voice_cleanup(text: str, preprocessing: dict, language: str | None, *,
-                        protected_spans=()) -> tuple[str, str | None]:
-    """English identifier formatting, voice commands and filler removal. Returns
+                        protected_spans=(), read_fraction_words=None) -> tuple[str, str | None]:
+    """English numeric formatting, voice commands and filler removal. Returns
     the text to deliver and an action ("scratch" undoes the last dictation).
     Side effects: adds a "voice" receipt to `preprocessing`."""
     import settings
     import voice_commands
-    from spoken_ids import format_identifiers
+    from spoken_ids import apply_edits, identifier_edits
+    from spoken_quantities import quantity_edits
     preferences = settings.load(settings.SETTINGS_PATH)
     commands, fillers = preferences["voice_commands"], preferences["remove_fillers"]
     if not voice_commands.is_english(language):
         return text, None
-    formatted = format_identifiers(text, protected_spans) if preferences["format_identifiers"] else text
+    edits = list(quantity_edits(text, protected_spans, read_fraction_words)) if preferences["format_quantities"] else []
+    if preferences["format_identifiers"]:
+        reserved = list(protected_spans)
+        reserved.extend((start, end) for start, end, _ in edits)
+        edits.extend(identifier_edits(text, reserved))
+    formatted = apply_edits(text, edits) if edits else text
     cleaned, action = voice_commands.clean(formatted, fillers=fillers, commands=commands)
     if action or cleaned != text:
         preprocessing["voice"] = {"asr_text": text, **({"action": action} if action else {})}
@@ -174,7 +180,7 @@ class Screened:
 
 
 def screen(text: str, *, seconds: float, speech_fraction: float, language: str | None,
-           clean: bool = True, log=_quiet) -> Screened:
+           clean: bool = True, log=_quiet, fraction_reader=None, samples=None) -> Screened:
     """Run every output guard, then (for text that passes) the user's
     dictionary and English cleanup. `clean=False` skips the last two (the
     adaptive lane keeps the recognizer's exact text)."""
@@ -198,7 +204,17 @@ def screen(text: str, *, seconds: float, speech_fraction: float, language: str |
     if not held and clean:
         protected = []
         text = apply_personal_dictionary(text, receipts, log, protected_spans=protected)
-        text, voice_action = apply_voice_cleanup(text, receipts, language, protected_spans=protected)
+        def read_fraction_words():
+            # A failed optional decode never discards a successful primary transcript.
+            try:
+                return fraction_reader(samples)
+            except Exception as exc:
+                log(f"! fraction comparison skipped ({type(exc).__name__})")
+                return None
+
+        compare = read_fraction_words if fraction_reader and samples is not None and seconds <= 30 else None
+        text, voice_action = apply_voice_cleanup(text, receipts, language, protected_spans=protected,
+                                                 read_fraction_words=compare)
     return Screened(text, held, voice_action, receipts)
 
 

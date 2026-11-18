@@ -72,8 +72,14 @@ class SettingsWindowTests(unittest.TestCase):
         self.assertEqual(identifiers.state(), AppKit.NSControlStateValueOn)
         identifiers.setState_(AppKit.NSControlStateValueOff)
         controller.identifiersToggled_(identifiers)
+        quantities = controller.controls["format_quantities"]
+        self.assertLessEqual(quantities.cell().cellSize().width, quantities.frame().size.width)
+        self.assertEqual(quantities.state(), AppKit.NSControlStateValueOn)
+        quantities.setState_(AppKit.NSControlStateValueOff)
+        controller.quantitiesToggled_(quantities)
         self.assertEqual(model.changes, [("trigger", "right-cmd"), ("hotkey", ""),
-                                         ("spacing", "none"), ("insert_mode", "type"), ("format_identifiers", False)])
+                                         ("spacing", "none"), ("insert_mode", "type"), ("format_identifiers", False),
+                                         ("format_quantities", False)])
         controller.openDictionary_(None)
         controller.showDataFolder_(None)
         self.assertEqual(model.actions, ["open_dictionary", "show_data_folder"])
