@@ -20,7 +20,7 @@ def main(argv=None):
             return 0
         cache = args.cache_dir or Path(args.manifest).expanduser().resolve().parent / "models"
         ensure_host()
-        results = bench.measure(rows, locale=args.locale, cache_dir=cache)
+        results = bench.measure(rows, locale=args.locale, cache_dir=cache, with_parakeet=args.with_parakeet)
         report = bench.platform_report(results)
         bench.write_reports([(targets[0], report)])
         print(report, end="")

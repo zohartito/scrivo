@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 WHISPER_REPO = MODEL_PROFILES["auto"].repo
 WHISPER_REVISION = MODEL_REVISIONS[WHISPER_REPO]
 BACKENDS = ("apple-speech-on-device", f"mlx-whisper-{WHISPER_REPO}")
+PARAKEET_REPO = MODEL_PROFILES["parakeet"].repo
+PARAKEET_REVISION = MODEL_REVISIONS[PARAKEET_REPO]
+PARAKEET_BACKEND = f"parakeet-mlx-{PARAKEET_REPO}"
 PLATFORM_COLUMNS = ("backend", "n", "wer", "required_term_hit_rate", "median_latency_s", "date", "macos_version")
 SPEECH_ERRORS = {
     "main-thread": "Apple Speech requires the main thread.",
@@ -130,6 +133,54 @@ def model_path(cache_dir):
         raise BenchError("The pinned Whisper model is not cached. Follow model setup in own-voice-bench.md.") from None
 
 
+def parakeet_model_path(cache_dir):
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    from huggingface_hub import snapshot_download
+
+    try:
+        folder = Path(snapshot_download(PARAKEET_REPO, revision=PARAKEET_REVISION,
+                                       cache_dir=str(outside_repo(Path(cache_dir))), local_files_only=True))
+        if not all((folder / name).is_file() for name in ("config.json", "model.safetensors")):
+            raise ValueError
+        return str(folder)
+    except Exception:
+        raise BenchError("The pinned Parakeet model is not cached. Follow model setup in own-voice-bench.md.") from None
+
+
+class Parakeet:
+    """LocalParakeet's load/decode recipe without importing the app or its state.
+
+    Validated benchmark WAVs are already 16 kHz and at most 30 s, so no resampling
+    or 120 s chunking is needed. Load lazily inside the first timed transcription.
+    """
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._model = None
+
+    def transcribe(self, audio_path):
+        import json
+        import mlx.core as mx
+        from mlx.utils import tree_flatten, tree_unflatten
+        import numpy as np
+        from parakeet_mlx.audio import get_logmel
+        from parakeet_mlx.utils import from_config
+
+        if self._model is None:
+            model = from_config(json.loads((self.path / "config.json").read_text()))
+            model.load_weights(str(self.path / "model.safetensors"))
+            model.update(tree_unflatten([(name, value.astype(mx.bfloat16))
+                                         for name, value in tree_flatten(model.parameters())]))
+            self._model = model
+        with wave.open(str(audio_path), "rb") as wav:
+            audio = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
+        if len(audio) < 1600:  # LocalParakeet ignores chunks shorter than 0.1 s.
+            return ""
+        mel = get_logmel(mx.array(audio), self._model.preprocessor_config)
+        return self._model.generate(mel)[0].text.strip()
+
+
 @dataclass
 class Measurement:
     backend: str
@@ -138,21 +189,25 @@ class Measurement:
     latencies: list[float]
 
 
-def measure(rows, *, locale, cache_dir):
+def measure(rows, *, locale, cache_dir, with_parakeet=False):
     """Same validated rows, sequential backends, no prompts or personal settings."""
     with quiet_backends():
         local_model = model_path(cache_dir)
+        parakeet = Parakeet(parakeet_model_path(cache_dir)) if with_parakeet else None
+        backends = (*BACKENDS, PARAKEET_BACKEND) if with_parakeet else BACKENDS
         apple = AppleSpeech(locale)
         apple.authorize()
         results = []
-        for label in BACKENDS:
+        for label in backends:
             scores, latencies = [], []
             for row in rows:
                 started = time.perf_counter()
                 if label == BACKENDS[0]:
                     hypothesis = apple.transcribe(row.audio)
-                else:
+                elif label == BACKENDS[1]:
                     hypothesis = benchmark._transcribe(row.audio, local_model, row.language, None)
+                else:
+                    hypothesis = parakeet.transcribe(row.audio)
                 elapsed = time.perf_counter() - started
                 if not isinstance(hypothesis, str):
                     raise BenchError("A backend returned no transcript. No report was written.")
@@ -231,5 +286,6 @@ def parser(description):
     result.add_argument("manifest", metavar="MANIFEST")
     result.add_argument("--locale", default="en-US", metavar="LOCALE")
     result.add_argument("--cache-dir", metavar="CACHE", help="Private model cache; default: beside manifest/models")
+    result.add_argument("--with-parakeet", action="store_true", help="Also measure pinned Parakeet from the cache only")
     result.add_argument("--dry-run", action="store_true", help="Validate only; no recognition or report")
     return result

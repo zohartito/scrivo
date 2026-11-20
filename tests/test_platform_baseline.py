@@ -82,6 +82,17 @@ class PlatformBaselineTests(BenchFixture):
         for call in self.whisper.call_args_list:
             self.assertEqual(call.args[1:], ("/private-model", "en", None))
 
+    def test_optional_parakeet_adds_a_row_without_private_output(self):
+        with patch.object(bench, "parakeet_model_path", return_value="/private-parakeet"), \
+             patch.object(bench, "Parakeet") as backend:
+            backend.return_value.transcribe.side_effect = self.noisy_transcript
+            code, out, err = self.invoke(["--with-parakeet"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(len(out.splitlines()), 5)
+        self.assertIn(bench.PARAKEET_BACKEND, out)
+        self.assertEqual([call.args[0] for call in backend.return_value.transcribe.call_args_list],
+                         [call.args[0] for call in self.whisper.call_args_list])
+
     def test_dry_run_never_loads_backends_or_writes(self):
         self.assertEqual(self.invoke(["--dry-run"])[0], 0)
         self.apple_class.assert_not_called()

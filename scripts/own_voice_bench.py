@@ -28,24 +28,28 @@ def statistics_for(result, indices):
 def intervals(measurements, *, replicates=BOOTSTRAP_REPLICATES):
     """Paired clip resampling, percentile 95% CIs; no normal approximation.
 
-    Use the same draw for both backends. Terms have no interval if any draw has
+    Use the same draw for every backend. Terms have no interval if any draw has
     no required terms, rather than silently conditioning on term-bearing draws.
+    Return metric CIs and WER-difference CIs keyed by (candidate, baseline) index:
+    Whisper minus Apple, then each optional backend minus Whisper.
     """
-    if len(measurements) != 2:
-        raise ValueError("Bootstrap requires exactly two paired backends.")
+    if len(measurements) < 2:
+        raise ValueError("Bootstrap requires at least two paired backends.")
     n = len(measurements[0].samples)
-    if n == 0 or replicates < 2 or any(len(row.samples) != n for row in measurements):
+    if n == 0 or replicates < 2 or any(len(row.samples) != n or len(row.latencies) != n for row in measurements):
         raise ValueError("Bootstrap requires equal nonempty paired samples and at least two draws.")
     rng = random.Random(BOOTSTRAP_SEED)
     draws = [[[] for _ in range(4)] for _ in measurements]
-    differences = []
+    pairs = [(1, 0)] + [(index, 1) for index in range(2, len(measurements))]
+    differences = {pair: [] for pair in pairs}
     for _ in range(replicates):
         indices = [rng.randrange(n) for _ in range(n)]
         values = [statistics_for(result, indices) for result in measurements]
         for model, metrics in zip(draws, values, strict=True):
             for metric, value in zip(model, metrics, strict=True):
                 metric.append(value)
-        differences.append(values[1][0] - values[0][0])
+        for (candidate, baseline), paired in differences.items():
+            paired.append(values[candidate][0] - values[baseline][0])
 
     def percentile(values):
         if any(value is None for value in values):
@@ -53,7 +57,8 @@ def intervals(measurements, *, replicates=BOOTSTRAP_REPLICATES):
         ordered = sorted(values)
         return ordered[int(.025 * (replicates - 1))], ordered[int(.975 * (replicates - 1))]
 
-    return [[percentile(metric) for metric in model] for model in draws], percentile(differences)
+    return ([[percentile(metric) for metric in model] for model in draws],
+            {pair: percentile(values) for pair, values in differences.items()})
 
 
 def interval_text(value):
@@ -61,7 +66,7 @@ def interval_text(value):
 
 
 def own_report(measurements, locale):
-    cis, difference_ci = intervals(measurements)
+    cis, difference_cis = intervals(measurements)
     rows = []
     for result, model_cis in zip(measurements, cis, strict=True):
         point = statistics_for(result, range(len(result.samples)))
@@ -69,22 +74,36 @@ def own_report(measurements, locale):
         for value, ci in zip(point, model_cis, strict=True):
             metrics.append(f"{bench.number(value)} {interval_text(ci)}")
         rows.append((result.backend, len(result.samples), *metrics))
-    difference = (measurements[1].overall["metrics"]["wer"]["value"]
-                  - measurements[0].overall["metrics"]["wer"]["value"])
+    labels = {bench.BACKENDS[0]: "Apple", bench.BACKENDS[1]: "Whisper", bench.PARAKEET_BACKEND: "Parakeet"}
+    names = [labels.get(result.backend, result.backend) for result in measurements]
+    comparisons = []
+    for (candidate, baseline), ci in difference_cis.items():
+        difference = (measurements[candidate].overall["metrics"]["wer"]["value"]
+                      - measurements[baseline].overall["metrics"]["wer"]["value"])
+        comparisons.append(
+            f"\nPaired WER difference ({names[candidate]} minus {names[baseline]}): "
+            f"{bench.number(difference)} {interval_text(ci)}.\n"
+            f"Negative favors {names[candidate]}; positive favors {names[baseline]}. "
+            "An interval including zero does not resolve a difference.\n")
+    has_parakeet = any(result.backend == bench.PARAKEET_BACKEND for result in measurements)
+    parakeet_method = ("Parakeet uses LocalParakeet's load/decode recipe on float arrays from the same untrimmed WAVs; "
+                       "Parakeet detects language without a locale hint. " if has_parakeet else "")
+    not_measured = "Qwen3-ASR and Nemotron" if has_parakeet else "Qwen3-ASR, Nemotron and Parakeet"
     return (
         "# Own-voice benchmark\n\n"
         + bench.table(("backend", "n", "wer [95% CI]", "cer [95% CI]",
                        "required_term_hit_rate [95% CI]", "median_latency_s [95% CI]"), rows)
-        + f"\nPaired WER difference (Whisper minus Apple): {bench.number(difference)} {interval_text(difference_ci)}.\n"
-        + "Negative favors Whisper; positive favors Apple. "
-        + "An interval including zero does not resolve a difference.\n\n"
+        + "".join(comparisons) + "\n"
         + f"Locale: {locale}; Whisper language: {locale.split('-')[0]}. "
         + f"Whisper revision: `{bench.WHISPER_REVISION}`.\n"
+        + (f"Parakeet revision: `{bench.PARAKEET_REVISION}`.\n" if has_parakeet else "")
         + "Date and macOS version are in the companion platform report from this same run.\n\n"
-        + "Method: identical files and manifest order; Apple first, then Whisper; one pass, no warmup. "
+        + f"Method: identical files and manifest order; {names[0]} first, then {', then '.join(names[1:])}; "
+        + "one pass, no warmup. "
         + "Latency is file-to-final-text wall time, including the first decode's cold load, excluding model setup, "
         + "authorization, scoring and capture. It is not release-to-paste latency. "
         + "No glossary, contextual terms, dictionary, VAD trimming, cleanup or personal settings are applied. "
+        + parakeet_method
         + "This measures the default Whisper model through benchmark._transcribe, not the complete Scrivo app.\n\n"
         + "WER/CER are micro averages from evaluation.py; required-term hit rate is matched/required terms "
         + "(n/a when none were annotated). Case/punctuation normalization follows that module. "
@@ -96,7 +115,7 @@ def own_report(measurements, locale):
         + "limit generalization; bootstrap intervals do not represent between-speaker uncertainty. "
         + "Backend order, thermal state and cold caches can affect latency. "
         + "This is Apple's Speech framework (on-device), not a macOS Dictation product test. "
-        + "Qwen3-ASR, Nemotron and Parakeet were not benchmarked. "
+        + f"{not_measured} were not benchmarked. "
         + "No failure examples or per-clip outputs are retained or quoted.\n"
     )
 
@@ -115,7 +134,7 @@ def main(argv=None):
             return 0
         ensure_host()
         cache = args.cache_dir or Path(args.manifest).expanduser().resolve().parent / "models"
-        measured = bench.measure(rows, locale=args.locale, cache_dir=cache)
+        measured = bench.measure(rows, locale=args.locale, cache_dir=cache, with_parakeet=args.with_parakeet)
         platform = bench.platform_report(measured)
         own = own_report(measured, args.locale)
         bench.write_reports([(targets[0], own), (targets[1], platform)])
