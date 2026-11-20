@@ -65,6 +65,25 @@ def windows_get_script(folder: Path) -> tuple[Path, Path]:
 
 
 class ScriptShapeTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "README macOS launch instructions")
+    def test_scr10_readme_opens_the_installers_system_or_personal_app(self):
+        readme = (ROOT / "README.md").read_text()
+        # Run only the launch commands, with a recording shell function for
+        # open. The install command itself is never executed by this test.
+        launch = readme.split("```bash\nscripts/install-mac.sh\n", 1)[1].split("```", 1)[0]
+        for writable in (True, False):
+            with self.subTest(writable=writable), tempfile.TemporaryDirectory() as folder:
+                base = Path(folder)
+                system, home = base / "Applications", base / "home"
+                system.mkdir(mode=0o700 if writable else 0o500)
+                home.mkdir()
+                script = re.sub(r"(?<!\$HOME)/Applications", str(system), launch)
+                result = subprocess.run(["/bin/bash", "-c", 'open() { printf "%s\\n" "$1"; };\n' + script],
+                                        env=dict(os.environ, HOME=str(home)), capture_output=True, text=True)
+                expected = (system if writable else home / "Applications") / "Scrivo.app"
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(expected))
+
     def test_mac_script_parses_runs_from_main_and_is_executable(self):
         script = ROOT / "scripts" / "get.sh"
         if sys.platform != "win32":

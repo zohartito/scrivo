@@ -84,13 +84,16 @@ class LastInsert:
     with no key typed by the user since.
 
     Both apps share this rule; each supplies its own identity of where an
-    insert went (the Mac: the frontmost app's pid; Windows: the foreground
+    insert went (the Mac: the app's pid and focused AX target; Windows: the foreground
     window and its pid), its own count of the user's real key-downs, and
     presses its own undo keys. No clock or platform calls of its own.
     """
 
-    def __init__(self, noun: str = "app") -> None:
+    def __init__(self, noun: str = "app", activity: str = "typed") -> None:
         self.noun = noun  # how a refusal names the target: "app" (Mac) or "window" (Windows)
+        # What the app's input count covers: the Mac counts key-downs and mouse clicks (SCR-02);
+        # the Windows hook counts key-downs only, so its refusal must not mention clicks.
+        self.activity = activity
         self.last: dict | None = None
 
     def record(self, *, at: float, target, keydowns: int) -> None:
@@ -112,7 +115,7 @@ class LastInsert:
         if current != last["target"]:
             return f"the dictation went to another {self.noun} — nothing undone"
         if keydowns() != last["keydowns"]:
-            return "you typed since the dictation — nothing undone"
+            return f"you {self.activity} since the dictation — nothing undone"
         return None
 
     def forget(self) -> None:

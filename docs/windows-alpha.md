@@ -375,7 +375,7 @@ Everything Scrivo writes lives in the data folder
 | Location in that folder | Contents |
 | --- | --- |
 | `history.jsonl`, `audio\`, `audio-raw\` | Transcripts/metadata and WAV audio (capped at 200) |
-| `capture-spool\` | Each finished recording's raw audio, only until its History item is saved (recovered into History after a crash) |
+| `capture-spool\` | Finished recordings queued for background writing at key-up; completed durable writes can be recovered into History after a crash, until their History item is saved |
 | `dictionary.txt`, `settings.json`, `language-mode` | Your rules and preferences |
 | `learning\`, `adaptive-learning\` | Local learning and revocation bookkeeping (no worker runs on Windows) |
 | `scrivo.log` (+ `scrivo.log.1`) | Timings, devices, character counts — no transcript text |

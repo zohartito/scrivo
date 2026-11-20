@@ -147,13 +147,21 @@ class LastInsertTests(unittest.TestCase):
             (10.0 + window + 0.01, (1, 2), 3, "nothing recent to undo"),
             (11.0, None, 3, "the window in front is unknown — nothing undone"),
             (11.0, (9, 9), 3, "the dictation went to another window — nothing undone"),
-            (11.0, (1, 2), 4, "you typed since the dictation — nothing undone"),
+            (11.0, (1, 2), 4, "you typed since the dictation — nothing undone"),  # Windows counts keys only
         ]
         for now, target, keydowns, expected in cases:
             self.assertEqual(self.refusal(last, now=now, target=target, keydowns=keydowns), expected,
                              (now, target, keydowns))
         last.forget()
         self.assertEqual(self.refusal(last, now=11.0, target=(1, 2), keydowns=3), "nothing recent to undo")
+
+    def test_the_refusal_names_only_the_input_the_app_counts(self):
+        # The Mac counts clicks too (SCR-02); the Windows hook counts key-downs only.
+        for activity, expected in (("typed", "you typed since"), ("typed or clicked", "you typed or clicked since")):
+            last = voice_commands.LastInsert("window", activity=activity)
+            last.record(at=0.0, target=1, keydowns=0)
+            self.assertEqual(self.refusal(last, now=1.0, target=1, keydowns=1),
+                             f"{expected} the dictation — nothing undone")
 
     def test_an_insert_into_an_unknown_target_can_never_be_undone(self):
         last = voice_commands.LastInsert()  # the Mac names its target an app
