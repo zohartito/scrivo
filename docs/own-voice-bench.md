@@ -2,11 +2,13 @@
 
 No voice measurements accompany this tooling. It compares **Apple's Speech
 framework (on-device)** with `mlx-community/whisper-large-v3-turbo`, Scrivo's
-default `auto` model, on the same files. `benchmark.py` supports MLX Whisper
-repositories only: a `qwen3asr=...` label does not add a Qwen backend. Qwen3-ASR,
-Nemotron and Parakeet are not benchmarked here. Nemotron's native installation
-and streaming lifecycle need separate benchmark validation; no adapter was
-added to the existing CLI.
+default `auto` model, on the same files. Add `--with-parakeet` to either aggregate
+runner to also measure the pinned Parakeet TDT v3 model from the private cache.
+The default remains Apple + Whisper; no Parakeet accuracy results accompany
+this option. `benchmark.py` supports MLX Whisper repositories only: a
+`qwen3asr=...` label does not add a Qwen backend. Qwen3-ASR and Nemotron are not
+benchmarked here. Nemotron's native installation and streaming lifecycle need
+separate benchmark validation; no adapter was added to that CLI.
 
 ## Prepare once (Apple Silicon macOS)
 
@@ -35,6 +37,13 @@ Separately download **only the pinned model**, before the private recognition ru
 ```sh
 .venv-bench/bin/python -c 'from pathlib import Path; from huggingface_hub import snapshot_download; from speech_config import MODEL_PROFILES, MODEL_REVISIONS; repo = MODEL_PROFILES["auto"].repo; snapshot_download(repo, revision=MODEL_REVISIONS[repo], cache_dir=str(Path.home()/"ScrivoBench/models"))'
 ```
+
+For the optional Parakeet comparison, separately provision its pinned snapshot
+in the **same benchmark cache**: use `MODEL_PROFILES["parakeet"].repo` in the
+setup command above instead of `MODEL_PROFILES["auto"].repo`. Both snapshots
+are needed. Parakeet requires `config.json` and `model.safetensors` at its pinned
+revision; a missing or partial snapshot stops the run, with no download fallback.
+The alpha requirements already include `parakeet-mlx`.
 
 The benchmark only loads that cache, offline. It does not read Scrivo's History,
 dictionary, settings or model cache. Do not run `benchmark.py`'s CLI for this
@@ -87,17 +96,28 @@ Reports stay private until reviewed; no README or public results are updated.
 The platform table has exactly `backend, n, wer, required_term_hit_rate,
 median_latency_s, date, macos_version`. The own-voice report adds CER, paired
 clip-bootstrap 95% intervals, a paired WER difference, model revision and method
-limits. WER/CER are micro averages; terms use total matches/total annotated
-terms, or `n/a` with no terms. No paths, IDs, tags, references, hypotheses or
+limits. With `--with-parakeet`, both reports gain a third backend row, and the
+own-voice report adds Parakeet minus Whisper WER with a paired 95% interval
+(negative favors Parakeet). Every backend uses the same resampled clip indices.
+An interval including zero does not resolve a difference. WER/CER are micro
+averages; terms use total matches/total annotated terms, or `n/a` with no terms.
+No paths, IDs, tags, references, hypotheses or
 failure examples are retained in either report. Backend stdout/stderr and raw
 exceptions are suppressed, including native console output.
 
-Apple runs first; Whisper runs second, with no warmup. Latency includes file
-loading and the first decode's cold start, but excludes setup, authorization,
-scoring and capture. Both receive the same untrimmed WAV, a fixed language and
-no glossary/dictionary hints. This tests the **default model**, not Scrivo's
-full delivery/cleanup pipeline. One speaker and 10–30 selected clips cannot
-establish general accuracy; intervals resample clips, not speakers.
+Apple runs first; Whisper runs second; optional Parakeet runs third, with no
+warmup. Latency includes file loading and the first decode's cold start, but
+excludes snapshot resolution, authorization, scoring and capture. All receive
+the same untrimmed WAV with no glossary/dictionary hints. Apple and Whisper
+use a fixed language; Parakeet detects language itself (25 European languages),
+with no locale hint. Its adapter follows `LocalParakeet`'s bfloat16 load and
+`get_logmel`/`generate` recipe on float arrays decoded from the 16 kHz PCM16
+WAV; it never imports the app. This tests the **models**, not Scrivo's full
+delivery/cleanup pipeline. One speaker and 10–30 selected clips cannot establish
+general accuracy; intervals resample clips, not speakers. Backend order and
+resident models can affect memory use and latency; this is not an isolated
+engine speed test. A real quality comparison still requires your completed
+corpus and an Apple Silicon Mac; stub checks are not recognition measurements.
 
 [Apple's capability check](https://developer.apple.com/documentation/speech/sfspeechrecognizer/supportsondevicerecognition)
 and [on-device request flag](https://developer.apple.com/documentation/speech/sfspeechrecognitionrequest/requiresondevicerecognition)
