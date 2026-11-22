@@ -15,7 +15,9 @@ import time
 import wave
 
 import benchmark
-from evaluation import aggregate_results, evaluate_sample, required_term_accuracy, tokenize
+from evaluation import (
+    aggregate_results, evaluate_sample, numeric_expression_exact_match, required_term_accuracy, tokenize,
+)
 from scripts.apple_speech_backend import AppleSpeech, SpeechUnavailable
 from speech_config import MODEL_PROFILES, MODEL_REVISIONS
 
@@ -187,9 +189,10 @@ class Measurement:
     overall: dict
     samples: list
     latencies: list[float]
+    numeric_form_audit: tuple[int, int] | None = None  # matched/eligible clips, not expressions
 
 
-def measure(rows, *, locale, cache_dir, with_parakeet=False):
+def measure(rows, *, locale, cache_dir, with_parakeet=False, numeric_form_audit=False):
     """Same validated rows, sequential backends, no prompts or personal settings."""
     with quiet_backends():
         local_model = model_path(cache_dir)
@@ -200,6 +203,7 @@ def measure(rows, *, locale, cache_dir, with_parakeet=False):
         results = []
         for label in backends:
             scores, latencies = [], []
+            numeric_matched = numeric_eligible = 0
             for row in rows:
                 started = time.perf_counter()
                 if label == BACKENDS[0]:
@@ -212,12 +216,18 @@ def measure(rows, *, locale, cache_dir, with_parakeet=False):
                 if not isinstance(hypothesis, str):
                     raise BenchError("A backend returned no transcript. No report was written.")
                 score = evaluate_sample(row.reference, hypothesis, required_terms=row.required_terms)
+                if numeric_form_audit:
+                    matched = numeric_expression_exact_match(row.reference, hypothesis)
+                    if matched is not None:
+                        numeric_eligible += 1
+                        numeric_matched += int(matched)
                 # Keep numeric sufficient statistics only after scoring, even in
                 # memory. Never retain arbitrary language/tag slices in reports.
                 scores.append(replace(score, reference="", hypothesis="", normalized_reference="",
                                       normalized_hypothesis=""))
                 latencies.append(elapsed)
-            results.append(Measurement(label, aggregate_results(scores)["overall"], scores, latencies))
+            audit = (numeric_matched, numeric_eligible) if numeric_form_audit else None
+            results.append(Measurement(label, aggregate_results(scores)["overall"], scores, latencies, audit))
         return results
 
 

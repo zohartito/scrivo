@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import math
 import random
+import re
 import unicodedata
 from typing import Iterable, Sequence
 
@@ -123,6 +124,24 @@ def numeric_token_accuracy(reference: str, hypothesis: str) -> tuple[float | Non
             continue
         matched += 1
     return matched / len(reference_numbers), matched, len(reference_numbers)
+
+
+_NUMERIC_EXPRESSION = re.compile(r"[+-]?(?:\d+[ \t]+\d+/\d+|\d+|\.\d+)(?:[./:]\d+)*")
+
+
+def numeric_expression_exact_match(reference: str, hypothesis: str) -> bool | None:
+    """Audit ordered digit-written expressions; None means no reference expressions.
+
+    Greedily retain integers, decimals, slash fractions, space/tab mixed numbers
+    (before their component integers), and colon-separated runs. Signs, digits,
+    separators and internal whitespace are literal; surrounding prose is ignored.
+    This is a lexical audit, not number-word interpretation or numeric equivalence.
+    It is deliberately separate from the legacy/adaptive metrics.
+    """
+    expected = _NUMERIC_EXPRESSION.findall(reference)
+    if not expected:
+        return None
+    return expected == _NUMERIC_EXPRESSION.findall(hypothesis)
 
 
 @dataclass(frozen=True)

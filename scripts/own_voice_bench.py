@@ -89,6 +89,17 @@ def own_report(measurements, locale):
     parakeet_method = ("Parakeet uses LocalParakeet's load/decode recipe on float arrays from the same untrimmed WAVs; "
                        "Parakeet detects language without a locale hint. " if has_parakeet else "")
     not_measured = "Qwen3-ASR and Nemotron" if has_parakeet else "Qwen3-ASR, Nemotron and Parakeet"
+    audit_rows = []
+    for result in measurements:
+        if result.numeric_form_audit is not None:
+            matched, eligible = result.numeric_form_audit
+            audit_rows.append((result.backend, matched if eligible else "n/a", eligible))
+    audit = ("\n## Numeric-form audit\n\n"
+             + bench.table(("backend", "matched_clips", "eligible_clips"), audit_rows)
+             + "\nLiteral ordered digit-written expression lists must match exactly, including extras and repeats. "
+             "Only clips with reference expressions are eligible; no eligible clips means n/a. "
+             "This is not semantic equivalence for spoken number words. "
+             "Counts only; WER/CER and required-term metrics are unchanged.\n" if audit_rows else "")
     return (
         "# Own-voice benchmark\n\n"
         + bench.table(("backend", "n", "wer [95% CI]", "cer [95% CI]",
@@ -117,6 +128,7 @@ def own_report(measurements, locale):
         + "This is Apple's Speech framework (on-device), not a macOS Dictation product test. "
         + f"{not_measured} were not benchmarked. "
         + "No failure examples or per-clip outputs are retained or quoted.\n"
+        + audit
     )
 
 
@@ -124,6 +136,8 @@ def main(argv=None):
     parser = bench.parser("Produce own-voice and platform aggregate reports from the same recognition pass.")
     parser.add_argument("--out", required=True, metavar="OWN_REPORT")
     parser.add_argument("--platform-out", required=True, metavar="PLATFORM_REPORT")
+    parser.add_argument("--numeric-form-audit", action="store_true",
+                        help="Add aggregate literal numeric-expression matched/eligible clip counts")
     args = parser.parse_args(argv)
     try:
         targets = bench.check_outputs([args.out, args.platform_out])
@@ -134,7 +148,8 @@ def main(argv=None):
             return 0
         ensure_host()
         cache = args.cache_dir or Path(args.manifest).expanduser().resolve().parent / "models"
-        measured = bench.measure(rows, locale=args.locale, cache_dir=cache, with_parakeet=args.with_parakeet)
+        measured = bench.measure(rows, locale=args.locale, cache_dir=cache, with_parakeet=args.with_parakeet,
+                                 numeric_form_audit=args.numeric_form_audit)
         platform = bench.platform_report(measured)
         own = own_report(measured, args.locale)
         bench.write_reports([(targets[0], own), (targets[1], platform)])

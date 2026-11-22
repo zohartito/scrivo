@@ -105,6 +105,36 @@ No paths, IDs, tags, references, hypotheses or
 failure examples are retained in either report. Backend stdout/stderr and raw
 exceptions are suppressed, including native console output.
 
+### Optional literal numeric-form audit
+
+Add `--numeric-form-audit` to **`own_voice_bench.py` only** to append a table of
+`backend, matched_clips, eligible_clips`. A clip is eligible when its reference
+contains a digit-written expression; it matches only when the entire ordered
+expression list equals the hypothesis's list. Extra, missing, reordered and
+repeated expressions matter. Counts are per clip, not per expression; with no
+eligible clips the table shows `n/a` matched and `0` eligible. This also works
+with `--with-parakeet`; `--dry-run` still does no scoring.
+
+The pure helper in `evaluation.py` greedily extracts digit runs, dot decimals
+(including `.5`), slash fractions, space/tab mixed numbers and colon-separated
+runs, retaining an adjacent `+`/`-` sign. It preserves digits, separators and
+internal whitespace literally; it ignores surrounding prose/punctuation. Thus
+`1/8`, `1.8` and `1 1/8` are distinct, as are `1:50` and `1.50`. This is a
+**literal-form audit**, not semantic equivalence: `1.50` differs from `1.5`, and
+spoken number words are not interpreted. A reference with only number words
+is ineligible even if the hypothesis uses digits. This is not a general numeric
+parser (no locale-aware comma decimals, scientific notation or Unicode fraction
+conversion); digit runs inside identifiers are included too.
+
+Only aggregate matched/eligible counts survive scoring, never expression lists
+or per-clip audit results. No new intervals or promotion thresholds are added.
+Without the flag the report bytes stay unchanged; with or without it the
+platform schema, WER/CER, term metrics and adaptive promotion rules are unchanged.
+Deterministic stub checks exercise the real scoring/report path: six altered
+eligible pairs are rejected, including three punctuation changes with zero
+legacy WER/CER; two literal-form controls match and two references without digits
+are unscored. These checks are not own-voice recognition measurements.
+
 Apple runs first; Whisper runs second; optional Parakeet runs third, with no
 warmup. Latency includes file loading and the first decode's cold start, but
 excludes snapshot resolution, authorization, scoring and capture. All receive

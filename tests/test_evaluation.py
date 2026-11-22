@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+import evaluation
 from evaluation import (
     PairedPromotionRow,
     aggregate_results,
@@ -61,6 +62,41 @@ class EvaluationTests(unittest.TestCase):
     def test_paired_bootstrap_rejects_empty_reference_rows(self) -> None:
         with self.assertRaises(ValueError):
             paired_bootstrap_statistics([PairedPromotionRow("empty", 0, 0, 0)], "generation", replicates=10)
+
+
+class NumericExpressionTests(unittest.TestCase):
+    def test_literal_forms_preserve_distinctions_lost_by_legacy_metrics(self):
+        for reference, hypothesis in (("1/8", "1.8"), ("1:50", "1.50"), ("1 1/8", "1.1/8")):
+            with self.subTest(reference=reference, hypothesis=hypothesis):
+                score = evaluate_sample(reference, hypothesis)
+                self.assertEqual((score.wer, score.cer, score.numeric_token_accuracy), (0, 0, 1))
+                self.assertIs(evaluation.numeric_expression_exact_match(reference, hypothesis), False)
+
+    def test_exact_ordered_lists_not_bags_or_partial_matches(self):
+        cases = (
+            ("Cut 1/8 inch at 1:50.", "CUT (1/8) INCH AT 1:50!", True),
+            ("1.25, .5, -2, +3/8, 1 1/8, 12:30:45", "1.25 .5 -2 +3/8 1 1/8 12:30:45", True),
+            ("1/8", "1 1/8", False),
+            ("1 1/8", "1 and 1/8", False),
+            ("1/8 then 1:50", "1:50 then 1/8", False),
+            ("1/8", "1/8 and 2", False),
+            ("1/8 and 1/8", "1/8", False),
+            ("1/8", "one eighth", False),
+            ("12:30:45", "12:30 and 45", False),
+            ("1 1/8.5", "1 1/8 and .5", False),
+            ("11/8", "1/8", False),
+            (".5", "0.5", False),
+            ("١/٨", "1/8", False),
+            ("12.50", "12.5", False),
+            ("1 1/8", "1  1/8", False),
+            ("-1.5", "1.5", False),
+            ("one eighth", "1/8", None),
+            ("ordinary prose", "different prose", None),
+            ("", "123", None),
+        )
+        for reference, hypothesis, expected in cases:
+            with self.subTest(reference=reference, hypothesis=hypothesis):
+                self.assertIs(evaluation.numeric_expression_exact_match(reference, hypothesis), expected)
 
 
 if __name__ == "__main__":
