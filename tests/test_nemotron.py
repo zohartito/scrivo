@@ -53,6 +53,16 @@ class FakeRuntime:
 
 
 class NemotronTests(unittest.TestCase):
+    def test_scr09_removal_instructions_require_explicit_nemotron_provisioning(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(nemotron_backend, "INSTALL_ROOT", Path(folder)):
+            with self.assertRaisesRegex(RuntimeError, "run scripts/setup_nemotron.py"):
+                nemotron_backend.installation()
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+        removal = readme.split("To remove only the models,", 1)[1].split("Saved audio on Desktop", 1)[0]
+        self.assertNotIn("they download again when needed", removal)
+        self.assertIn("scripts/setup_nemotron.py", removal)
+        self.assertIn("Settings", removal)
+
     def test_profile_preserves_whisper_default_and_enforces_english(self):
         self.assertEqual(resolve_speech_config().profile.backend, "whisper")
         config = resolve_speech_config("nemotron-en")

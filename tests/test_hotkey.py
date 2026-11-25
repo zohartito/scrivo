@@ -30,6 +30,9 @@ TAP = object()
 class FakeQuartz:
     """The Quartz names HotkeyListener uses. Integer constants are Quartz's
     (QuartzConstantTests checks them on macOS); events are dicts."""
+    kCGEventLeftMouseDown = 1
+    kCGEventRightMouseDown = 3
+    kCGEventOtherMouseDown = 25
     kCGEventKeyDown = 10
     kCGEventKeyUp = 11
     kCGEventFlagsChanged = 12
@@ -42,7 +45,8 @@ class FakeQuartz:
     kCGHeadInsertEventTap = 0
     kCGEventTapOptionListenOnly = 1
     kCFRunLoopCommonModes = "kCFRunLoopCommonModes"
-    INTEGER_CONSTANTS = ("kCGEventKeyDown", "kCGEventKeyUp", "kCGEventFlagsChanged",
+    INTEGER_CONSTANTS = ("kCGEventLeftMouseDown", "kCGEventRightMouseDown", "kCGEventOtherMouseDown",
+                         "kCGEventKeyDown", "kCGEventKeyUp", "kCGEventFlagsChanged",
                          "kCGEventTapDisabledByTimeout", "kCGEventTapDisabledByUserInput",
                          "kCGKeyboardEventAutorepeat", "kCGKeyboardEventKeycode",
                          "kCGEventSourceStateCombinedSessionState", "kCGSessionEventTap",
@@ -654,7 +658,8 @@ class StartTests(unittest.TestCase):
         with mock.patch("threading.Thread") as thread:
             world.listener.start()
         q = FakeQuartz
-        mask = (1 << q.kCGEventFlagsChanged) | (1 << q.kCGEventKeyDown) | (1 << q.kCGEventKeyUp)
+        mask = ((1 << q.kCGEventFlagsChanged) | (1 << q.kCGEventKeyDown) | (1 << q.kCGEventKeyUp)
+                | (1 << q.kCGEventLeftMouseDown) | (1 << q.kCGEventRightMouseDown) | (1 << q.kCGEventOtherMouseDown))
         self.assertEqual(world.quartz.created, [(q.kCGSessionEventTap, q.kCGHeadInsertEventTap,
                                                  q.kCGEventTapOptionListenOnly, mask,
                                                  world.listener.callback, None)])

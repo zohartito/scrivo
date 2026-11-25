@@ -377,7 +377,9 @@ class TapSetupTests(unittest.TestCase):
 
         app = run_app(self, drive)
         mask = (Quartz.CGEventMaskBit(Quartz.kCGEventFlagsChanged) | Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
-                | Quartz.CGEventMaskBit(Quartz.kCGEventKeyUp))
+                | Quartz.CGEventMaskBit(Quartz.kCGEventKeyUp) | Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
+                | Quartz.CGEventMaskBit(Quartz.kCGEventRightMouseDown)
+                | Quartz.CGEventMaskBit(Quartz.kCGEventOtherMouseDown))
         self.assertEqual(seen["created"], [(Quartz.kCGSessionEventTap, Quartz.kCGHeadInsertEventTap,
                                             Quartz.kCGEventTapOptionListenOnly, mask, None)])
         self.assertEqual(seen["sources"], [(("source", TAP, 0), Quartz.kCFRunLoopCommonModes)])

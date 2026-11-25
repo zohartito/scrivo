@@ -128,7 +128,11 @@ extracted source archive):
 
 ```bash
 scripts/install-mac.sh
-open /Applications/Scrivo.app
+if [ -w /Applications ]; then
+  open /Applications/Scrivo.app
+else
+  open "$HOME/Applications/Scrivo.app"
+fi
 ```
 
 The script checks your Mac (Apple Silicon, macOS 14+, Python 3.12, Apple's
@@ -226,11 +230,16 @@ you chose in Settings) for at least
 changing fields. Compare it with what you said. Scrivo uses the clipboard to
 paste and attempts to restore its previous contents; clipboard managers and
 apps may retain what was pasted. In **Settings** you can switch to **Type**
-(dictation never touches the clipboard; History's Copy and Retry put text on it
-on purpose) and choose the spacing: **Smart** (default) adds a
+(normal dictation insertion leaves the clipboard alone; History's Copy and
+Retry deliberately copy text). On macOS, if History cannot save a dictation
+and a held key prevents insertion for more than 30 seconds after recording,
+Scrivo copies the unsaved text to the clipboard even in Type mode and tells
+you, so a recoverable copy remains. You can also choose the spacing: **Smart** (default) adds a
 space before the text only where it would touch the previous word, in apps
-that expose the cursor; elsewhere it adds a space after, like before. Password
-fields are never typed or pasted into.
+that expose the cursor; elsewhere it adds a space after, like before. On macOS,
+typing and pasting are blocked when secure input is active or cannot be checked.
+Custom password controls that do not enable secure input cannot be reliably
+identified by this check.
 
 ## Gestures and controls
 
@@ -277,10 +286,11 @@ words · about 4.2 hours saved vs typing at 40 wpm" (counts only, kept in
 Say **"new line"** or **"new paragraph"** anywhere in a dictation, pauses or not,
 for a line break or a blank line ("a new line of products" stays as words).
 Say **"scratch that"** as a dictation of its own, in a new press after the text
-you want gone, to undo that last dictation with the app's own ⌘Z. It only undoes
-Scrivo's own insert: within a minute of the paste, while the same app is still
-in front, and only if you have not typed since; otherwise nothing happens and
-the log says why. Filler words (um, uh) are removed with the comma around them.
+you want gone, to undo that last dictation with the app's own ⌘Z. On macOS it
+requires a paste within the last minute, the same focused window, text control
+and exposed document identity, and no typing or mouse clicks since. If any check
+fails or the app does not expose its focused target, nothing happens and the log
+says why. Filler words (um, uh) are removed with the comma around them.
 Both apply only to dictation the engine reports as English (Whisper and
 Nemotron; Parakeet does not report a language, so its text stays as spoken)
 and can be switched off under **Settings… → Cleanup**; History keeps what the
@@ -379,7 +389,7 @@ With the commands above, all Scrivo-managed alpha state lives under
 | --- | --- |
 | `history.jsonl`, `audio/`, `audio-raw/` | Transcripts/metadata, and the processed and raw-capture WAV audio of each item; ordinary history capped at 200 |
 | `language-mode`, `engine-mode`, `settings.json` | Saved language, engine and Settings choices |
-| `capture-spool/` | Each finished recording's raw audio, only until its History item is saved (recovered into History after a crash) |
+| `capture-spool/` | Finished recordings queued for background writing at key-up; completed durable writes can be recovered into History after a crash, until their History item is saved |
 | `dictionary.txt`, `glossary.txt` | Your personal spelling rules, and terms to help Whisper hear them |
 | `stats.json`, `logs/` | Word counts for **Your progress**, and Scrivo's log (counts and timings, never your words) |
 | `models/silero_vad.onnx` | Voice-detection model (Silero v6.2, MIT) used to drop silence phrases |
@@ -405,7 +415,12 @@ To remove everything: quit Scrivo, run `~/scrivo/scripts/install-mac.sh
 your own clone) and `~/Library/Application Support/sotto-alpha` to the Trash.
 That removes your recordings, transcripts, learning data, settings and models.
 To remove only the models, quit and move the `huggingface` and optional
-`nemotron` folders to the Trash; they download again when needed.
+`nemotron` folders to the Trash. Hugging Face models download again when needed
+on a non-offline run. Nemotron requires explicit reinstallation: rerun
+`venv-alpha/bin/python scripts/setup_nemotron.py` with the same alpha data
+variables, or use **Settings → Install Nemotron (700 MB)…**. If its files are missing
+at launch, Scrivo falls back to Whisper and saves that engine choice; select
+Nemotron again after reinstalling it.
 
 Saved audio on Desktop, deliberately exported corpora, clipboard-manager
 history, text pasted into other apps, pip's package cache, backups and filesystem
@@ -450,7 +465,11 @@ Deletion cannot guarantee erasure from backups or SSD snapshots.
 - **"Thank you." appears when you said nothing:** Whisper invents short stock
   phrases for silence. `scrivo.py setup` (run by the installer) adds the small
   Silero voice-detection model, which keeps those out of the text field (they
-  stay in History). It never blocks real dictation, including whispers.
+  stay in History). This check can also hold real short dictation, including
+  whispers: transcripts of at most 20 characters are held when Silero scores
+  less than 6% speech. Recover the text with History → Copy, or use Retry on
+  the saved audio (Retry applies the same checks). Longer transcripts can pass
+  with a zero speech score; real short-whisper accuracy has not been measured.
 - **Restart / engine switch fails:** use the reported error, Quit and rerun.
   Explicit `--profile`/`--model` locks engine selection; omit them for menu
   switching.
